@@ -37,6 +37,23 @@ The Cavalry Spearman is a fast CitizenSoldier whose main purpose is hunting and 
 - **rome** — `units/rome/cavalry_spearman_b` (civil_centre, stable)
 - **spart** — `units/spart/cavalry_spearman_b` (stable)
 
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **germ** — `units/germ/cavalry_spearman_b`
+  - requires phase_town
+- **han** — `units/han/cavalry_spearman_b`
+  - requires phase_town
+- **iber** — `units/iber/cavalry_spearman_b`
+  - requires phase_town
+- **kush** — `units/kush/cavalry_spearman_b`
+  - requires phase_town
+- **pers** — `units/pers/cavalry_spearman_b`
+  - requires phase_town
+- **spart** — `units/spart/cavalry_spearman_b`
+  - requires phase_town
+
+
 ## Ranks
 
 ### Advanced — `units/{civ}/cavalry_spearman_a`

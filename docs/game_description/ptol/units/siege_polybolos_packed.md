@@ -24,7 +24,7 @@ so this is their entire anti-personnel artillery.
 - **Generic name:** Bolt Shooter
 - **Health:** 200 HP
 - **Armor:** 6 hack / 25 pierce / 5 crush
-- **Attack:** Ranged "Bolt" — damage 132 pierce — range 80 m — min range 15 m — prepare 1.5 s — repeat 3 s — preferred Human
+- **Attack:** Ranged "Bolt" — damage 132 pierce — range 80 m — min range 15 m — prepare 1.5 s — repeat 3 s — spread 1 — splash Linear 9 m 44 pierce — preferred Human
 - **Speed:** walk 6.75 m/s, run 6.75 m/s
 - **Vision:** 100 m
 - **Cost:** 250 wood, 250 metal

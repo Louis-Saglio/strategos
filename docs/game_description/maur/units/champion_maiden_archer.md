@@ -20,7 +20,7 @@ the swordswomen, since anything that catches her kills her.
 - **Health:** 90 HP
 - **Armor:** 1 hack / 4 pierce / 20 crush
 - **Attack:** Capture — strength 5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
-- **Attack:** Ranged "Bow" — damage 15.5 pierce — range 45 m — prepare 0.3 s — repeat 1.75 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 15.5 pierce — range 45 m — prepare 0.3 s — repeat 1.75 s — spread 2.2 — preferred Human — status Poisoned
 - **Speed:** walk 12.3 m/s, run 20.54 m/s
 - **Vision:** 80 m
 - **Cost:** 100 wood, 90 metal

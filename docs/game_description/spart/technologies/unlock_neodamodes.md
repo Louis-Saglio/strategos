@@ -10,7 +10,7 @@ Data file: `simulation/data/technologies/unlock_neodamodes.json`.
 - **Cost:** 500 food
 - **Research time:** 60 s
 - **Requirements:** `{"all": [{"tech": "phase_city"}, {"civ": "spart"}]}`
-- **Effect:** Unlocks the Neodamodes Hoplite at the barracks.
+- **Effect:** Unlock the ability to train Spearman Neodamodes at the Barracks.
 - **Modifications:** none — the unlock is a training requirement on the unit: `units/spart/infantry_spearman_neodamodes` has `Identity/Requirements/Techs = unlock_neodamodes`.
 
 ## Spartans

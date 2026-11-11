@@ -64,9 +64,11 @@ These civilisations override the generic stats above (only differing values are 
   - cost 20 food, 90 metal
   - build time 10.5 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town
 - **sele** — `units/sele/cavalry_spearman_merc_b`
   - Capture — strength 1.75 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Spear" — damage 6.6 hack + 6.05 pierce — range 4 m — prepare 0.625 s — repeat 1.25 s — bonus 1.75× vs Cavalry — preferred Unit+!Ship
   - cost 20 food, 90 metal
   - build time 10.5 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town

@@ -75,8 +75,14 @@ These civilisations override the generic stats above (only differing values are 
 - **cart** — `units/cart/cavalry_javelineer_b`
   - walk 17.82 m/s
   - run 24.95 m/s
+- **kush** — `units/kush/cavalry_javelineer_b`
+  - requires phase_village
 - **mace** — `units/mace/cavalry_javelineer_b`
   - Capture — strength 1.75 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Javelin" — damage 19.8 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 20 food, 90 metal
   - build time 10.5 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
+- **rome** — `units/rome/cavalry_javelineer_b`
+  - requires phase_town

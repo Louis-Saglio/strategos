@@ -73,8 +73,20 @@ These civilisations override the generic stats above (only differing values are 
   - Ranged "Javelin" — damage 17.6 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
+- **brit** — `units/brit/infantry_javelineer_b`
+  - requires phase_town
+- **germ** — `units/germ/infantry_javelineer_b`
+  - requires phase_town
+- **pers** — `units/pers/infantry_javelineer_b`
+  - requires phase_town
 - **ptol** — `units/ptol/infantry_javelineer_b`
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Javelin" — damage 17.6 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
+- **sele** — `units/sele/infantry_javelineer_b`
+  - requires phase_village

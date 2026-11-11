@@ -12,4 +12,5 @@ One file per technology that **only the persians** can get (single-civ techs of 
 | [immortals](immortals) | researchable |
 | [phase_city_pers](phase_city_pers) | phase |
 | [phase_town_pers](phase_town_pers) | phase |
+| [ship_movement_speed](ship_movement_speed.md) | researchable |
 | [subterranean_aqueducts](subterranean_aqueducts) | researchable |

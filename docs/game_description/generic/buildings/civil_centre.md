@@ -13,7 +13,8 @@ The Civil Centre is the faction's core structure: it is a territory root (140 m 
 - **Generic name:** Civic Center
 - **Health:** 3000 HP
 - **Armor:** 29 hack / 35 pierce / 3 crush
-- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 4 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 4 s — spread 2 — preferred Human
+- **Attack:** Arrows — default 6 arrow(s), +1 per garrisoned Soldier, max ∞
 - **Cost:** 300 wood, 300 stone, 250 metal
 - **Build time:** 500 s
 - **Population bonus:** +20

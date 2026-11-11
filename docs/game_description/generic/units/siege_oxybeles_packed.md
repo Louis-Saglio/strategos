@@ -13,7 +13,7 @@ The Bolt Shooter is the mobile anti-personnel artillery piece, trained at the ar
 - **Generic name:** Bolt Shooter
 - **Health:** 200 HP
 - **Armor:** 6 hack / 25 pierce / 5 crush
-- **Attack:** Ranged "Bolt" — damage 240 pierce — range 80 m — prepare 2 s — repeat 6 s — preferred Human
+- **Attack:** Ranged "Bolt" — damage 240 pierce — range 80 m — min range 15 m — prepare 2 s — repeat 6 s — spread 1 — splash Linear 9 m 80 pierce — preferred Human
 - **Speed:** walk 6.75 m/s, run 6.75 m/s
 - **Vision:** 100 m
 - **Cost:** 250 wood, 250 metal
@@ -28,3 +28,10 @@ The Bolt Shooter is the mobile anti-personnel artillery piece, trained at the ar
 - **cart** — `units/cart/siege_oxybeles_packed` (arsenal)
 - **mace** — `units/mace/siege_oxybeles_packed` (arsenal)
 - **spart** — `units/spart/siege_oxybeles_packed` (arsenal)
+
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **mace** — `units/mace/siege_oxybeles_packed`
+  - requires phase_town
+

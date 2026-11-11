@@ -69,13 +69,23 @@ These civilisations override the generic stats above (only differing values are 
   - Ranged "Bow" — damage 7.92 pierce — range 60 m — prepare 0.8 s — repeat 1.25 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
+- **han** — `units/han/infantry_archer_b`
+  - requires phase_town
+- **kush** — `units/kush/infantry_archer_b`
+  - requires phase_village
 - **mace** — `units/mace/infantry_archer_b`
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Bow" — damage 7.92 pierce — range 60 m — prepare 0.8 s — repeat 1.25 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
 - **ptol** — `units/ptol/infantry_archer_b`
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Bow" — damage 7.92 pierce — range 60 m — prepare 0.8 s — repeat 1.25 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)

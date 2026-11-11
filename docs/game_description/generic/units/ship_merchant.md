@@ -38,3 +38,10 @@ The Merchantman is the economic ship of the game: it trades between docks to gen
 - **rome** — `units/rome/ship_merchant` (dock)
 - **sele** — `units/sele/ship_merchant` (dock)
 - **spart** — `units/spart/ship_merchant` (dock)
+
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **cart** — `units/cart/ship_merchant`
+  - requires phase_village
+

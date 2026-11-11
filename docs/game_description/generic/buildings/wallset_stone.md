@@ -1,6 +1,6 @@
 # wallset_stone
 
-Buildable by **15** civilisations. Generic (non-civ-specific) building of 0 A.D. 0.28.0 — see `docs/game_description/generic/buildings/README.md` for the method.
+Buildable by **14** civilisations (not spart: every Spartan builder list removes `structures/{civ}/wallset_stone`). Generic (non-civ-specific) building of 0 A.D. 0.28.0 — see `docs/game_description/generic/buildings/README.md` for the method.
 
 Generic stats resolved from the shared template `simulation/templates/template_wallset` (deepest template common to all civilisation variants; variants may override, see below).
 
@@ -32,7 +32,6 @@ The Wall set is a defensive structure: it lets you enclose your base or critical
 - **ptol** — `structures/ptol/wallset_stone`
 - **rome** — `structures/rome/wallset_stone`
 - **sele** — `structures/sele/wallset_stone`
-- **spart** — `structures/spart/wallset_stone`
 
 ## Wall segment sizes
 
@@ -52,6 +51,6 @@ The wall tool places five segment types from per-civilisation templates (`struct
 - **ptol** — short 16×6 (h 10.8), medium 26×6 (h 10.8), long 39×6 (h 10.8), tower 10×10 (h 16), gate 40×12 (h 17.8)
 - **rome** — short 13×9 (h 9.9), medium 25×9 (h 9.9), long 37×9 (h 9.9), tower 11×11 (h 20), gate 37×7 (h 11.9)
 - **sele** — short 12×6 (h 11.4), medium 22×6 (h 11.4), long 35×6 (h 11.4), tower 8×8 (h 19), gate 35×8 (h 11.6)
-- **spart** — short 13×6 (h 12.5), medium 25×6 (h 12.5), long 37×6 (h 12.5), tower 8×8 (h 19), gate 37×7 (h 15.5)
+- **spart** (template only — not buildable) — short 13×6 (h 12.5), medium 25×6 (h 12.5), long 37×6 (h 12.5), tower 8×8 (h 19), gate 37×7 (h 15.5)
 
 Each segment's obstruction is a single Static block 1 m smaller per side than the footprint; gates use two side obstructions with a passable gap in the middle.

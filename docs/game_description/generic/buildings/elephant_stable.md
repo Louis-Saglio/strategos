@@ -36,3 +36,10 @@ The Elephant Stable is the City-phase production building for elephant units: it
 - **pers** — `structures/pers/elephant_stable`
 - **ptol** — `structures/ptol/elephant_stable`
 - **sele** — `structures/sele/elephant_stable`
+
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **maur** — `structures/maur/elephant_stable`
+  - requires phase_town
+

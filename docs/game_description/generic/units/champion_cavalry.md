@@ -45,6 +45,7 @@ These civilisations override the generic stats above (only differing values are 
   - Capture — strength 3.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Spear" — damage 12 hack + 10 pierce — range 4 m — prepare 0.5 s — repeat 1.25 s — bonus 1.75× vs Cavalry — preferred Unit+!Ship
   - build time 18.75 s
+  - requires phase_city
 - **gaul** — `units/gaul/champion_cavalry`
   - health 260 HP
   - armor 5 hack / 6 pierce / 20 crush
@@ -56,6 +57,7 @@ These civilisations override the generic stats above (only differing values are 
   - Capture — strength 3.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Sword" — damage 18 hack — range 4 m — prepare 0.375 s — repeat 0.75 s — preferred Unit+!Ship
   - build time 18.75 s
+  - requires phase_city
 - **iber** — `units/iber/champion_cavalry`
   - armor 3 hack / 3 pierce / 20 crush
   - Capture — strength 3.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall

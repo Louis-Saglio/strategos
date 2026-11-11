@@ -43,7 +43,7 @@ xp gained = (HP healed / healed target's max HP) × healed target's Loot/xp
 
 ### Trickle
 
-If `TrickleRate` is set, a 1-second interval timer adds that much XP per second (`Promotion.js:101-130`). No 0.28 template sets `TrickleRate` (verified by grep over `binaries/data/mods/public/simulation/templates/`), so in practice this is always 0 and no timer runs.
+`TrickleRate` is passive XP per second: `ComputeTrickleRate` applies value modifications to the template value (0 when absent), and a non-zero result starts a 1-second interval timer that adds that much XP (`Promotion.js:101-130`, recomputed on `OnValueModification`). No 0.28 template sets `TrickleRate` itself, but the `structures/xp_trickle` aura ("Rigorous Training", type `garrisonedUnits`, `Promotion/TrickleRate` +1, see [`generic/auras/structures__xp_trickle.md`](../generic/auras/structures__xp_trickle.md)) does: units garrisoned in a building carrying it gain **+1 XP per second** while inside.
 
 ## Promotion trigger
 

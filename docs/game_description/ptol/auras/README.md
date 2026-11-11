@@ -6,6 +6,7 @@ One file per aura that **only the ptolemies** can have (single-civ auras of the 
 
 | Name | Type |
 |---|---|
+| [structures/library](structures__library.md) | global |
 | [teambonuses/ptol_player_teambonus](teambonuses__ptol_player_teambonus) | player |
 | [units/heroes/ptol_hero_cleopatra_vii_1](units__heroes__ptol_hero_cleopatra_vii_1) | range |
 | [units/heroes/ptol_hero_cleopatra_vii_2](units__heroes__ptol_hero_cleopatra_vii_2) | range |

@@ -34,6 +34,17 @@ The Swordsman is a basic citizen-soldier melee unit: an affordable front-line fi
 - **maur** — `units/maur/infantry_swordsman_b` (barracks)
 - **rome** — `units/rome/infantry_swordsman_b` (barracks, civil_centre)
 
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **germ** — `units/germ/infantry_swordsman_b`
+  - requires phase_town
+- **kush** — `units/kush/infantry_swordsman_b`
+  - requires phase_town
+- **maur** — `units/maur/infantry_swordsman_b`
+  - requires phase_town
+
+
 ## Ranks
 
 ### Advanced — `units/{civ}/infantry_swordsman_a`

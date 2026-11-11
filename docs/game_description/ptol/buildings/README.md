@@ -6,6 +6,7 @@ One file per building that **only the ptolemies** can build (single-civ structur
 
 | Name | Type |
 |---|---|
+| [library](library.md) | building |
 | [lighthouse](lighthouse) | building |
 | [mercenary_camp](mercenary_camp) | building |
 | [temple_2](temple_2) | building |

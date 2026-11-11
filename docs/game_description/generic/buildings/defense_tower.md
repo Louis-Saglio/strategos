@@ -13,7 +13,8 @@ The defense tower is a static defensive structure: it automatically fires on ene
 - **Generic name:** Stone Tower
 - **Health:** 1000 HP
 - **Armor:** 29 hack / 35 pierce / 3 crush
-- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 3.5 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — min range 10 m — prepare 0.4 s — repeat 3.5 s — spread 1 — preferred Human
+- **Attack:** Arrows — default 4 arrow(s), +1 per garrisoned Infantry, max ∞
 - **Cost:** 100 wood, 100 stone
 - **Build time:** 150 s
 - **Territory influence:** radius 32 m, weight 30000

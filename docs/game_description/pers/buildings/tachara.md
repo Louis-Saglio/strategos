@@ -44,12 +44,11 @@ trickle rate and the icon; everything else is inherited.
 - **Visible classes:** City Palace
 - **Footprint:** Square 32 m × 32 m (height 8 m)
 - **Obstruction:** Static 30 m × 30 m
-- **Upgrade TributeFood:** entity=structures/pers/tachara_food cost=None time=10
-- **Upgrade TributeWood:** entity=structures/pers/tachara_wood cost=None time=10
-- **Upgrade TributeStone:** entity=structures/pers/tachara_stone cost=None time=10
-- **Upgrade TributeMetal:** entity=structures/pers/tachara_metal cost=None time=10
-- **Resource trickle:** 0 food, 0 wood, 0 stone, 0 metal per 2000 ms
 - **Auras:** structures/satrapy_tribute
+- **Upgrade:** TributeFood → `structures/pers/tachara_food` (free, 10 s)
+- **Upgrade:** TributeWood → `structures/pers/tachara_wood` (free, 10 s)
+- **Upgrade:** TributeStone → `structures/pers/tachara_stone` (free, 10 s)
+- **Upgrade:** TributeMetal → `structures/pers/tachara_metal` (free, 10 s)
 
 ## Built by
 

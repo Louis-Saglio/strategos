@@ -13,5 +13,9 @@ One file per building that **only the persians** can build (single-civ structure
 | [ice_house](ice_house) | building |
 | [inn](inn) | building |
 | [tachara](tachara) | building |
+| [tachara_food](tachara_food.md) | building |
+| [tachara_metal](tachara_metal.md) | building |
+| [tachara_stone](tachara_stone.md) | building |
+| [tachara_wood](tachara_wood.md) | building |
 | [tower_babylon](tower_babylon) | building |
 | [warehouse](warehouse) | building |

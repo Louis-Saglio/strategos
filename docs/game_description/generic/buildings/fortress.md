@@ -13,7 +13,8 @@ The Fortress is the city-phase (phase_city) heavy military structure: a premium 
 - **Generic name:** Fortress
 - **Health:** 5200 HP
 - **Armor:** 24 hack / 35 pierce / 3 crush
-- **Attack:** Ranged "Bow" — damage 10 pierce — range 60 m — prepare 0.4 s — repeat 3.5 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 10 pierce — range 60 m — min range 10 m — prepare 0.4 s — repeat 3.5 s — spread 1.25 — preferred Human
+- **Attack:** Arrows — default 10 arrow(s), +1 per garrisoned Soldier, max ∞
 - **Cost:** 300 wood, 600 stone
 - **Build time:** 450 s
 - **Territory influence:** radius 80 m, weight 40000

@@ -46,9 +46,20 @@ Requires 3000 XP.
 
 These civilisations override the generic stats above (only differing values are listed):
 
+- **brit** — `units/brit/champion_infantry_swordsman`
+  - requires unlock_champion_infantry
+- **gaul** — `units/gaul/champion_infantry_swordsman`
+  - requires unlock_champion_infantry
+- **iber** — `units/iber/champion_infantry_swordsman`
+  - requires unlock_champion_infantry
 - **mace** — `units/mace/champion_infantry_swordsman`
   - Capture — strength 5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Rhomphaia" — damage 10 hack — range 5 m — prepare 0.5 s — repeat 1 s — preferred Unit+!Ship
+  - requires unlock_champion_infantry
+- **rome** — `units/rome/champion_infantry_swordsman`
+  - requires unlock_champion_infantry
+- **sele** — `units/sele/champion_infantry_swordsman`
+  - requires reformed_army_sele
 - **spart** — `units/spart/champion_infantry_swordsman`
   - health 100 HP
   - armor 5 hack / 5 pierce / 15 crush
@@ -58,3 +69,6 @@ These civilisations override the generic stats above (only differing values are 
   - build time 10 s
   - rates: food: fruit 0.5, grain 0.25, meat 1; wood: tree 0.75, ruins 5; stone: rock 0.5, ruins 2; metal: ore 0.5, ruins 2 /s
   - capacity: 10 food, 10 wood, 10 stone, 10 metal
+  - requires phase_town
+  - gather rates: food: fruit 0.5, grain 0.25, meat 1; wood: tree 0.75, ruins 5; stone: rock 0.5, ruins 2; metal: ore 0.5, ruins 2 /s
+  - gather capacity: 10 food, 10 wood, 10 stone, 10 metal

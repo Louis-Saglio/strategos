@@ -64,9 +64,11 @@ These civilisations override the generic stats above (only differing values are 
   - cost 60 metal
   - build time 7 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town
 - **sele** — `units/sele/infantry_swordsman_merc_b`
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Rhomphaia" — damage 8.8 hack — range 3 m — prepare 0.375 s — repeat 0.75 s — preferred Unit+!Ship
   - cost 60 metal
   - build time 7 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town

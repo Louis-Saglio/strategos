@@ -13,7 +13,8 @@ The Sentry Tower is a cheap early-game defensive structure, available from the V
 - **Generic name:** Sentry Tower
 - **Health:** 400 HP
 - **Armor:** 29 hack / 35 pierce / 3 crush
-- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 3.5 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — min range 10 m — prepare 0.4 s — repeat 3.5 s — spread 1 — preferred Human
+- **Attack:** Arrows — default 2 arrow(s), +1 per garrisoned Infantry, max 6
 - **Cost:** 100 wood
 - **Build time:** 40 s
 - **Territory influence:** radius 16 m, weight 30000

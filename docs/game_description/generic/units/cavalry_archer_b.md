@@ -33,6 +33,19 @@ A fast mounted archer for hit-and-run combat: its 60 m ranged bow attack (7.5 pi
 - **ptol** — `units/ptol/cavalry_archer_b` (civil_centre, stable)
 - **sele** — `units/sele/cavalry_archer_b` (stable)
 
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **han** — `units/han/cavalry_archer_b`
+  - requires phase_town
+- **pers** — `units/pers/cavalry_archer_b`
+  - requires phase_town
+- **ptol** — `units/ptol/cavalry_archer_b`
+  - requires phase_village
+- **sele** — `units/sele/cavalry_archer_b`
+  - requires phase_town
+
+
 ## Ranks
 
 ### Advanced — `units/{civ}/cavalry_archer_a`

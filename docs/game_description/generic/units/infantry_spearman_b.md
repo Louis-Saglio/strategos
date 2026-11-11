@@ -42,6 +42,17 @@ The Spearman is the basic melee infantry of most civilisations: 13 of 15 train i
 - **sele** — `units/sele/infantry_spearman_b` (barracks, civil_centre)
 - **spart** — `units/spart/infantry_spearman_b` (barracks, civil_centre)
 
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **iber** — `units/iber/infantry_spearman_b`
+  - requires phase_town
+- **kush** — `units/kush/infantry_spearman_b`
+  - requires phase_village
+- **rome** — `units/rome/infantry_spearman_b`
+  - requires phase_town
+
+
 ## Ranks
 
 ### Advanced — `units/{civ}/infantry_spearman_a`

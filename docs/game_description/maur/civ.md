@@ -57,6 +57,16 @@ Chanakya into a tech lead.
 
 ## Civ bonuses (things a generic civ does not have)
 
+- **Auto-researched civ bonus techs** (`data/technologies/civbonuses/`,
+  `autoResearch: true`, gated `{"civ": "maur"}`; see
+  [`technologies/`](technologies/)):
+  - `maur_elephants` — **Elephants (not heroes) −30% training time**
+    (`Cost/BuildTime` ×0.7, affects `Elephant !Hero`): worker elephants,
+    elephant archers and champion elephants all train faster.
+  - `maur_population` — **+10% maximum population** (`Player/MaxPopulation`
+    ×1.1).
+  - `maur_walls` ("Wooden Walls") — **city walls −20% build time and −20%
+    health** (`Cost/BuildTime` ×0.8, `Health/Max` ×0.8, affects `Wall`).
 - **Team bonus — "Ashoka's Religious Support"**
   (`data/auras/teambonuses/maur_player_teambonus.json`, attached by
   `special/players/maur.xml`): **Temples −50% resource costs and build
@@ -73,8 +83,8 @@ Chanakya into a tech lead.
 - **The Ahimsa / Wicker Baskets pair** (`gather_ahimsa`,
   `gather_wicker_baskets_maur`): the village-phase food choice — see
   Technologies.
-- `civs/maur.json` declares **no `CivBonuses`** — every Mauryan
-  difference is template-, tech- or map-level.
+- `civs/maur.json` declares **no `CivBonuses`** (that list is display
+  text); the gameplay bonuses are the auto-researched techs above.
 
 ## Starting entities
 

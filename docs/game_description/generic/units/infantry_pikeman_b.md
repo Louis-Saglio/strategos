@@ -64,3 +64,6 @@ These civilisations override the generic stats above (only differing values are 
   - armor 3 hack / 3 pierce / 15 crush
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Ji" — damage 10 hack + 3.5 pierce — range 8 m — prepare 1 s — repeat 2 s — bonus 2.5× vs Cavalry — preferred Human
+  - requires phase_town
+- **kush** — `units/kush/infantry_pikeman_b`
+  - requires phase_town

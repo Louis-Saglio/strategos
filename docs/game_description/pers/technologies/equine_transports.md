@@ -10,7 +10,7 @@ Data file: `simulation/data/technologies/equine_transports.json`.
 - **Cost:** 300 wood, 300 metal
 - **Research time:** 60 s
 - **Requirements:** `{"all": [{"tech": "phase_city"},{"tech": "dock_efficiency"},{"civ": "pers"}]}` — Unlocked in City Phase. Requires "Shipwrights."
-- **Effect:** Persian Triremes gain the ability to train Cavalry.
+- **Effect:** Phoenician Triremes gain the ability to train Cavalry.
 
 ## Persian
 

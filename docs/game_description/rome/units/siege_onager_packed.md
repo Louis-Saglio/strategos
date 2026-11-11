@@ -13,7 +13,7 @@ The Roman siege catapult (onager) is the late-game building destroyer: 40 crush 
 - **Generic name:** Siege Catapult
 - **Health:** 250 HP
 - **Armor:** 6 hack / 25 pierce / 5 crush
-- **Attack:** Ranged "Stone" — damage 40 crush — range 60 m — prepare 1 s — repeat 5 s
+- **Attack:** Ranged "Stone" — damage 40 crush — range 60 m — min range 20 m — prepare 1 s — repeat 5 s — spread 2 — splash Circular 4 m 160 crush
 - **Speed:** walk 7.2 m/s, run 7.2 m/s
 - **Vision:** 95 m
 - **Cost:** 300 wood, 150 stone

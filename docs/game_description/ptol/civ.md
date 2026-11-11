@@ -45,8 +45,8 @@ unique gate: the second civic centre requires the Town phase **and a live
 hero**, so the Temple of Isis (City phase, trains all three heroes and
 offers the two cults) is the true economic milestone. Around the map, the
 lighthouse (325 m vision, placeable on any shoreline) and the library
-(−15% tech costs, shared with mace and sele) — buildable only by women
-and mercenary infantry — give the Ptolemies the best map awareness and
+(−15% tech costs, ptol-only) — buildable by women and infantry, not by
+cavalry — give the Ptolemies the best map awareness and
 cheapest research in the game.
 
 The army's other edge is artillery: the **Polybolos**, a rapid-fire bolt
@@ -124,13 +124,15 @@ the Nile to out-build everyone else.
   but **no builder lists it**, so it is unreachable through the build UI,
   and it is redundant anyway: the military colony trains the same four
   mercenaries.
-- **Special buildings built only by women and mercenary infantry**: the
+- **Special buildings built only by women and infantry**: the
   lighthouse, the library and the Temple of Isis are in the `Builder`
-  lists of `support_civilian`, `infantry_spearman_merc_b` and
-  `infantry_swordsman_merc_b` — **no other unit can build them**. Walking
-  a woman or a mercenary to the site is mandatory.
-- **The library** (`structures/ptol/library`, shared with mace and sele,
-  not in the generic docs): 200 stone + 200 metal, 200 s, City phase;
+  lists of `support_civilian` (and the house-trained civilian),
+  `infantry_pikeman_b`, `infantry_slinger_b`, `infantry_archer_b`,
+  `infantry_javelineer_b`, `infantry_spearman_merc_b` and
+  `infantry_swordsman_merc_b` — **cavalry cannot build them**.
+- **The library** (`structures/ptol/library`, ptol-only: `structures/mace/library`
+  and `structures/sele/library` exist but no mace or sele builder lists
+  them; see [`buildings/library.md`](buildings/library.md)): 200 stone + 200 metal, 200 s, City phase;
   2000 HP, 29 × 34 m, max **1 per player** (`Library` limit). No trainer
   or researcher — its value is the global "Center of Scholarship" aura:
   **own structures −15% technology resource costs and research time**.
@@ -257,7 +259,7 @@ of **1 hero alive at a time** — which also gates the second civic centre
 | `units/heroes/ptol_hero_cleopatra_vii_1` | Cleopatra VII | own soldiers + siege within 60 m: −20% melee and ranged attack repeat time |
 | `units/heroes/ptol_hero_cleopatra_vii_2` | Cleopatra VII | allied (not own) heroes within 30 m: +10% health |
 | `units/heroes/ptol_hero_cleopatra_vii_3` | Cleopatra VII | enemy heroes within 30 m: −10% health |
-| `structures/library` | Library (shared mace/ptol/sele) | global: own structures −15% tech costs and research time |
+| `structures/library` | Library (ptol-only) | global: own structures −15% tech costs and research time |
 
 ## Stat deltas on otherwise shared content
 

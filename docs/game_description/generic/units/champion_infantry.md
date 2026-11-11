@@ -43,3 +43,4 @@ These civilisations override the generic stats above (only differing values are 
   - Capture — strength 5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Melee "Spear" — damage 8.5 hack + 7.225 pierce — range 4 m — prepare 0.5 s — repeat 1 s — bonus 2.5× vs Cavalry — preferred Unit+!Ship
   - cost 50 food, 30 wood, 50 metal
+  - requires unlock_champion_infantry

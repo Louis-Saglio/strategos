@@ -10,7 +10,7 @@ Data file: `simulation/data/technologies/krypteia.json`.
 - **Cost:** 200 food, 200 metal
 - **Research time:** 50 s
 - **Requirements:** `{"all": [{"tech": "phase_town"}, {"civ": "spart"}]}`
-- **Effect:** Champions +10% melee attack damage, but Citizen Infantry Javelineers +30% training time.
+- **Effect:** Champion Hoplites +10% melee attack damage, but Citizen Infantry Javelineers +30% training time.
 - **Modifications:**
   - ×1.1 Attack/Melee/Damage/Hack (Champion)
   - ×1.1 Attack/Melee/Damage/Pierce (Champion)

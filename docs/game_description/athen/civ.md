@@ -67,6 +67,10 @@ metal keeps flowing for its mercenary archers.
   research time and −30% resource cost** for every ally (`MutualAlly`,
   athen included) — applied via `Researcher/TechCostMultiplier` on the
   `CivilCentre` class.
+- **"Delian League"** (`data/technologies/civbonuses/delian_league.json`,
+  auto-researched, gated to athen; see
+  [`technologies/civbonuses__delian_league.md`](technologies/civbonuses__delian_league.md)):
+  **ships −25% construction time** (`Cost/BuildTime` ×0.75, affects `Ship`).
 - **"Silver Owls"** (the athen phase techs `phase_town_athen` /
   `phase_city_athen`): **Workers +10% metal gather rate per phase**
   (`ResourceGatherer/Rates/metal.ore` ×1.1 at Town, again at City —

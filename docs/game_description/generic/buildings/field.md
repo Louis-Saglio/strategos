@@ -49,4 +49,5 @@ These civilisations override the generic stats above (only differing values are 
 - **han** — `structures/han/field`
   - cost 60 wood
   - build time 30 s
+  - max 3 gatherers (`ResourceSupply/MaxGatherers`; 5 for every other civ)
   - footprint Square 22 m × 22 m

@@ -48,17 +48,21 @@ These civilisations override the generic stats above (only differing values are 
   - health 1200 HP
   - walk 12.6 m/s
   - run 21.04 m/s
+  - garrison 40 slots
 - **gaul** — `units/gaul/ship_arrow`
   - health 1200 HP
   - walk 12.6 m/s
   - run 21.04 m/s
+  - garrison 40 slots
 - **iber** — `units/iber/ship_arrow`
   - health 1200 HP
   - walk 12.6 m/s
   - run 21.04 m/s
   - build time 40 s
+  - garrison 40 slots
 - **maur** — `units/maur/ship_arrow`
   - health 1200 HP
   - walk 12.6 m/s
   - run 21.04 m/s
   - build time 40 s
+  - garrison 40 slots

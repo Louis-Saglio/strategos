@@ -63,8 +63,16 @@ Requires 100 XP.
 
 These civilisations override the generic stats above (only differing values are listed):
 
+- **gaul** — `units/gaul/infantry_slinger_b`
+  - requires phase_town
+- **iber** — `units/iber/infantry_slinger_b`
+  - requires phase_town
 - **mace** — `units/mace/infantry_slinger_b`
   - Capture — strength 2.5 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Sling" — damage 12.65 pierce + 1.21 crush — range 45 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 60 metal
   - build time 7 s
+  - requires phase_town
+  - no gathering (no `ResourceGatherer`)
+- **ptol** — `units/ptol/infantry_slinger_b`
+  - requires phase_village

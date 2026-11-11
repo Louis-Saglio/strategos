@@ -7,6 +7,7 @@ One file per technology that **only the athenians** can get (single-civ techs of
 | Name | Type |
 |---|---|
 | [arsenal_philon](arsenal_philon) | researchable |
+| [civbonuses/delian_league](civbonuses__delian_league.md) | auto-researched |
 | [iphicratean_reforms](iphicratean_reforms) | researchable (gate) |
 | [long_walls](long_walls) | researchable |
 | [ostracism](ostracism) | researchable |

@@ -13,7 +13,8 @@ Mobile siege platform for the late-game assault: it garrisons up to 20 units (In
 - **Generic name:** Siege Tower
 - **Health:** 500 HP
 - **Armor:** 6 hack / 50 pierce / 5 crush
-- **Attack:** Ranged "Bow" — damage 10 pierce + 2.5 crush — range 55 m — prepare 1.2 s — repeat 2.5 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 10 pierce + 2.5 crush — range 55 m — prepare 1.2 s — repeat 2.5 s — spread 2 — preferred Human
+- **Attack:** Arrows — default 0 arrow(s), +1 per garrisoned Infantry, max 10
 - **Speed:** walk 6.3 m/s, run 6.3 m/s
 - **Vision:** 80 m
 - **Cost:** 500 wood, 300 metal

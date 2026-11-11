@@ -13,7 +13,7 @@ The Fire Ship is a cheap naval counter unit: train it at the dock once the Town 
 - **Generic name:** Fire Ship
 - **Health:** 800 HP
 - **Armor:** 5 hack / 1 pierce / 3 crush
-- **Attack:** Melee "Flames" — range 15 m — prepare 0.1 s — repeat 0.8 s — bonus 3× vs Ship Building — preferred Ship
+- **Attack:** Melee "Flames" — range 15 m — prepare 0.1 s — repeat 0.8 s — bonus 3× vs Ship Building — preferred Ship — status Burning
 - **Speed:** walk 16 m/s, run 26.72 m/s
 - **Vision:** 80 m
 - **Cost:** 100 wood, 50 metal

@@ -6,6 +6,9 @@ One file per technology that **only the mauryas** can get (single-civ techs of t
 
 | Name | Type |
 |---|---|
+| [civbonuses/maur_elephants](civbonuses__maur_elephants.md) | auto-researched |
+| [civbonuses/maur_population](civbonuses__maur_population.md) | auto-researched |
+| [civbonuses/maur_walls](civbonuses__maur_walls.md) | auto-researched |
 | [gather_ahimsa](gather_ahimsa) | researchable |
 | [gather_wicker_baskets_maur](gather_wicker_baskets_maur) | researchable |
 | [pair_gather_food_maur](pair_gather_food_maur) | pair |

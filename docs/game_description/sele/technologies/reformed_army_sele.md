@@ -9,7 +9,7 @@ Data file: `simulation/data/technologies/reformed_army_sele.json`.
 - **Name:** Reform Army
 - **Cost:** none (free, instant)
 - **Requirements:** `{"all": [{"tech": "phase_city"}, {"civ": "sele"}]}`
-- **Effect:** Unlocks the Champion Infantry Swordsman at the barracks.
+- **Effect:** Unlock the Champion Infantry Swordsman.
 - **Modifications:** none — the unlock is a training requirement on the unit: `units/sele/champion_infantry_swordsman` has `Identity/Requirements/Techs = reformed_army_sele`.
 
 ## Seleucids

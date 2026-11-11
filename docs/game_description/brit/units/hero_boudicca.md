@@ -27,7 +27,7 @@ templates of her (`hero_boudicca_sword`,
 - **Armor:** 6 hack / 8 pierce / 25 crush
 - **Attack:** Capture — strength 10 — range 4 m — repeat 1 s — restricted Field Palisade Wall
 - **Attack:** Ranged "Javelin" — damage 60 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
-- **Speed:** walk 17.82 m/s, run 24.95 m/s
+- **Speed:** walk 18 m/s, run 25.2 m/s
 - **Vision:** 100 m
 - **Cost:** 360 food, 250 wood, 300 metal
 - **Build time:** 60 s

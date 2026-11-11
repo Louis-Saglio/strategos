@@ -13,7 +13,8 @@ The Military Colony is a compact expansion structure for the Ptolemaic and Seleu
 - **Generic name:** Military Colony
 - **Health:** 2000 HP
 - **Armor:** 29 hack / 35 pierce / 3 crush
-- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 4 s — preferred Human
+- **Attack:** Ranged "Bow" — damage 8 pierce — range 60 m — prepare 0.4 s — repeat 4 s — spread 2 — preferred Human
+- **Attack:** Arrows — default 1 arrow(s), +1 per garrisoned Soldier, max ∞
 - **Cost:** 200 wood, 200 stone, 150 metal
 - **Build time:** 300 s
 - **Population bonus:** +20

@@ -235,7 +235,8 @@ transport fleet.
   civ-gated techs (`exploration`, `hellenistic_metropolis`,
   `hoplite_tradition`, `roman_reforms`, etc.).
 - **Restricted techs pers DOES get**: `archery_tradition` (kush + maur +
-  pers, archers +10 range), `ship_movement_speed` (cart + pers, Town
+  pers, archers +10 range), `ship_movement_speed` (pers only in practice:
+  cart's dock removes it, see [`technologies/ship_movement_speed.md`](technologies/ship_movement_speed.md); Town
   phase), `unlock_champion_chariots` (brit + maur + pers + sele),
   `nisean_horses` (pers + sele — Champion Cavalry Spearmen +10% health,
   +10% train time; see [`generic/technologies/nisean_horses.md`](../generic/technologies/nisean_horses.md)).

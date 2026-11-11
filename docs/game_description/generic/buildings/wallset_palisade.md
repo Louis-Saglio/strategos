@@ -13,7 +13,7 @@ The palisade is the cheap, early-game way to wall off a town: the civilisation v
 ## Basic stats
 
 - **Generic name:** Wall
-- **Requirements:** phase_town
+- **Requirements:** phase_village (every civilisation variant; only the stone wall set needs phase_town)
 - **Visible classes:** Wall
 - **Footprint (segments):** short Square 5 × 3 (h 6), medium Square 10 × 3 (h 6), long Square 15 × 3 (h 6), tower Square 5 × 5 (h 8), gate Square 15 × 3 (h 7) — identical for all 15 civilisations (han uses its own templates with the same sizes)
 - **Obstruction (segments):** one Static block per segment, 1 m smaller per side (short 4 × 2, medium 9 × 2, long 14 × 2, tower 4 × 4); the gate is two 2 × 2 side blocks plus a 10 × 2 door in the middle

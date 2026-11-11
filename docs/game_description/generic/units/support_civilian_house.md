@@ -20,6 +20,7 @@ A cheap economic worker costing only 50 food — an abundant resource, so easy t
 - **Cost:** 50 food
 - **Build time:** 8 s
 - **Population:** 1
+- **Requirements:** unlock_civilians_house_generic (kush: unlock_civilians_house_kush)
 - **Gather:** rates: food: fruit 1, grain 0.5, meat 1; wood: tree 0.7, ruins 5; stone: rock 0.35, ruins 2; metal: ore 0.35, ruins 2 /s
 - **Gather:** capacity: 10 food, 10 wood, 10 stone, 10 metal
 - **Classes:** Unit Organic ConquestCritical Human

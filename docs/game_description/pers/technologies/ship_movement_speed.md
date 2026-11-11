@@ -1,6 +1,6 @@
 # ship_movement_speed
 
-Available to **2** civilisations. Generic (non-civ-specific) technology of 0 A.D. 0.28.0 — see `docs/game_description/generic/technologies/README.md` for the method.
+Persian-specific technology of 0 A.D. 0.28.0 — only the persians can get it. See `docs/game_description/pers/technologies/README.md` for the method; shared technologies are documented in `docs/game_description/generic/technologies/`.
 
 Data file: `simulation/data/technologies/ship_movement_speed.json`.
 
@@ -16,11 +16,6 @@ Data file: `simulation/data/technologies/ship_movement_speed.json`.
   - ×1.1 UnitMotion/WalkSpeed
 - **Affects:** Ship
 
-## Civilisations
+## Persian
 
-- **cart** — dock
-- **pers** — dock
-
-## Notes
-
-- **athen**, **brit**, **gaul**, **germ**, **han**, **iber**, **kush**, **mace**, **maur**, **ptol**, **rome**, **sele**, **spart** cannot research this (forbidden by the tech's requirements)
+- dock

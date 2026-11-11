@@ -34,6 +34,19 @@ Fast melee cavalry trained at the stable (also at the civil centre for han) for 
 - **han** — `units/han/cavalry_swordsman_b` (civil_centre, stable)
 - **maur** — `units/maur/cavalry_swordsman_b` (stable)
 
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **athen** — `units/athen/cavalry_swordsman_b`
+  - requires phase_town
+- **brit** — `units/brit/cavalry_swordsman_b`
+  - requires phase_town
+- **gaul** — `units/gaul/cavalry_swordsman_b`
+  - requires phase_town
+- **maur** — `units/maur/cavalry_swordsman_b`
+  - requires phase_town
+
+
 ## Ranks
 
 ### Advanced — `units/{civ}/cavalry_swordsman_a`

@@ -13,7 +13,7 @@ A long-range anti-structure siege weapon: its 230 crush damage at 85 m range, wi
 - **Generic name:** Siege Catapult
 - **Health:** 375 HP
 - **Armor:** 6 hack / 25 pierce / 5 crush
-- **Attack:** Ranged "Stone" — damage 230 crush — range 85 m — prepare 3 s — repeat 7 s — preferred Structure
+- **Attack:** Ranged "Stone" — damage 230 crush — range 85 m — min range 26 m — prepare 3 s — repeat 7 s — spread 3 — splash Circular 1.5 m 120 crush — preferred Structure
 - **Speed:** walk 7.2 m/s, run 7.2 m/s
 - **Vision:** 120 m
 - **Cost:** 400 wood, 250 stone

@@ -43,7 +43,7 @@ a CC. It is the civ's answer to map-control on watery maps.
 - **Requirements:** phase_town
 - **Trains:** units/{native}/support_civilian units/{civ}/infantry_spearman_b units/{civ}/infantry_slinger_b units/{civ}/cavalry_javelineer_b units/{civ}/ship_fishing units/{civ}/ship_merchant units/{civ}/ship_scout units/{civ}/ship_arrow units/{civ}/ship_fire
 - **Train batch time:** ×0.8
-- **Researches:** phase_city_{civ} unlock_shared_los archery_tradition hoplite_tradition roman_roads unlock_spies spy_counter
+- **Researches:** phase_city_generic unlock_shared_los unlock_spies spy_counter
 - **Classes:** Structure ConquestCritical CivCentre CivSpecific
 - **Visible classes:** Civic Defensive CivilCentre Naval
 - **Footprint:** Circle r 17 m (height 8 m)

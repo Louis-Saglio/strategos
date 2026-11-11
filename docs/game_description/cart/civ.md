@@ -236,10 +236,11 @@ global limit of **1 hero alive at a time**.
   `ship_health`, `soldier_attack_melee_03_variant`,
   `unlock_champion_cavalry`, `unlock_champion_chariots`,
   `unlock_champion_infantry`, `warship_arrow_attack`,
-  `warship_fireship_attack`.
+  `warship_fireship_attack`, and `ship_movement_speed` (its requirements
+  allow cart, but `structures/cart/dock.xml` removes it from the dock's
+  list with `-ship_movement_speed` and the super dock does not offer it).
 - **Restricted techs cart DOES get**: `exploration` (only cart + han,
-  researched at the dock / super dock), `ship_movement_speed` (only cart +
-  pers, Town phase), `archer_attack_spread` (cart is not in the notciv
+  researched at the dock / super dock), `archer_attack_spread` (cart is not in the notciv
   list), `siege_bolt_accuracy`, `siege_pack_unpack` (its bolt shooters),
   `warship_health`, `warship_ramming_attack`, `warship_siege_attack`,
   `ship_capture_resistance`.

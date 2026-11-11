@@ -9,7 +9,7 @@ Data file: `simulation/data/technologies/traditional_army_sele.json`.
 - **Name:** Traditional Army
 - **Cost:** none (free, instant)
 - **Requirements:** `{"all": [{"tech": "phase_city"}, {"civ": "sele"}]}`
-- **Effect:** Unlocks the Champion Infantry Pikeman at the barracks.
+- **Effect:** Unlock the Champion Infantry Pikeman.
 - **Modifications:** none — the unlock is a training requirement on the unit: `units/sele/champion_infantry_pikeman` has `Identity/Requirements/Techs = traditional_army_sele`.
 
 ## Seleucids

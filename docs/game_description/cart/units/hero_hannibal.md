@@ -18,7 +18,7 @@ slow-moving siege engine against enemy buildings. He is metal-heavy (400 metal) 
 - **Generic name:** Hannibal Barca
 - **Health:** 1500 HP
 - **Armor:** 10 hack / 10 pierce / 25 crush
-- **Attack:** Melee "Trunk" — damage 60 hack + 90 crush — range 5 m — prepare 0.75 s — repeat 1.5 s — preferred !Ship
+- **Attack:** Melee "Trunk" — damage 60 hack + 90 crush — range 5 m — prepare 0.75 s — repeat 1.5 s — splash Circular 2 m 45 hack — preferred !Ship
 - **Speed:** walk 9 m/s, run 15.03 m/s
 - **Vision:** 100 m
 - **Cost:** 600 food, 400 metal

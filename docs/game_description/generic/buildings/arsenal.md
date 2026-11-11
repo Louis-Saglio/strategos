@@ -54,3 +54,6 @@ These civilisations override the generic stats above (only differing values are 
   - trains units/{civ}/siege_ram units/germ/siege_ram_covered
 - **han** — `structures/han/arsenal`
   - trains units/{civ}/siege_ram units/{civ}/siege_tower units/{civ}/siege_mangonel_packed
+- **mace** — `structures/mace/arsenal`
+  - requires phase_town
+  - visible classes Military Arsenal Town (a Town structure, so it counts toward the City phase requirement)

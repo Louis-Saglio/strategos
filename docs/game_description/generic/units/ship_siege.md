@@ -13,7 +13,7 @@ The Siege Ship is the navy's artillery piece: its 220 crush ranged attack at 80 
 - **Generic name:** Siege Ship
 - **Health:** 1600 HP
 - **Armor:** 2 hack / 5 pierce / 4 crush
-- **Attack:** Ranged "Stone" — damage 220 crush — range 80 m — prepare 2 s — repeat 4 s — preferred Ship Human Structure
+- **Attack:** Ranged "Stone" — damage 220 crush — range 80 m — prepare 2 s — repeat 4 s — spread 6 — splash Circular 4 m 100 crush — preferred Ship Human Structure
 - **Speed:** walk 12 m/s, run 20.04 m/s
 - **Vision:** 100 m
 - **Cost:** 200 wood, 200 metal

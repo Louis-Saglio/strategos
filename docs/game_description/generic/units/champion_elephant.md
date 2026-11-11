@@ -13,7 +13,7 @@ The War Elephant is a heavy champion melee unit trained at the elephant stable b
 - **Generic name:** War Elephant
 - **Health:** 1000 HP
 - **Armor:** 5 hack / 7 pierce / 20 crush
-- **Attack:** Melee "Trunk" — damage 30 hack + 45 crush — range 5 m — prepare 0.75 s — repeat 1.5 s — preferred Unit+!Ship
+- **Attack:** Melee "Trunk" — damage 30 hack + 45 crush — range 5 m — prepare 0.75 s — repeat 1.5 s — splash Circular 2.5 m 30 hack — preferred Unit+!Ship
 - **Speed:** walk 9 m/s, run 15.03 m/s
 - **Vision:** 100 m
 - **Cost:** 300 food, 200 metal

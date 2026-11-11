@@ -40,6 +40,7 @@ These civilisations override the generic stats above (only differing values are 
   - Ranged "Javelin" — damage 36 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 180 food, 100 wood, 120 metal
   - build time 30 s
+  - requires unlock_champion_chariots
 - **maur** — `units/maur/champion_chariot`
   - health 300 HP
   - armor 1 hack / 5 pierce / 20 crush
@@ -49,6 +50,7 @@ These civilisations override the generic stats above (only differing values are 
   - run 23.8 m/s
   - cost 180 food, 100 wood, 120 metal
   - build time 30 s
+  - requires unlock_champion_chariots
 - **pers** — `units/pers/champion_chariot`
   - health 300 HP
   - armor 1 hack / 5 pierce / 20 crush
@@ -58,6 +60,7 @@ These civilisations override the generic stats above (only differing values are 
   - run 23.8 m/s
   - cost 180 food, 100 wood, 120 metal
   - build time 30 s
+  - requires unlock_champion_chariots
 - **sele** — `units/sele/champion_chariot`
   - health 300 HP
   - armor 1 hack / 5 pierce / 20 crush
@@ -67,3 +70,4 @@ These civilisations override the generic stats above (only differing values are 
   - run 23.8 m/s
   - cost 180 food, 100 wood, 120 metal
   - build time 30 s
+  - requires unlock_champion_chariots

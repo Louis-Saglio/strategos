@@ -27,3 +27,12 @@ The Champion Pikeman is a late-game anti-cavalry specialist: its 2.5× attack bo
 
 - **ptol** — `units/ptol/champion_infantry_pikeman` (barracks)
 - **sele** — `units/sele/champion_infantry_pikeman` (barracks)
+
+## Civilisation-specific overrides
+
+These civilisations override the generic stats above (only differing values are listed):
+- **ptol** — `units/ptol/champion_infantry_pikeman`
+  - requires unlock_champion_infantry
+- **sele** — `units/sele/champion_infantry_pikeman`
+  - requires traditional_army_sele
+

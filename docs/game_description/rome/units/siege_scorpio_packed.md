@@ -13,7 +13,7 @@ The Scorpio is the Romans' bolt shooter, a long-range anti-personnel siege weapo
 - **Generic name:** Bolt Shooter
 - **Health:** 200 HP
 - **Armor:** 6 hack / 25 pierce / 5 crush
-- **Attack:** Ranged "Bolt" — damage 240 pierce — range 80 m — prepare 2 s — repeat 6 s — preferred Human
+- **Attack:** Ranged "Bolt" — damage 240 pierce — range 80 m — min range 15 m — prepare 2 s — repeat 6 s — spread 1 — splash Linear 9 m 80 pierce — preferred Human
 - **Speed:** walk 6.75 m/s, run 6.75 m/s
 - **Vision:** 100 m
 - **Cost:** 250 wood, 250 metal

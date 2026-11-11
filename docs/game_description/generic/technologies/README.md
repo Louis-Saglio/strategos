@@ -6,7 +6,7 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 
 ## Method
 
-- **Researcher lists:** each building's `Researcher/Technologies` token list is resolved exactly like `Researcher.js` `GetTechnologiesList`: a `{civ}` token resolves to the `<civ>`-specific tech if its file exists, otherwise to the `generic` fallback (e.g. `phase_town_{civ}` → `phase_town_athen` for athen, `phase_town_generic` for the other civs). Tokens whose tech file does not exist are dropped.
+- **Researcher lists:** each building's `Researcher/Technologies` token list is resolved exactly like `Researcher.js` `GetTechnologiesList`: a `{civ}` token resolves to the `<civ>`-specific tech if its file exists, otherwise to the `generic` fallback (e.g. `phase_town_{civ}` → `phase_town_athen` for athen, `phase_town_generic` for the other civs). Tokens whose tech file does not exist are dropped, and a `-tech` token in a civ's template removes an inherited entry (e.g. `structures/cart/dock.xml` removes `ship_movement_speed`, which is therefore pers-only and documented in `pers/technologies/`).
 - **Civ gates:** techs carry `requirements` operators `civ`, `notciv`, `all`, `any` (`globalscripts/Technologies.js` `InterpretTechRequirements`); a civ is excluded when those forbid it (e.g. `unlock_civilians_house_generic` has `notciv: kush`, the `civbonuses/` techs are gated to their civs).
 - **Buildings:** the set of buildings a civ owns is the buildable-structure closure of `generic/buildings/` (builder lists with `{civ}` substitution and template existence).
 - **Auto-research:** techs with `autoResearch: true` are researched automatically by every civ whose requirements allow it (`TechnologyManager.UpdateAutoResearch`); they appear with "auto-researched" instead of a building.
@@ -64,7 +64,6 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [pop_house_02](pop_house_02.md) | 15 | researchable |
 | [ship_capture_resistance](ship_capture_resistance.md) | 0 | researchable (unreachable — no researcher) |
 | [ship_health](ship_health.md) | 3 | researchable |
-| [ship_movement_speed](ship_movement_speed.md) | 2 | researchable |
 | [ship_vision](ship_vision.md) | 15 | researchable |
 | [siege_attack](siege_attack.md) | 15 | researchable |
 | [siege_bolt_accuracy](siege_bolt_accuracy.md) | 6 | researchable |

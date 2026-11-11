@@ -52,7 +52,11 @@ These civilisations override the generic stats above (only differing values are 
   - run 8.64 m/s
   - cost 200 wood, 75 metal
   - build time 20 s
+  - requires phase_town
+  - no garrison
 - **kush** — `units/kush/siege_ram`
   - Melee "Ram" — damage 180 crush — range 6.5 m — prepare 0.75 s — repeat 1.5 s — preferred Structure — restricted Field Organic
+  - garrison 12 slots
 - **pers** — `units/pers/siege_ram`
   - Melee "Ram" — damage 180 crush — range 6.5 m — prepare 0.75 s — repeat 1.5 s — preferred Structure — restricted Field Organic
+  - garrison 12 slots

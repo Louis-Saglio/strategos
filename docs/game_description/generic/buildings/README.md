@@ -38,5 +38,5 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [temple](temple.md) | 15 | `template_structure_civic_temple` |
 | [theater](theater.md) | 5 | `template_structure_special_theater` |
 | [wallset_palisade](wallset_palisade.md) | 15 | `template_wallset` |
-| [wallset_stone](wallset_stone.md) | 15 | `template_wallset` |
+| [wallset_stone](wallset_stone.md) | 14 | `template_wallset` |
 | [wonder](wonder.md) | 15 | `template_structure_wonder` |

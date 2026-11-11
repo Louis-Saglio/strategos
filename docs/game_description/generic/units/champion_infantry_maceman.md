@@ -39,6 +39,7 @@ These civilisations override the generic stats above (only differing values are 
   - vision 80 m
   - cost 50 food, 30 wood, 20 stone
   - build time 10 s
+  - requires phase_village
 - **maur** — `units/maur/champion_infantry_maceman`
   - health 200 HP
   - armor 5 hack / 6 pierce / 20 crush
@@ -49,3 +50,4 @@ These civilisations override the generic stats above (only differing values are 
   - vision 80 m
   - cost 80 food, 60 wood, 80 metal
   - build time 20 s
+  - requires unlock_champion_infantry

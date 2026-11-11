@@ -64,9 +64,11 @@ These civilisations override the generic stats above (only differing values are 
   - cost 20 food, 90 metal
   - build time 10.5 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town
 - **ptol** — `units/ptol/cavalry_javelineer_merc_b`
   - Capture — strength 1.75 — range 4 m — repeat 1 s — restricted Field Palisade Wall
   - Ranged "Javelin" — damage 19.8 pierce — range 30 m — prepare 0.4 s — repeat 1.5 s — preferred Human
   - cost 20 food, 90 metal
   - build time 10.5 s
   - no gathering (ResourceGatherer disabled)
+  - requires phase_town

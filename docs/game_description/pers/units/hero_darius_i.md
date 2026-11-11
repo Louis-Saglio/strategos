@@ -24,7 +24,7 @@ a time, trained at the Winter Palace (City phase).
 - **Armor:** 6 hack / 8 pierce / 25 crush
 - **Attack:** Capture — strength 10 — range 4 m — repeat 1 s — restricted Field Palisade Wall
 - **Attack:** Ranged "Bow" — damage 28 pierce — range 60 m — prepare 0.8 s — repeat 1.25 s — preferred Human
-- **Speed:** walk 16.83 m/s, run 23.56 m/s
+- **Speed:** walk 17 m/s, run 23.8 m/s
 - **Vision:** 100 m
 - **Cost:** 360 food, 250 wood, 300 metal
 - **Build time:** 60 s

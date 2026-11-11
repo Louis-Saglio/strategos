@@ -7,6 +7,8 @@ One file per unit that **only the persians** can train (single-civ units of the 
 | Name | Type |
 |---|---|
 | [cavalry_axeman_b](cavalry_axeman_b) | unit |
+| [cavalry_axeman_b_trireme](cavalry_axeman_b_trireme.md) | unit |
+| [cavalry_javelineer_b_trireme](cavalry_javelineer_b_trireme.md) | unit |
 | [champion_cavalry_archer](champion_cavalry_archer) | unit |
 | [champion_infantry_archer_upgrade](champion_infantry_archer_upgrade) | unit |
 | [hero_cyrus_ii](hero_cyrus_ii) | unit |
