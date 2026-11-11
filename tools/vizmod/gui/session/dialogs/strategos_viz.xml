@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+	Strategos viz director, hooked into the session page without overriding any
+	public file: session.xml includes every XML of gui/session/dialogs/ inside
+	its "session" object. Tick is broadcast to every object that has a handler,
+	hidden or not (CGUI::SendEventToAll), so hiding the HUD does not stop it.
+-->
+<object name="strategosViz" hidden="true" ghost="true">
+	<script file="gui/session/strategos_viz/director.js"/>
+	<action on="Tick">g_StrategosViz.tick();</action>
+</object>

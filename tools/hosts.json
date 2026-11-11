@@ -1,0 +1,55 @@
+{
+  "local": {
+    "slots": 20,
+    "calibrated": {
+      "date": "2026-11-11",
+      "turns_per_s": 1459,
+      "candidates": [
+        8,
+        12,
+        16,
+        20,
+        24,
+        32
+      ],
+      "players": [
+        "petra/5",
+        "petra/5"
+      ],
+      "limit_minutes": 45
+    }
+  },
+  "thinkpad": {
+    "ssh": "thinkpad",
+    "slots": 4,
+    "requires_ac": true,
+    "verified": null
+  },
+  "vps2": {
+    "ssh": "vps2",
+    "slots": 3,
+    "verified": {
+      "date": "2026-11-11",
+      "build": "0ad 0.28.0-3 0ad-data 0.28.0-1",
+      "seeds": [
+        1,
+        2,
+        3
+      ]
+    },
+    "calibrated": {
+      "date": "2026-11-11",
+      "turns_per_s": 281,
+      "candidates": [
+        2,
+        3,
+        4
+      ],
+      "players": [
+        "petra/5",
+        "petra/5"
+      ],
+      "limit_minutes": 45
+    }
+  }
+}

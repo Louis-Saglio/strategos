@@ -2,6 +2,170 @@
 
 Development tooling for Strategos. Not part of the bot.
 
+| Tool | What it does |
+|---|---|
+| `run.sh` (`run.py`) | run batches of headless matches on every available host |
+| `harness/` | the `strategos-harness` mod mounted in every match: statistics, map snapshots, time limit |
+| `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
+| `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
+| `compare.py` | paired comparison of two batches run on the same matches |
+| `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
+| `frames.py` | contact sheets / time-lapse from `viz.py` frames |
+| `mapview.py` | top-down map pictures from the harness map snapshots (no GPU) |
+| `check_bot.py` | bot code rules: JS parses, no comments |
+| `install-local.sh` | install a commit's `bot/` into the local 0 A.D. |
+| `gamedata/` | game data loader and per-civ doc generator |
+
+## Running matches
+
+### run.sh — headless batches
+
+```sh
+tools/run.sh [options] OUTDIR SEED...       # SEED: N, A-B, TAG=N
+tools/run.sh -h                             # full usage
+```
+
+Every match runs the documented `pyrogenesis` command line
+(`docs/pyrogenesis_cli.md` §3) in its own HOME, under `nice -n 10` /
+`ionice -c 3`, observer, `seed = aiseed`. Players are given in order with
+`-p AI[/DIFF[/BEHAVIOR]]:CIV[:TEAM]` (default `strategos:athen:1` vs
+`petra/3:rome:2`); a civ `*`, a map list `-M a,b` or a biome `*` picks one
+per seed with a fixed hash of the seed, so a seed range samples civs, maps
+and biomes reproducibly. Any number of players and teams; `--matches
+FILE.jsonl` runs an explicit list of match specs instead.
+
+```sh
+tools/run.sh tmp/probe 7 23 51                                  # default 1v1
+tools/run.sh -p strategos:*:1 -p petra/5:*:2 -b '*' tmp/mix 1-40  # civs and biomes sampled per seed
+tools/run.sh -p strategos:mace:1 -p strategos:pers:1 -p petra/5:rome:2 -p petra/5:cart:2 \
+    -P river tmp/2v2 1-10                                       # team game
+tools/run.sh -p strategos:athen:1 -p brennus:gaul:2 tmp/vs-brennus 1-20
+tools/run.sh -m strategos=tmp/variant/bot tmp/ab/variant 1-40   # A/B: a modified copy
+```
+
+Mods: `strategos` is this repo's `bot/` (`-m strategos=DIR` for a copy),
+`brennus` is `~/Work/brennus` at a commit (`-m brennus=DIR@REV`, default
+`HEAD`) with its own `maps/` scripts removed so only its AI is mounted;
+Petra is built in. Every mod is snapshotted once into `OUTDIR/mods/` and
+its JS syntax-checked, so editing sources during a batch cannot leak into
+it; `OUTDIR/batch.json` records provenance (commits, dirty flags, content
+hashes, build, hosts, slots, every match spec).
+
+Hosts (`tools/hosts.json`): `local` plus ssh hosts. A remote host is used
+only if it is reachable, runs the same `0ad`/`0ad-data` versions
+(`pacman` or `dpkg`), is on mains power when `requires_ac`, and is
+`verified` — its games proved bit-identical to boobynator's. Each slot is a
+worker pulling from one queue; a match whose ssh transport fails is
+requeued (a host failing twice is dropped, leftovers run locally).
+
+```sh
+tools/run.sh --verify-host vps2 tmp/verify 1-3          # bit-identical check, marks it verified
+tools/run.sh --calibrate local 8,12,16,24 -p petra/5:athen:1 -p petra/5:rome:2 tmp/cal
+```
+
+`--calibrate` runs K matches at once for each K and keeps the K with the
+highest total throughput (turns per wall second summed over the games) as
+the host's slot count.
+
+Per match, in `OUTDIR/TAG/`: `stdout.log` (engine output: harness lines,
+bot telemetry, statistics JSON), `result.json` (spec, host, exit code,
+wall seconds, turns), `home/` (engine logs, the replay; cache and mod
+copies dropped). The batch ends with an `analyze.py` summary. Run batches
+as background jobs with a completion notification.
+
+### harness/ — the strategos-harness mod
+
+`maps/scripts/NonVisualTrigger.js` replaces the public script in every
+headless match (mounted last). It prints `[HARNESS] start` (map size in
+metres, players with civ and engine team — 0-based, -1 for none),
+`[HARNESS] map` snapshots of every player's units and buildings (every
+30 s by default, `--map-interval` ms, 0 = off) and the per-player
+statistics JSON at game end. At the time limit (`-l` minutes, default 60,
+0 = none) it prints `[HARNESS] time limit reached` and marks every active
+player as won, so the game ends cleanly (statistics, replay metadata)
+without favouring a side; `analyze.py` reports it as a timeout. Nothing
+else is changed before the limit.
+
+### analyze.py, compare.py
+
+```sh
+tools/analyze.py OUTDIR [TAG...] [--metrics] [--player N] [--tsv F] [--det A,B]
+tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player N]
+```
+
+`analyze.py`: per match the outcome (`T<n> won`, `P<n> won`, `timeout`,
+`none`), each player's `ai/civ:team=W|L|T`, map/biome, game minutes, error
+lines, failed AI creation, host, exit, wall seconds, turns/s and a hash of
+the statistics (equal hash = identical game). `--metrics` adds player N's
+end-of-game resources gathered, units trained/lost/killed, kill/loss value
+ratio, buildings, population and map control.
+
+`compare.py`: pairs two batches by tag; identical-game count, outcome
+transitions of player N's side, and for each metric the means, the mean
+paired delta and the paired t-test p-value.
+
+## Seeing a match
+
+### viz.py + vizmod/ — visual replay with a camera director
+
+```sh
+tools/viz.py OUTDIR/TAG                                   # default plan, hidden window
+tools/viz.py OUTDIR/TAG --every 10 --from 8 --to 14 -T fight,army:1
+tools/viz.py OUTDIR/TAG --every 0 --shot 12.5:ent:4242@20 --shot 13:area:300,420,60
+tools/viz.py OUTDIR/TAG --show --hud --every 60          # watch it live
+```
+
+Replays the match's own `commands.txt` with `-replay-visual`, mounting the
+batch's `mods/` snapshots in the recorded order (so the harness, and its
+time limit, are part of the replay). The camera is driven from inside the
+game by the `strategos-viz` GUI mod (`vizmod/`): no synthetic input, no
+window focus. Every `--every` game seconds the director pauses the
+simulation, frames each target, and prints `[VIZ] shot {...}` once the
+frame is rendered; `viz.py` grabs the window with `grim -T`. All frames of
+a group show the same instant; `frames.jsonl` records where the camera
+looked. The run ends after the last group, including when the replay stops
+at its last recorded turn.
+
+Targets (`-T`): `overview`, `base:P`, `army:P`, `fight`, `ent:ID` (ids
+from the `[HARNESS] map` snapshots), `xy:X,Z`, `area:X,Z,R`; camera suffix
+`@R[/PITCH[/YAW]]` on any target. Coordinates are world metres. By default
+the window lives on a private Hyprland headless output (`BRENNUS-VIZ`, the
+name shared with the brennus tool so Omarchy remembers a single output);
+`--show` puts it on the current workspace. One viz at a time, not during a
+batch.
+
+### frames.py — contact sheets and time-lapse
+
+```sh
+tools/frames.py OUTDIR/TAG/viz [--rows 10] [--thumb 400] [--from MIN] [--to MIN]
+tools/frames.py OUTDIR/TAG/viz --targets overview --video overview.mp4
+```
+
+One table per page (row = instant, column = target), top-down frames
+gridded in world metres.
+
+### mapview.py — top-down maps from the snapshots
+
+```sh
+tools/mapview.py OUTDIR/TAG/stdout.log [-o mapview.png] [--tracks tracks.png] [--video clip.mp4]
+```
+
+Renders the `[HARNESS] map` snapshots (one colour per player, z upwards
+like a top-down viz frame): exact, no GPU, scales to whole batches.
+
+## Bot code
+
+```sh
+tools/check_bot.py [MOD_DIR]        # default bot/
+tools/install-local.sh [COMMIT]     # default HEAD
+```
+
+`check_bot.py` fails when a bot JS file does not parse or contains a
+comment. `install-local.sh` copies a commit's `bot/` to
+`~/.local/share/0ad/mods/strategos` (recording the commit) and enables the
+mod, so Strategos appears in the game setup's AI list; it refuses while
+the game is running.
+
 ## Game data ↔ docs (`tools/gamedata/`)
 
 Works against the 0 A.D. source reference (the v0.28.0 checkout, default

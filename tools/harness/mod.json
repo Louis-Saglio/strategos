@@ -1,0 +1,7 @@
+{
+	"name": "strategos-harness",
+	"version": "0.1.0",
+	"label": "Strategos test harness",
+	"description": "Headless-match harness for Strategos development (tools/run.sh): statistics at game end, map snapshots, time limit. Tooling only.",
+	"dependencies": ["0ad=0.28.0"]
+}

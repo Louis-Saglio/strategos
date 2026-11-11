@@ -1,0 +1,7 @@
+{
+	"name": "strategos-viz",
+	"version": "0.1.0",
+	"label": "Strategos viz director",
+	"description": "Camera director for visual replays of Strategos matches (tools/viz.py). GUI-only: never touches the simulation. Inert outside a visual replay.",
+	"dependencies": ["0ad=0.28.0"]
+}
