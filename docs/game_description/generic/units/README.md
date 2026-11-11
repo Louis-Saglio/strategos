@@ -59,5 +59,3 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [support_civilian_house](support_civilian_house.md) | 15 | `template_unit_support_civilian` |
 | [support_healer_b](support_healer_b.md) | 15 | `template_unit_support_healer` |
 | [support_trader](support_trader.md) | 15 | `template_unit_support_trader` |
-
-Also see `docs/GAME.md` → "Simulation templates and data organisation" for how the template system works (inheritance, merging, civ substitution, trainer lists).

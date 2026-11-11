@@ -113,5 +113,3 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [warship_ramming_attack](warship_ramming_attack.md) | 8 | researchable |
 | [warship_siege_attack](warship_siege_attack.md) | 5 | researchable |
 | [wonder_population_cap](wonder_population_cap.md) | 15 | researchable |
-
-Also see `docs/GAME.md` → "Simulation templates and data organisation" for how the template system works (inheritance, merging, civ substitution, researcher lists).

@@ -197,15 +197,15 @@ with `-editor` dumps Atlas schemas. No other Atlas CLI flags exist in 0.28.0. **
 
 ```bash
 mkdir -p tmp/smoke-home/.local/share/0ad/mods
-cp -r bot tmp/smoke-home/.local/share/0ad/mods/brennus
+cp -r bot tmp/smoke-home/.local/share/0ad/mods/strategos
 HOME=$PWD/tmp/smoke-home timeout 150 pyrogenesis \
     -autostart=random/mainland -autostart-seed=1 \
     -autostart-biome=generic/temperate -autostart-placement=circle \
     -autostart-nonvisual -autostart-players=2 -autostart-size=192 \
     -autostart-victory=conquest_civic_centers \
-    -autostart-ai=1:brennus -autostart-ai=2:petra -autostart-aidiff=2:3 \
+    -autostart-ai=1:strategos -autostart-ai=2:petra -autostart-aidiff=2:3 \
     -autostart-civ=1:gaul -autostart-civ=2:rome -autostart-player=-1 \
-    -unique-logs -nosound -mod=public -mod=brennus
+    -unique-logs -nosound -mod=public -mod=strategos
 ```
 
 - This exact command was run to completion on the former VPS: 7,047 turns, exit 0,

@@ -1,6 +1,6 @@
 # Generic auras of 0 A.D. 0.28.0
 
-One file per **generic aura**: an aura attached to entities that **2+ civilisations** can own (their trainable units, buildable structures and their player template). Auras carried only by one civilisation's entities are documented in the per-civ folders (`gaul/auras/`, `rome/auras/`, `cart/auras/`).
+One file per **generic aura**: an aura attached to entities that **2+ civilisations** can own (their trainable units, buildable structures and their player template). Auras carried only by one civilisation's entities are documented in the per-civ folders (`<civ>/auras/`).
 
 All data was extracted from the game files, not from memory: `binaries/data/mods/public/simulation/data/auras/` and `binaries/data/mods/public/simulation/templates/` in the 0 A.D. source reference (0 A.D. 0.28.0, the version the harness runs; see `AGENTS.md`).
 
@@ -24,5 +24,3 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [units/celtic_healer](units__celtic_healer.md) | 2 | range |
 | [units/heroes/hero_garrison](units__heroes__hero_garrison.md) | 15 | garrison |
 | [units/ram_garrison](units__ram_garrison.md) | 15 | garrison |
-
-Also see `docs/GAME.md` → "Simulation templates and data organisation" for how the template system works.

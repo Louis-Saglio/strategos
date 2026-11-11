@@ -6,6 +6,6 @@ One file per technology that **only the gauls** can get (single-civ techs of the
 
 | Name | Type |
 |---|---|
-| [civbonuses/gaul_cavalry](civbonuses/gaul_cavalry) | auto-researched |
+| [civbonuses/gaul_cavalry](civbonuses__gaul_cavalry.md) | auto-researched |
 | [gather_farming_harvester](gather_farming_harvester) | researchable |
 

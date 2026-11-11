@@ -38,12 +38,11 @@ wrong, trust the source, not the doc — and fix the doc.
 
 ### Progression and game flow
 - [technologies_and_modifiers](technologies_and_modifiers.md) — tech JSON, requirements, the modification pipeline, pairs, phases.
-- [auras](auras.md) — aura schema, targeting, stacking rules (the aura *data* is catalogued in `../{generic,gauls,romans}/auras/`).
+- [auras](auras.md) — aura schema, targeting, stacking rules (the aura *data* is catalogued in `../generic/auras/` and `../<civ>/auras/`).
 - [victory_defeat_and_diplomacy](victory_defeat_and_diplomacy.md) — victory conditions (incl. the harness's `conquest_civic_centers`), defeat, diplomacy, ceasefire.
 - [orders_and_simulation_time](orders_and_simulation_time.md) — the 200 ms turn model, when commands take effect, UnitAI order queues, stances, timers, game speed.
 
 ## Related docs
 
-- `docs/GAME.md` — condensed game knowledge for bot development (civs, strategy-level facts).
-- `docs/DEVELOPER_GUIDE.md` — the AI API reference: how a bot reads state and issues commands.
-- `docs/game_description/{generic,gauls,romans}/` — per-entity data (stats, costs, trainer lists).
+- `docs/ai_engine_api.md` — the AI API reference: how a bot reads state and issues commands.
+- `docs/game_description/generic/` and `docs/game_description/<civ>/` — per-entity data (stats, costs, trainer lists); `<civ>/civ.md` — what each civilisation changes.

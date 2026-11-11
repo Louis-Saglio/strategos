@@ -6,9 +6,9 @@ One file per aura that **only the carthaginians** can have (single-civ auras of 
 
 | Name | Type |
 |---|---|
-| [structures/cart_super_dock_repair](structures/cart_super_dock_repair) | garrisonedUnits |
-| [teambonuses/cart_player_teambonus](teambonuses/cart_player_teambonus) | global |
-| [units/heroes/cart_hero_hamilcar_1](units/heroes/cart_hero_hamilcar_1) | range |
-| [units/heroes/cart_hero_hamilcar_2](units/heroes/cart_hero_hamilcar_2) | range |
-| [units/heroes/cart_hero_hannibal](units/heroes/cart_hero_hannibal) | range |
-| [units/heroes/cart_hero_maharbal](units/heroes/cart_hero_maharbal) | range |
+| [structures/cart_super_dock_repair](structures__cart_super_dock_repair.md) | garrisonedUnits |
+| [teambonuses/cart_player_teambonus](teambonuses__cart_player_teambonus.md) | global |
+| [units/heroes/cart_hero_hamilcar_1](units__heroes__cart_hero_hamilcar_1.md) | range |
+| [units/heroes/cart_hero_hamilcar_2](units__heroes__cart_hero_hamilcar_2.md) | range |
+| [units/heroes/cart_hero_hannibal](units__heroes__cart_hero_hannibal.md) | range |
+| [units/heroes/cart_hero_maharbal](units__heroes__cart_hero_maharbal.md) | range |

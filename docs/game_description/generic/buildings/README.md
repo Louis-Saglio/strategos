@@ -40,5 +40,3 @@ All data was extracted from the game files, not from memory: `binaries/data/mods
 | [wallset_palisade](wallset_palisade.md) | 15 | `template_wallset` |
 | [wallset_stone](wallset_stone.md) | 15 | `template_wallset` |
 | [wonder](wonder.md) | 15 | `template_structure_wonder` |
-
-Also see `docs/GAME.md` → "Simulation templates and data organisation" for how the template system works (inheritance, merging, civ substitution, builder/trainer lists).

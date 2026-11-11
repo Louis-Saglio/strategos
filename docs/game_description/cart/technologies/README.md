@@ -7,8 +7,8 @@ One file per technology that **only the carthaginians** can get (single-civ tech
 | Name | Type |
 |---|---|
 | [celtic_auxiliaries](celtic_auxiliaries) | researchable |
-| [civbonuses/cart_stone_01](civbonuses/cart_stone_01) | auto-researched |
-| [civbonuses/cart_stone_02](civbonuses/cart_stone_02) | auto-researched |
-| [civbonuses/cart_stone_03](civbonuses/cart_stone_03) | auto-researched |
-| [civbonuses/cart_walls](civbonuses/cart_walls) | auto-researched |
+| [civbonuses/cart_stone_01](civbonuses__cart_stone_01.md) | auto-researched |
+| [civbonuses/cart_stone_02](civbonuses__cart_stone_02.md) | auto-researched |
+| [civbonuses/cart_stone_03](civbonuses__cart_stone_03.md) | auto-researched |
+| [civbonuses/cart_walls](civbonuses__cart_walls.md) | auto-researched |
 | [colonization](colonization) | researchable |
