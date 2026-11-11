@@ -152,6 +152,25 @@ trigger scripts and tooling engine builds (see "The game stays stock").
   write a scenario map (`scenarios/`) that sets up the situation and
   reports the outcome; these are the tests of the project.
 
+## Game duration
+
+Compute and iteration time are the project's scarcest resources.
+
+- **Every game has a limit set before it starts**: an in-game time limit
+  and a wall-clock cap. `tools/run.sh` refuses to run without `-l`.
+- **Be aggressively short.** Use the shortest in-game limit that can show
+  what the run is for (an opening or economy question does not need a
+  full game). Lengthen it only on solid, measured evidence that the extra
+  minutes change the answer — e.g. results at the longer limit differ
+  from results at the shorter one on the same seeds.
+- **A game that lasted longer than necessary is a development failure**,
+  not a cost of doing business: shorten the limit, make the scenario end
+  itself as soon as its outcome is known, or fix whatever kept the game
+  from ending.
+- A game that hits the wall-clock cap is a defect to investigate (hang,
+  stalled match, runaway slowdown), never something to retry with a
+  bigger cap.
+
 ## Evaluating changes
 
 - Compare a change against the committed bot on the same seeds (paired),

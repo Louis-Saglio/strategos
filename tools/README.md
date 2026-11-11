@@ -21,8 +21,8 @@ Development tooling for Strategos. Not part of the bot.
 ### run.sh — headless batches
 
 ```sh
-tools/run.sh [options] OUTDIR SEED...       # SEED: N, A-B, TAG=N
-tools/run.sh -h                             # full usage
+tools/run.sh -l MIN [options] OUTDIR SEED...   # SEED: N, A-B, TAG=N
+tools/run.sh -h                                # full usage
 ```
 
 Every match runs the documented `pyrogenesis` command line
@@ -34,13 +34,22 @@ per seed with a fixed hash of the seed, so a seed range samples civs, maps
 and biomes reproducibly. Any number of players and teams; `--matches
 FILE.jsonl` runs an explicit list of match specs instead.
 
+Duration (AGENTS.md, "Game duration"): `-l MIN` (in-game limit) is
+mandatory and must be > 0 — pick the shortest one that answers the
+question. The wall-clock cap per match defaults to `60 + 300·MIN/20`
+seconds, i.e. a game running slower than 20 turns/s (≈3× slower than the
+slowest calibrated slot) is killed; `-t` above that prints a warning.
+Before starting, the runner prints the batch's worst-case duration from
+the calibrated host throughput; at the end it reports every game killed
+by the cap as a failure, and `analyze.py` labels them `killed`.
+
 ```sh
-tools/run.sh tmp/probe 7 23 51                                  # default 1v1
-tools/run.sh -p strategos:*:1 -p petra/5:*:2 -b '*' tmp/mix 1-40  # civs and biomes sampled per seed
-tools/run.sh -p strategos:mace:1 -p strategos:pers:1 -p petra/5:rome:2 -p petra/5:cart:2 \
-    -P river tmp/2v2 1-10                                       # team game
-tools/run.sh -p strategos:athen:1 -p brennus:gaul:2 tmp/vs-brennus 1-20
-tools/run.sh -m strategos=tmp/variant/bot tmp/ab/variant 1-40   # A/B: a modified copy
+tools/run.sh -l 10 tmp/probe 7 23 51                                 # default 1v1, 10 in-game min
+tools/run.sh -l 15 -p strategos:*:1 -p petra/5:*:2 -b '*' tmp/mix 1-40  # civs and biomes sampled per seed
+tools/run.sh -l 20 -p strategos:mace:1 -p strategos:pers:1 -p petra/5:rome:2 -p petra/5:cart:2 \
+    -P river tmp/2v2 1-10                                            # team game
+tools/run.sh -l 20 -p strategos:athen:1 -p brennus:gaul:2 tmp/vs-brennus 1-20
+tools/run.sh -l 15 -m strategos=tmp/variant/bot tmp/ab/variant 1-40  # A/B: a modified copy
 ```
 
 Mods: `strategos` is this repo's `bot/` (`-m strategos=DIR` for a copy),
@@ -59,8 +68,8 @@ worker pulling from one queue; a match whose ssh transport fails is
 requeued (a host failing twice is dropped, leftovers run locally).
 
 ```sh
-tools/run.sh --verify-host vps2 tmp/verify 1-3          # bit-identical check, marks it verified
-tools/run.sh --calibrate local 8,12,16,24 -p petra/5:athen:1 -p petra/5:rome:2 tmp/cal
+tools/run.sh --verify-host vps2 -l 30 tmp/verify 1-3     # bit-identical check, marks it verified
+tools/run.sh --calibrate local 8,12,16,24 -l 45 -p petra/5:athen:1 -p petra/5:rome:2 tmp/cal
 ```
 
 `--calibrate` runs K matches at once for each K and keeps the K with the
@@ -80,8 +89,7 @@ headless match (mounted last). It prints `[HARNESS] start` (map size in
 metres, players with civ and engine team — 0-based, -1 for none),
 `[HARNESS] map` snapshots of every player's units and buildings (every
 30 s by default, `--map-interval` ms, 0 = off) and the per-player
-statistics JSON at game end. At the time limit (`-l` minutes, default 60,
-0 = none) it prints `[HARNESS] time limit reached` and marks every active
+statistics JSON at game end. At the time limit (`-l` minutes) it prints `[HARNESS] time limit reached` and marks every active
 player as won, so the game ends cleanly (statistics, replay metadata)
 without favouring a side; `analyze.py` reports it as a timeout. Nothing
 else is changed before the limit.

@@ -6,7 +6,13 @@ command line (docs/pyrogenesis_cli.md §3), one isolated HOME per match, under
 nice/ionice, on every available host (tools/hosts.json), then prints the
 tools/analyze.py summary.
 
-    tools/run.sh [options] OUTDIR SEED...
+    tools/run.sh -l MIN [options] OUTDIR SEED...
+
+Every match is bounded twice: the harness ends it at -l in-game minutes,
+and a wall-clock cap kills it if it runs slower than MIN_RATE turns per
+second (cap = 60 s + 300 * MIN / MIN_RATE). Before starting, the batch's
+worst-case duration is estimated from the calibrated host throughput; at
+the end, games killed by the wall-clock cap are reported as failures.
 
 SEED is N, A-B (inclusive range) or TAG=N. A bare seed N is tagged seedN.
 The map seed and the AI seed are both N.
@@ -43,8 +49,10 @@ Options:
   -s SIZE        random-map size in tiles (default 192)
   -P PLACEMENT   random-map player placement (default circle)
   -V VICTORY     victory condition, repeatable (default conquest_civic_centers)
-  -l MIN         in-game time limit in minutes, 0 = none (default 60)
-  -t SEC         wall-clock cap per match (default 3600)
+  -l MIN         in-game time limit in minutes — REQUIRED, > 0 (AGENTS.md,
+                 "Game duration": the shortest limit that answers the question)
+  -t SEC         wall-clock cap per match (default: derived from -l, see
+                 below; a larger value is accepted with a warning)
   -m AI=SOURCE   mod source for an AI (repeatable)
   -H HOSTS       comma-separated hosts from tools/hosts.json (default: all
                  verified and reachable); local is a host
@@ -89,11 +97,16 @@ CIVS = ["athen", "brit", "cart", "gaul", "germ", "han", "iber", "kush", "mace", 
 GENERIC_BIOMES = ["generic/aegean", "generic/alpine", "generic/arctic", "generic/autumn", "generic/india",
                   "generic/nubia", "generic/sahara", "generic/savanna", "generic/steppe", "generic/temperate"]
 BUILTIN_AIS = {"petra"}
+MIN_RATE = 20
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30"]
 
 
 def die(msg):
     sys.exit(f"run: {msg}")
+
+
+def wall_cap(limit_min):
+    return 60 + (300 * limit_min) // MIN_RATE
 
 
 # ------------------------------------------------------------------ specs
@@ -493,8 +506,8 @@ def main():
     ap.add_argument("-s", dest="size", type=int, default=192)
     ap.add_argument("-P", dest="placement", default="circle")
     ap.add_argument("-V", dest="victory", action="append")
-    ap.add_argument("-l", dest="limit", type=int, default=60)
-    ap.add_argument("-t", dest="wall", type=int, default=3600)
+    ap.add_argument("-l", dest="limit", type=int)
+    ap.add_argument("-t", dest="wall", type=int)
     ap.add_argument("-m", dest="sources", action="append", default=[])
     ap.add_argument("-H", dest="hosts")
     ap.add_argument("-j", dest="jobs", type=int)
@@ -510,6 +523,15 @@ def main():
         sys.exit(0 if a.help else 2)
     if not shutil.which("pyrogenesis"):
         die("pyrogenesis not in PATH")
+    if not a.limit or a.limit <= 0:
+        die("-l MIN is required and must be > 0: choose the shortest in-game limit that answers the "
+            "question (AGENTS.md, Game duration)")
+    derived = wall_cap(a.limit)
+    if a.wall is None:
+        a.wall = derived
+    elif a.wall > derived:
+        print(f"run: WARNING -t {a.wall}s exceeds the derived cap {derived}s (a game slower than "
+              f"{MIN_RATE} turns/s is a defect to investigate, not to wait for)", file=sys.stderr)
 
     hosts = load_hosts()
     sources = dict(s.split("=", 1) for s in a.sources)
@@ -628,9 +650,23 @@ def main():
         json.dump(batch, fh, indent=1)
     print(f"run: {len(specs)} matches on {len(slots)} slots "
           f"({', '.join(f'{h}:{v['slots']}' for h, v in info.items())}) -> {outdir}", flush=True)
+    rate = sum(hosts[h].get("calibrated", {}).get("turns_per_s", 0) * min(1.0, len(specs) / max(1, v["slots"]))
+               for h, v in info.items())
+    turns = 300 * a.limit * len(specs)
+    if rate:
+        secs = turns / rate
+        est = (f"at most ~{secs / 60:.0f} min" if secs >= 120 else f"at most ~{secs:.0f} s") + \
+            f" if every game reaches the {a.limit}-min limit"
+    else:
+        est = "no calibration to estimate from"
+    print(f"run: limit {a.limit} in-game min, wall cap {a.wall}s per match; {est}", flush=True)
     t0 = time.time()
-    run_batch(outdir, specs, slots, hosts, a.wall)
+    results = run_batch(outdir, specs, slots, hosts, a.wall)
+    killed = [r["tag"] for r in results if r["exit_code"] in (124, 137)]
     print(f"run: batch done in {time.time() - t0:.0f}s", flush=True)
+    if killed:
+        print(f"run: FAILURE: {len(killed)} game(s) hit the {a.wall}s wall-clock cap ({' '.join(killed)}): "
+              "investigate (hang, stall, slowdown); do not rerun with a bigger cap", file=sys.stderr, flush=True)
     subprocess.run([sys.executable, os.path.join(TOOLS, "analyze.py"), outdir] + [s["tag"] for s in specs])
 
 

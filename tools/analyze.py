@@ -6,8 +6,9 @@ stdout.log, in natural order):
 
 - outcome: `T<n> won` (the team, or `P<n>` for a teamless player, whose
   players ended `won`), `timeout` when the harness time limit fired (it
-  marks every active player won), `none` when no statistics were printed
-  (crash, wall-clock kill);
+  marks every active player won), `killed` when the wall-clock cap killed
+  it (a failure to investigate), `none` when no statistics were printed
+  (crash);
 - players: one `id:ai/civ[:team]=W|L|T` item per player (W won, L defeated,
   T still active at the time limit);
 - game_min: in-game minutes (turns / 300, one turn = 200 ms);
@@ -103,7 +104,9 @@ def analyze(outdir, tag):
         items.append(f"{i}:{p['ai']}/{p['civ']}" + (f":{team}" if team else "") + f"={code}")
         if st == "won" and not timeout:
             winners.add(f"T{team}" if team else f"P{i}")
-    if not stats:
+    if run.get("exit_code") in (124, 137):
+        outcome = "killed"
+    elif not stats:
         outcome = "none"
     elif timeout:
         outcome = "timeout"
@@ -170,7 +173,8 @@ def main():
         outcomes[r["outcome"]] = outcomes.get(r["outcome"], 0) + 1
     count = lambda pred: sum(1 for r in rows if pred(r))
     print(f"{len(rows)} games: " + ", ".join(f"{v} {k}" for k, v in sorted(outcomes.items())) +
-          f"; {count(lambda r: r['errors'])} with errors, {count(lambda r: r['failed_ai'])} failed-AI, "
+          f"; {count(lambda r: r['outcome'] == 'killed')} killed by the wall-clock cap, "
+          f"{count(lambda r: r['errors'])} with errors, {count(lambda r: r['failed_ai'])} failed-AI, "
           f"{count(lambda r: r['exit'] not in (0, '-'))} nonzero exit")
     if a.tsv:
         with open(a.tsv, "w") as fh:
