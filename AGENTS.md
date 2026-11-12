@@ -7,7 +7,11 @@ implementation of the engine's AI interface.
 ## The goal
 
 Strategos plays **every civilisation, on every map and every biome**, in
-1v1 and in team games, and wins: it beats Petra Very Hard clearly and
+1v1 and in team games, **under every reasonable game setting** — every
+victory condition, map size, population cap, starting resources, map
+visibility, ceasefire, player count (degenerate combinations, such as
+eight players on a tiny map or a population cap of 50, are out of
+scope) — and wins: it beats Petra Very Hard clearly and
 consistently, and it beats Brennus. It wins by playing well — sound
 economy, timing, army composition, positioning, use of each civ's own
 units, buildings, technologies and bonuses — not by exploiting the
@@ -39,6 +43,10 @@ repository, never in a file.
 - **Determinism**: same seed → identical game. The bot never uses
   unseeded randomness; game settings that resolve randomly (biome,
   player placement, civs) are pinned on the command line.
+- **Every game setting is explicit.** No match runs on an implicit
+  default: `tools/run.sh` sets every setting, checks after the match that
+  the engine applied it, and records it with the match. Which settings a
+  batch covers is a step goal, widened toward the full scope of the goal.
 - **The 0 A.D. source reference** is a checkout of the official
   repository (https://gitea.wildfiregames.com/0ad/0ad) at tag `v0.28.0`,
   at `~/Work/0ad` on boobynator. Its text files are identical to the
@@ -109,10 +117,17 @@ changing a behaviour must not silently change unrelated behaviours.
 - **Subsystems do not touch each other.** They communicate only through
   the world model and the allocator, never by reading or writing another
   subsystem's state.
-- **Civ specifics come from data.** Unit roles, costs, counters,
-  production sites and technologies are read from the game templates at
-  runtime; civ-specific play is expressed as data on top of the generic
-  logic, never as civ names scattered through the code.
+- **Generic first, specific where it pays.** Unit roles, costs,
+  counters, production sites and technologies are read from the game
+  templates at runtime, and the generic logic plays any civ under any
+  setting. Play that only works in a given context — a civ's own units,
+  buildings or bonuses, a victory condition (wonder, relics, regicide...),
+  a map type, a game setting — is expected, as named game plans that the
+  strategy layer selects from the observed context (civ, settings, map,
+  state). A plan sets priorities and data on top of the generic
+  subsystems and goes through the allocator like everything else; the
+  context test lives in the plan's selection, never as civ names or
+  setting checks scattered through the subsystems.
 - **Stable decisions.** A small change to the bot or the game must cause
   a small, attributable change in behaviour: decisions use smoothed
   state, hysteresis and minimum commitment durations, and avoid
@@ -176,8 +191,8 @@ Compute and iteration time are the project's scarcest resources.
 - Compare a change against the committed bot on the same seeds (paired),
   with enough games for the difference to be real, and judge first on
   the metric the change targets, then on results.
-- Rotate seeds, civs, maps and biomes while iterating; never tune on one
-  configuration.
+- Rotate seeds, civs, maps, biomes and settings while iterating; never
+  tune on one configuration.
 - Opponents: Petra (Very Hard = difficulty 5, which also gathers 56%
   faster; every behaviour), Brennus (`~/Work/brennus` at a pinned
   commit), Strategos itself and its previous versions. Self-play is the
