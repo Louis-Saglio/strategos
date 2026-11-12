@@ -26,7 +26,11 @@ export class Allocator
 			const reason = this.denial(world, request, budget);
 			this.record(request, reason || "granted");
 			if (reason)
+			{
+				if (request.reserve && reason.startsWith("resources"))
+					this.hold(request, budget);
 				continue;
+			}
 			this.commit(request, budget);
 			grants.push(request);
 		}
@@ -66,6 +70,12 @@ export class Allocator
 			budget.resources[code] -= amount;
 			this.spent[code] += amount;
 		}
+	}
+
+	hold(request, budget)
+	{
+		for (const code of this.codes)
+			budget.resources[code] = Math.max(0, budget.resources[code] - (request.claims.resources[code] || 0));
 	}
 
 	record(request, outcome)

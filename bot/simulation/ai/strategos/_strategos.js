@@ -1,6 +1,7 @@
 import { BaseAI } from "simulation/ai/common-api/baseAI.js";
 import { Allocator } from "simulation/ai/strategos/allocator.js";
 import { Catalog } from "simulation/ai/strategos/catalog.js";
+import { Construction } from "simulation/ai/strategos/construction.js";
 import { Economy } from "simulation/ai/strategos/economy.js";
 import { Executor } from "simulation/ai/strategos/executor.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
@@ -26,9 +27,9 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.catalog = new Catalog(gameState);
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.strategy = new Strategy(this.catalog.codes);
-	this.economy = new Economy(this.catalog);
+	this.subsystems = [new Economy(this.catalog), new Construction(this.catalog, this.player)];
 	this.allocator = new Allocator(this.catalog.codes);
-	this.executor = new Executor(gameState, this.catalog.civ);
+	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
 	this.telemetry.line("STRATEGOS", gameState.getTimeElapsed(), {
 		"civ": this.catalog.civ,
 		"difficulty": this.difficulty,
@@ -46,11 +47,12 @@ StrategosBot.prototype.OnUpdate = function()
 StrategosBot.prototype.decide = function()
 {
 	const started = Date.now();
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex);
+	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, pending);
 	const priorities = this.strategy.update(world);
-	const requests = this.economy.requests(world, priorities);
+	const requests = [].concat(...this.subsystems.map(subsystem => subsystem.requests(world, priorities)));
 	const grants = this.allocator.allocate(world, requests);
-	this.executor.execute(grants);
+	this.executor.execute(world, grants);
 	this.telemetry.recordDecision(Date.now() - started);
 	this.report(world, priorities);
 };
@@ -65,6 +67,7 @@ StrategosBot.prototype.report = function(world, priorities)
 	this.telemetry.line("ECO", world.time, {
 		"population": world.population,
 		"populationLimit": world.populationLimit,
+		"foundations": world.foundations.length,
 		"workers": world.workers.length,
 		"idle": world.workers.filter(worker => worker.idle).length,
 		"gatherers": world.gatherers,

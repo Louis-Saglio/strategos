@@ -68,7 +68,7 @@ export function squareDistance(a, b)
 	return dx * dx + dz * dz;
 }
 
-export function buildWorld(gameState, catalog, resourceIndex)
+export function buildWorld(gameState, catalog, resourceIndex, pendingConstructions)
 {
 	const playerData = gameState.playerData;
 	const codes = catalog.codes;
@@ -109,11 +109,45 @@ export function buildWorld(gameState, catalog, resourceIndex)
 		const position = ent.position();
 		if (!position || !ent.isGatherer())
 			continue;
+		const orders = ent.unitAIOrderData() || [];
 		workers.push(Object.freeze({
 			"id": ent.id(),
 			"position": position,
 			"idle": ent.isIdle(),
-			"gatherTypes": Object.freeze(catalog.gatherTypes(ent))
+			"state": ent.unitAIState() || "",
+			"target": orders.length && orders[0] ? orders[0].target : undefined,
+			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
+			"buildable": Object.freeze(catalog.buildable(ent))
+		}));
+	}
+
+	const foundations = [];
+	for (const ent of gameState.getOwnFoundations().values())
+	{
+		const built = gameState.getBuiltTemplate(ent.templateName());
+		if (!built || !ent.position())
+			continue;
+		const name = built.templateName();
+		foundations.push(Object.freeze({
+			"id": ent.id(),
+			"template": name,
+			"position": ent.position(),
+			"progress": ent.foundationProgress(),
+			"populationBonus": catalog.populationBonus(name),
+			"buildTime": catalog.buildTime(name)
+		}));
+	}
+
+	const centres = [];
+	for (const ent of gameState.getOwnEntitiesByClass("CivCentre", true).values())
+	{
+		if (ent.foundationProgress() !== undefined || !ent.position())
+			continue;
+		const footprint = catalog.footprint(ent.templateName());
+		centres.push(Object.freeze({
+			"id": ent.id(),
+			"position": ent.position(),
+			"radius": Math.max(footprint.width, footprint.depth) / 2
 		}));
 	}
 
@@ -132,8 +166,18 @@ export function buildWorld(gameState, catalog, resourceIndex)
 		"resources": Object.freeze(resources),
 		"population": gameState.getPopulation(),
 		"populationLimit": gameState.getPopulationLimit(),
+		"populationMax": gameState.getPopulationMax(),
+		"queuedPopulation": queuedPopulation,
 		"populationRoom": Math.max(0, gameState.getPopulationLimit() - gameState.getPopulation() - queuedPopulation),
+		"grids": Object.freeze({
+			"passability": gameState.getPassabilityMap(),
+			"territory": gameState.sharedScript.territoryMap,
+			"buildingLand": gameState.getPassabilityClassMask("building-land")
+		}),
 		"anchors": Object.freeze(anchors),
+		"centres": Object.freeze(centres),
+		"foundations": Object.freeze(foundations),
+		"pendingConstructions": Object.freeze(pendingConstructions),
 		"trainers": Object.freeze(trainers),
 		"workers": Object.freeze(workers),
 		"gatherers": Object.freeze(gatherers),
