@@ -18,7 +18,8 @@ export class Executor
 			"repair": action => this.repair(action),
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
 			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
-			"unload-all": action => this.unloadAll(action)
+			"unload-all": action => this.unloadAll(action),
+			"research": action => this.research(action)
 		};
 	}
 
@@ -99,6 +100,15 @@ export class Executor
 		if (!this.gameState.getEntityById(action.unit) || !this.gameState.getEntityById(action.target))
 			return false;
 		Engine.PostCommand(this.player, Object.assign({ "entities": [action.unit], "queued": false }, command));
+		return true;
+	}
+
+	research(action)
+	{
+		if (!this.gameState.getEntityById(action.researcher))
+			return false;
+		Engine.PostCommand(this.player, { "type": "research", "entity": action.researcher, "template": action.tech, "pushFront": false });
+		this.telemetry.line("TECH", this.time, { "research": action.tech, "payback": action.payback });
 		return true;
 	}
 

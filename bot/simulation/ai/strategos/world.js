@@ -142,6 +142,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		const state = ent.unitAIState() || "";
 		const soldier = ent.hasClass("Soldier");
 		let gathering = null;
+		let kind = null;
 		if (state.includes("RETURNRESOURCE"))
 		{
 			const carried = ent.resourceCarrying();
@@ -152,6 +153,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			const target = gameState.getEntityById(orders[0].target);
 			const type = target && target.resourceSupplyType();
 			gathering = type ? type.generic : null;
+			kind = type ? type.generic + "." + type.specific : null;
 		}
 		workers.push(Object.freeze({
 			"id": ent.id(),
@@ -161,6 +163,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"soldier": soldier,
 			"classes": ent.classes(),
 			"gathering": gathering,
+			"kind": kind,
+			"profile": catalog.gathering(ent),
 			"target": orders.length && orders[0] ? orders[0].target : undefined,
 			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
 			"buildable": Object.freeze(catalog.buildable(ent))
@@ -186,11 +190,24 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const structureCounts = {};
 	const holders = [];
+	const researchers = [];
 	for (const ent of gameState.getOwnStructures().values())
 	{
 		if (ent.foundationProgress() !== undefined)
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+		if (ent.get("Researcher"))
+		{
+			const techs = catalog.researchable(ent);
+			if (techs.length)
+				researchers.push(Object.freeze({
+					"id": ent.id(),
+					"template": ent.templateName(),
+					"queueLength": (ent.trainingQueue() || []).length,
+					"trainsWorkers": catalog.trainable(ent).some(name => catalog.isWorker(name)),
+					"techs": Object.freeze(techs)
+				}));
+		}
 		const capacity = +(ent.garrisonMax() || 0);
 		if (capacity > 0 && ent.position())
 		{
@@ -274,6 +291,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"foundations": Object.freeze(foundations),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
+		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),
 		"fighters": Object.freeze(fighters),
 		"pendingConstructions": Object.freeze(pendingConstructions),

@@ -10,17 +10,28 @@ export class Catalog
 		this.buildables = new Map();
 		this.footprints = new Map();
 		this.availability = new Map();
+		this.gatherProfiles = new Map();
+		this.researchables = new Map();
+		this.researchOpen = new Map();
+		this.technologies = new Map();
 		this.availabilityTime = undefined;
 	}
 
-	available(name)
+	refreshTurnCaches()
 	{
 		const time = this.gameState.getTimeElapsed();
 		if (time !== this.availabilityTime)
 		{
 			this.availability.clear();
+			this.gatherProfiles.clear();
+			this.researchOpen.clear();
 			this.availabilityTime = time;
 		}
+	}
+
+	available(name)
+	{
+		this.refreshTurnCaches();
 		if (!this.availability.has(name))
 			this.availability.set(name, !this.gameState.isTemplateDisabled(name) && this.template(name).available(this.gameState));
 		return this.availability.get(name);
@@ -90,6 +101,60 @@ export class Catalog
 	gatherTypes(template)
 	{
 		return this.codes.filter(code => template.canGather(code));
+	}
+
+	gathering(template)
+	{
+		this.refreshTurnCaches();
+		const name = template.templateName();
+		if (!this.gatherProfiles.has(name))
+		{
+			const capacities = {};
+			for (const code of this.codes)
+				capacities[code] = +(template.get("ResourceGatherer/Capacities/" + code) || 0);
+			this.gatherProfiles.set(name, Object.freeze({
+				"rates": Object.freeze(template.resourceGatherRates() || {}),
+				"capacities": Object.freeze(capacities)
+			}));
+		}
+		return this.gatherProfiles.get(name);
+	}
+
+	technology(name)
+	{
+		if (!this.technologies.has(name))
+		{
+			const tech = this.gameState.getTemplate(name);
+			this.technologies.set(name, Object.freeze({
+				"modifications": tech && tech.modifications() || [],
+				"affects": tech && tech.affects() || null,
+				"researchTime": tech ? tech.researchTime() : 0
+			}));
+		}
+		return this.technologies.get(name);
+	}
+
+	techCost(name, researcherTemplate)
+	{
+		const tech = this.gameState.getTemplate(name);
+		const raw = tech && tech.cost(this.template(researcherTemplate)) || {};
+		const cost = {};
+		for (const code of this.codes)
+			cost[code] = raw[code] || 0;
+		return cost;
+	}
+
+	researchable(entity)
+	{
+		const producer = entity.templateName();
+		if (!this.researchables.has(producer))
+			this.researchables.set(producer, entity.researchableTechs(this.gameState, this.civ) || []);
+		this.refreshTurnCaches();
+		return this.researchables.get(producer).filter(name => {
+			if (!this.researchOpen.has(name))
+				this.researchOpen.set(name, this.gameState.canResearch(name));
+			return this.researchOpen.get(name);
+		});
 	}
 
 	footprint(name)
