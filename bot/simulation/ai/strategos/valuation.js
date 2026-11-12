@@ -61,6 +61,139 @@ export function captureOutlook(members, centre)
 	};
 }
 
+const COMBAT_KINDS = ["Hack", "Pierce", "Crush"];
+const POPULATION_PRICE = 100;
+const POPULATION_PRESSURE_FROM = 0.7;
+const POPULATION_PRESSURE_SPAN = 0.25;
+const DIVERSITY_WEIGHT = 2;
+const ROLE_DIVERSITY_WEIGHT = 2;
+const GATHER_CREDIT = 0.5;
+
+export function populationPressure(world)
+{
+	const share = world.population / Math.max(1, world.populationMax);
+	return Math.min(1, Math.max(0, (share - POPULATION_PRESSURE_FROM) / POPULATION_PRESSURE_SPAN));
+}
+
+export function enemyProfile(world, catalog)
+{
+	let total = 0;
+	const softness = {};
+	for (const kind of COMBAT_KINDS)
+		softness[kind] = 0;
+	const groups = [];
+	let dps = 0;
+	for (const group of world.enemyArmy)
+	{
+		const profile = catalog.combat(group.template);
+		total += group.count;
+		for (const kind of COMBAT_KINDS)
+			softness[kind] += group.count * Math.pow(RESISTANCE_BASE, profile.resistance[kind] || 0);
+		const rate = attackRate(profile);
+		dps += group.count * rate;
+		groups.push({ "count": group.count, "classes": profile.classes, "rate": rate, "bonuses": allBonuses(profile) });
+	}
+	for (const kind of COMBAT_KINDS)
+		softness[kind] = total ? softness[kind] / total : 1;
+	return { total, softness, groups, dps };
+}
+
+export function combatRole(profile)
+{
+	let best = null;
+	let bestRate = 0;
+	for (const type in profile.attacks)
+	{
+		const attack = profile.attacks[type];
+		let sum = 0;
+		for (const kind in attack.damage)
+			sum += attack.damage[kind];
+		if (sum / Math.max(0.1, attack.repeat) > bestRate)
+		{
+			best = type;
+			bestRate = sum / Math.max(0.1, attack.repeat);
+		}
+	}
+	return best;
+}
+
+function attackRate(profile)
+{
+	let best = 0;
+	for (const type in profile.attacks)
+	{
+		const attack = profile.attacks[type];
+		let sum = 0;
+		for (const kind in attack.damage)
+			sum += attack.damage[kind];
+		best = Math.max(best, sum / Math.max(0.1, attack.repeat));
+	}
+	return best;
+}
+
+function allBonuses(profile)
+{
+	const bonuses = [];
+	for (const type in profile.attacks)
+		bonuses.push(...profile.attacks[type].bonuses);
+	return bonuses;
+}
+
+export function unitStrength(world, catalog, name, enemy)
+{
+	const profile = catalog.combat(name);
+	let dps = 0;
+	for (const type in profile.attacks)
+	{
+		const attack = profile.attacks[type];
+		let damage = 0;
+		for (const kind in attack.damage)
+			damage += attack.damage[kind] * (enemy.softness[kind] === undefined ? 1 : enemy.softness[kind]);
+		let multiplier = 1;
+		if (enemy.total)
+			for (const bonus of attack.bonuses)
+			{
+				let matched = 0;
+				for (const group of enemy.groups)
+					if (MatchesClassList(group.classes, bonus.classes))
+						matched += group.count;
+				multiplier += matched / enemy.total * (bonus.multiplier - 1);
+			}
+		dps = Math.max(dps, damage * multiplier / Math.max(0.1, attack.repeat));
+	}
+	let taken = 0;
+	for (const kind in world.enemyDamageMix)
+		taken += world.enemyDamageMix[kind] * Math.pow(RESISTANCE_BASE, profile.resistance[kind] || 0);
+	let exposure = 1;
+	if (enemy.dps > 0)
+	{
+		exposure = 0;
+		for (const group of enemy.groups)
+		{
+			let multiplier = 1;
+			for (const bonus of group.bonuses)
+				if (MatchesClassList(profile.classes, bonus.classes))
+					multiplier = Math.max(multiplier, bonus.multiplier);
+			exposure += group.count * group.rate / enemy.dps * multiplier;
+		}
+	}
+	return dps * (profile.hp || 0) / Math.max(0.01, taken * exposure);
+}
+
+export function unitScore(world, catalog, name, context)
+{
+	const cost = catalog.cost(name);
+	let price = POPULATION_PRICE * catalog.population(name) * context.pressure;
+	for (const code of world.codes)
+		price += cost[code] * context.prices[code];
+	const share = context.counts.get(name) || 0;
+	const roleShare = context.roles.get(combatRole(catalog.combat(name))) || 0;
+	const gathers = catalog.template(name).isGatherer() ? 1 + GATHER_CREDIT * (1 - context.pressure) : 1;
+	const size = Math.max(1, context.armySize);
+	return unitStrength(world, catalog, name, context.enemy) * gathers / Math.max(1, price) /
+		(1 + DIVERSITY_WEIGHT * share / size) / (1 + ROLE_DIVERSITY_WEIGHT * roleShare / size);
+}
+
 export function techBenefit(world, catalog, tech)
 {
 	return TECH_HORIZON_S * gatherGain(world, catalog, tech) + militaryBenefit(world, catalog, tech);

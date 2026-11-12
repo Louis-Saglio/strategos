@@ -372,6 +372,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	let enemySoldiers = 0;
 	const enemyFighters = [];
 	const enemyDamage = {};
+	const enemyTemplates = new Map();
 	let enemyDamageTotal = 0;
 	for (const enemy of gameState.getEnemies())
 	{
@@ -391,6 +392,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
+				enemyTemplates.set(ent.templateName(), (enemyTemplates.get(ent.templateName()) || 0) + 1);
 				if (ent.position())
 					enemyFighters.push(Object.freeze({ "id": ent.id(), "position": ent.position() }));
 				const attacks = catalog.combat(ent.templateName()).attacks;
@@ -505,6 +507,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"breakers": Object.freeze(breakers),
 		"army": Object.freeze([...army.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"enemyDamageMix": Object.freeze(enemyDamageMix),
+		"enemyArmy": Object.freeze([...enemyTemplates].sort((a, b) => a[0] < b[0] ? -1 : 1)
+			.map(([template, count]) => Object.freeze({ template, count }))),
 		"pendingConstructions": Object.freeze(pendingConstructions),
 		"demand": demand,
 		"trainers": Object.freeze(trainers),

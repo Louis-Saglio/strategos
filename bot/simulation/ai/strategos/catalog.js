@@ -105,6 +105,12 @@ export class Catalog
 		return this.isWorker(name) && !this.isSoldier(name);
 	}
 
+	isFighter(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("Soldier") && !template.hasClass("Hero");
+	}
+
 	isWorker(name)
 	{
 		const template = this.template(name);
@@ -191,12 +197,23 @@ export class Catalog
 			for (const type of template.attackTypes() || [])
 			{
 				const damage = type === "Capture" || type === "Slaughter" ? null : template.attackStrengths(type);
-				if (damage)
-					attacks[type] = Object.freeze({ "repeat": template.attackTimes(type).repeat / 1000, "damage": Object.freeze(damage) });
+				if (!damage)
+					continue;
+				const bonuses = [];
+				const raw = template.get("Attack/" + type + "/Bonuses") || {};
+				for (const key in raw)
+				{
+					const classes = template.get("Attack/" + type + "/Bonuses/" + key + "/Classes");
+					if (classes)
+						bonuses.push(Object.freeze({ "classes": classes, "multiplier": +template.get("Attack/" + type + "/Bonuses/" + key + "/Multiplier") || 1 }));
+				}
+				attacks[type] = Object.freeze({ "repeat": template.attackTimes(type).repeat / 1000, "damage": Object.freeze(damage),
+					"bonuses": Object.freeze(bonuses) });
 			}
 			const resistance = (template.resistanceStrengths() || {}).Damage || {};
 			this.combats.set(name, Object.freeze({
 				"hp": template.maxHitpoints(),
+				"classes": Object.freeze(template.classes() || []),
 				"attacks": Object.freeze(attacks),
 				"resistance": Object.freeze(Object.assign({}, resistance))
 			}));

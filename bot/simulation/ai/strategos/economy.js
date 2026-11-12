@@ -1,3 +1,4 @@
+import { combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
@@ -27,12 +28,16 @@ export class Economy
 		const requests = [];
 		const civilians = world.workers.filter(worker => !worker.soldier).length;
 		const soldiersOnly = civilians >= priorities.military.civilianTarget;
+		let context = null;
 		for (const trainer of world.trainers)
 		{
 			if (trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
-			const soldiers = trainer.trainable.filter(name => this.catalog.isSoldier(name));
-			const template = this.cheapestWorker(soldiersOnly && soldiers.length ? soldiers : trainer.trainable);
+			const soldiers = trainer.trainable.filter(name => this.catalog.isFighter(name));
+			const civilian = !soldiersOnly && trainer.trainable.some(name => this.catalog.isCivilian(name));
+			if (!civilian && soldiers.length && !context)
+				context = this.unitContext(world);
+			const template = civilian || !soldiers.length ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
 			if (!template)
 				continue;
 			const count = this.batchSize(world, template);
@@ -66,6 +71,44 @@ export class Economy
 		if (population > 0)
 			count = Math.min(count, Math.floor(world.populationRoom / population));
 		return Math.max(1, count);
+	}
+
+	unitContext(world)
+	{
+		const counts = new Map();
+		const roles = new Map();
+		let armySize = 0;
+		for (const group of world.army)
+		{
+			counts.set(group.template, group.count);
+			const role = combatRole(this.catalog.combat(group.template));
+			roles.set(role, (roles.get(role) || 0) + group.count);
+			armySize += group.count;
+		}
+		return {
+			"enemy": enemyProfile(world, this.catalog),
+			"prices": resourcePrices(world),
+			"pressure": populationPressure(world),
+			counts,
+			roles,
+			armySize
+		};
+	}
+
+	bestSoldier(world, names, context)
+	{
+		let best = null;
+		let bestScore = -Infinity;
+		for (const name of names)
+		{
+			const score = unitScore(world, this.catalog, name, context);
+			if (score > bestScore || (score === bestScore && name < best))
+			{
+				best = name;
+				bestScore = score;
+			}
+		}
+		return best;
 	}
 
 	cheapestWorker(names)
