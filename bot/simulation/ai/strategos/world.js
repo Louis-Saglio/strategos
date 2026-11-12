@@ -450,6 +450,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		centres.push(Object.freeze({
 			"id": ent.id(),
 			"position": ent.position(),
+			"angle": ent.angle(),
 			"radius": Math.max(footprint.width, footprint.depth) / 2
 		}));
 	}

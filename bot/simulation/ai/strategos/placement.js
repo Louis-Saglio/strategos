@@ -3,8 +3,8 @@ import { territoryAt } from "simulation/ai/strategos/world.js";
 const RING_STEP = 4;
 const ARC_STEP = 4;
 const MAX_CANDIDATES = 2000;
-
-export const BUILDING_ANGLE = Math.PI;
+const DEFAULT_ANGLE = Math.PI;
+const CELL_SLACK = Math.SQRT1_2;
 
 export class Placement
 {
@@ -12,6 +12,10 @@ export class Placement
 	{
 		this.grids = world.grids;
 		this.player = player;
+		const home = world.centres[0];
+		this.angle = home && isFinite(home.angle) ? home.angle : DEFAULT_ANGLE;
+		this.u = [Math.cos(this.angle), -Math.sin(this.angle)];
+		this.v = [Math.sin(this.angle), Math.cos(this.angle)];
 	}
 
 	territoryOwned(x, z)
@@ -25,23 +29,44 @@ export class Placement
 		this.neutralAllowed = allowed;
 	}
 
+	point(x, z, along, across)
+	{
+		return [x + along * this.u[0] + across * this.v[0], z + along * this.u[1] + across * this.v[1]];
+	}
+
+	corners(x, z, halfWidth, halfDepth)
+	{
+		return [[-1, -1], [1, -1], [-1, 1], [1, 1]].map(([a, b]) => this.point(x, z, a * halfWidth, b * halfDepth));
+	}
+
 	clear(x, z, halfWidth, halfDepth)
 	{
 		const grid = this.grids.passability;
 		const size = grid.cellSize;
-		const i0 = Math.floor((x - halfWidth) / size);
-		const i1 = Math.floor((x + halfWidth) / size);
-		const j0 = Math.floor((z - halfDepth) / size);
-		const j1 = Math.floor((z + halfDepth) / size);
+		const corners = this.corners(x, z, halfWidth, halfDepth);
+		const xs = corners.map(corner => corner[0]);
+		const zs = corners.map(corner => corner[1]);
+		const i0 = Math.floor(Math.min(...xs) / size);
+		const i1 = Math.floor(Math.max(...xs) / size);
+		const j0 = Math.floor(Math.min(...zs) / size);
+		const j1 = Math.floor(Math.max(...zs) / size);
 		if (i0 < 0 || j0 < 0 || i1 >= grid.width || j1 >= grid.height)
 			return false;
 		const mask = this.grids.buildingLand;
+		const slack = CELL_SLACK * size;
 		for (let j = j0; j <= j1; ++j)
 		{
 			const row = j * grid.width;
+			const dz = (j + 0.5) * size - z;
 			for (let i = i0; i <= i1; ++i)
-				if (grid.data[row + i] & mask)
+			{
+				if (!(grid.data[row + i] & mask))
+					continue;
+				const dx = (i + 0.5) * size - x;
+				if (Math.abs(dx * this.u[0] + dz * this.u[1]) <= halfWidth + slack &&
+				    Math.abs(dx * this.v[0] + dz * this.v[1]) <= halfDepth + slack)
 					return false;
+			}
 		}
 		return true;
 	}
@@ -51,14 +76,17 @@ export class Placement
 		const halfWidth = footprint.width / 2;
 		const halfDepth = footprint.depth / 2;
 		const [x, z] = site;
-		if (!this.territoryOwned(x, z) ||
-		    !this.territoryOwned(x - halfWidth, z - halfDepth) || !this.territoryOwned(x + halfWidth, z - halfDepth) ||
-		    !this.territoryOwned(x - halfWidth, z + halfDepth) || !this.territoryOwned(x + halfWidth, z + halfDepth))
+		const corners = this.corners(x, z, halfWidth, halfDepth);
+		if (!this.territoryOwned(x, z) || corners.some(corner => !this.territoryOwned(corner[0], corner[1])))
 			return false;
 		for (const box of reserved)
-			if (Math.abs(box.x - x) < box.halfWidth + halfWidth + margin &&
-			    Math.abs(box.z - z) < box.halfDepth + halfDepth + margin)
+		{
+			const dx = box.x - x;
+			const dz = box.z - z;
+			if (Math.abs(dx * this.u[0] + dz * this.u[1]) < box.halfWidth + halfWidth + margin &&
+			    Math.abs(dx * this.v[0] + dz * this.v[1]) < box.halfDepth + halfDepth + margin)
 				return false;
+		}
 		for (const zone of keepAway)
 		{
 			const dx = zone.position[0] - x;
@@ -69,8 +97,7 @@ export class Placement
 		}
 		const grid = this.grids.passability;
 		const mask = this.grids.buildingLand;
-		for (const [px, pz] of [[x, z], [x - halfWidth, z - halfDepth], [x + halfWidth, z - halfDepth],
-			[x - halfWidth, z + halfDepth], [x + halfWidth, z + halfDepth]])
+		for (const [px, pz] of [[x, z]].concat(corners))
 		{
 			const i = Math.floor(px / grid.cellSize);
 			const j = Math.floor(pz / grid.cellSize);
@@ -91,9 +118,9 @@ export class Placement
 			for (let k = 0; k < steps; ++k)
 			{
 				const angle = 2 * Math.PI * k / steps;
-				const site = [anchor[0] + radius * Math.cos(angle), anchor[1] + radius * Math.sin(angle)];
+				const site = this.point(anchor[0], anchor[1], radius * Math.cos(angle), radius * Math.sin(angle));
 				if (this.fits(site, footprint, margin, reserved, keepAway))
-					return { "x": site[0], "z": site[1], "angle": BUILDING_ANGLE, "radius": radius, "tried": tried + 1 };
+					return { "x": site[0], "z": site[1], "angle": this.angle, "radius": radius, "tried": tried + 1 };
 				if (++tried >= MAX_CANDIDATES)
 					return null;
 			}
