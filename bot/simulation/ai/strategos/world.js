@@ -230,6 +230,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				"position": ent.position(),
 				"free": capacity - ent.garrisonedSlots(),
 				"garrisoned": garrisoned.length,
+				"units": Object.freeze(garrisoned.slice()),
 				"soldiers": Object.freeze(soldiers),
 				"arrows": !!ent.get("BuildingAI"),
 				"classes": ent.garrisonableClasses() || ""

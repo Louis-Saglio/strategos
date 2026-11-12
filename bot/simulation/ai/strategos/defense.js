@@ -208,7 +208,7 @@ export class Defense
 			if (!holder.garrisoned)
 				continue;
 			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
-			const units = holder.soldiers.filter(() => safe || !this.outnumbered);
+			const units = holder.units.filter(id => safe || !this.outnumbered && holder.soldiers.includes(id));
 			if (units.length)
 				requests.push({
 					"source": "defense",
