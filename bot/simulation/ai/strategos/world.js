@@ -1,6 +1,7 @@
 const SITE_RADIUS = 110;
 const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
+const WEALTH_CELL = 40;
 
 export class ResourceIndex
 {
@@ -18,26 +19,47 @@ export class ResourceIndex
 		this.cursor += 1;
 		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
 		const kept = [];
-		if (points.length)
+		const grid = this.grid(gameState);
+		const totals = new Float64Array(grid.width * grid.height);
+		const limit = SITE_RADIUS * SITE_RADIUS;
+		for (const ent of gameState.getResourceSupplies(code).values())
 		{
-			const limit = SITE_RADIUS * SITE_RADIUS;
-			for (const ent of gameState.getResourceSupplies(code).values())
+			const owner = ent.owner();
+			if (owner !== 0 && owner !== this.player)
+				continue;
+			const position = ent.position();
+			if (!position)
+				continue;
+			const amount = ent.resourceSupplyAmount();
+			if (owner === 0 && isFinite(amount) && amount > 0)
 			{
-				const owner = ent.owner();
-				if (owner !== 0 && owner !== this.player)
-					continue;
-				const position = ent.position();
-				if (!position)
-					continue;
-				let best = Infinity;
-				for (const point of points)
-					best = Math.min(best, squareDistance(point, position));
-				if (best <= limit)
-					kept.push({ "id": ent.id(), "distance": best });
+				const i = Math.min(grid.width - 1, Math.max(0, Math.floor(position[0] / grid.cellSize)));
+				const j = Math.min(grid.height - 1, Math.max(0, Math.floor(position[1] / grid.cellSize)));
+				totals[i + j * grid.width] += amount;
 			}
+			if (!points.length)
+				continue;
+			let best = Infinity;
+			for (const point of points)
+				best = Math.min(best, squareDistance(point, position));
+			if (best <= limit)
+				kept.push({ "id": ent.id(), "distance": best });
 		}
+		grid.totals[code] = totals;
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
 		this.sites.set(code, kept.slice(0, SITES_KEPT).map(site => site.id));
+	}
+
+	grid(gameState)
+	{
+		if (!this.wealth)
+		{
+			const territory = gameState.sharedScript.territoryMap;
+			const size = territory.width * territory.cellSize;
+			const cells = Math.ceil(size / WEALTH_CELL);
+			this.wealth = { "cellSize": WEALTH_CELL, "width": cells, "height": cells, "totals": {} };
+		}
+		return this.wealth;
 	}
 
 	live(gameState, code, anchors)
@@ -216,8 +238,11 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const holders = [];
 	let garrisonedSoldiers = 0;
 	const researchers = [];
+	const footprints = [];
 	for (const ent of gameState.getOwnStructures().values())
 	{
+		if (ent.position())
+			footprints.push(Object.freeze({ "position": ent.position(), "classes": ent.classes() }));
 		if (ent.foundationProgress() !== undefined)
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
@@ -370,6 +395,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"buildingLand": gameState.getPassabilityClassMask("building-land")
 		}),
 		"anchors": Object.freeze(anchors),
+		"wealth": resourceIndex.grid(gameState),
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
 		"enemySoldiers": enemySoldiers,
@@ -377,6 +403,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"enemyCentres": Object.freeze(enemyCentres),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
+		"footprints": Object.freeze(footprints),
 		"garrisonedSoldiers": garrisonedSoldiers,
 		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),

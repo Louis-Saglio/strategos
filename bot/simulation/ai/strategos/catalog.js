@@ -274,6 +274,21 @@ export class Catalog
 		return this.template(name).resourceDropsiteTypes() || [];
 	}
 
+	spacing(name)
+	{
+		const distance = this.template(name).buildDistance();
+		return distance && distance.FromClass ? { "fromClass": distance.FromClass, "min": +(distance.MinDistance || 0) } : null;
+	}
+
+	isSettlement(name)
+	{
+		const template = this.template(name);
+		const placement = template.buildPlacementType() || "land";
+		const distance = template.buildDistance();
+		return placement === "land" && template.hasClass("CivCentre") && !!template.hasBuildTerritory("neutral") &&
+			(!distance || !!distance.FromClass && !distance.MaxDistance);
+	}
+
 	isPlaceableOnLand(name)
 	{
 		const template = this.template(name);

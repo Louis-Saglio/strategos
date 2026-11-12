@@ -1,6 +1,6 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { techBenefit } from "simulation/ai/strategos/valuation.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
+import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
 const FIELD_MARGIN = 1;
@@ -20,6 +20,11 @@ const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 const PRODUCTION_STOCK_BASE = 300;
 const PRODUCTION_STOCK_PER_TRAINER = 300;
 const PRODUCTION_STOCK_CODES = ["food", "wood"];
+const SETTLEMENT_SPACING_MARGIN = 10;
+const SETTLEMENT_MAX_DISTANCE = 360;
+const SETTLEMENT_ENEMY_CLEARANCE = 220;
+const SETTLEMENT_WEALTH_CAP = 6000;
+const SETTLEMENT_TRIES = 6;
 
 export class Construction
 {
@@ -56,7 +61,8 @@ export class Construction
 			return this.repairRequests(world, priorities);
 		const requests = [];
 		const placement = new Placement(world, this.player);
-		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest])
+		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
+			this.expansionRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -300,6 +306,70 @@ export class Construction
 		if (!site)
 			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, value, 1);
+	}
+
+	expansionRequest(world, priorities)
+	{
+		const expansion = priorities.expansion;
+		const isSettlement = name => this.catalog.isSettlement(name);
+		const settlements = this.count(world, isSettlement);
+		const wanted = Math.min(expansion.max, 1 + Math.floor(Math.max(0, world.population - expansion.firstPopulation) / expansion.populationPerSettlement));
+		if (settlements >= wanted || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
+		    world.foundations.some(foundation => isSettlement(foundation.template)))
+			return null;
+		const template = [...this.offered(world)].filter(isSettlement)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!template || !this.searchable(world, template))
+			return null;
+		const spacing = this.catalog.spacing(template);
+		const minimum = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN + world.wealth.cellSize * Math.SQRT2;
+		const spaced = spacing ? world.footprints.filter(footprint => footprint.classes.includes(spacing.fromClass)) : [];
+		const home = world.centres[0].position;
+		const grid = world.wealth;
+		const candidates = [];
+		for (let j = 0; j < grid.height; ++j)
+			for (let i = 0; i < grid.width; ++i)
+			{
+				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
+				const fromHome = Math.sqrt(squareDistance(position, home));
+				if (fromHome > SETTLEMENT_MAX_DISTANCE ||
+				    spaced.some(footprint => squareDistance(footprint.position, position) < minimum * minimum))
+					continue;
+				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => Math.sqrt(squareDistance(centre.position, position))));
+				if (fromEnemy < SETTLEMENT_ENEMY_CLEARANCE || fromEnemy <= fromHome)
+					continue;
+				const owner = territoryAt(world.grids.territory, position[0], position[1]).owner;
+				if (owner !== 0 && owner !== this.player)
+					continue;
+				let wealth = 0;
+				for (const code of world.codes)
+				{
+					let total = 0;
+					for (let dj = -1; dj <= 1; ++dj)
+						for (let di = -1; di <= 1; ++di)
+						{
+							const ii = i + di;
+							const jj = j + dj;
+							if (ii >= 0 && jj >= 0 && ii < grid.width && jj < grid.height && grid.totals[code])
+								total += grid.totals[code][ii + jj * grid.width];
+						}
+					wealth += Math.min(total, SETTLEMENT_WEALTH_CAP);
+				}
+				if (wealth > 0)
+					candidates.push({ position, "score": wealth * (1 - fromHome / (2 * SETTLEMENT_MAX_DISTANCE)), "index": i + j * grid.width });
+			}
+		candidates.sort((a, b) => b.score - a.score || a.index - b.index);
+		const placement = new Placement(world, this.player);
+		placement.allowNeutral(true);
+		const zones = this.resourceZones(world, null);
+		for (const candidate of candidates.slice(0, SETTLEMENT_TRIES))
+		{
+			const site = placement.around(candidate.position, 0, grid.cellSize, this.catalog.footprint(template), BUILDING_MARGIN,
+				this.reservedBoxes(world), zones);
+			if (site)
+				return this.constructRequest(world, template, site, priorities.values.expansion, 1);
+		}
+		return this.noSite(world, template);
 	}
 
 	laboratoryRequest(world, priorities, placement)

@@ -17,7 +17,12 @@ export class Placement
 	territoryOwned(x, z)
 	{
 		const cell = territoryAt(this.grids.territory, x, z);
-		return cell.owner === this.player && cell.connected;
+		return cell.owner === this.player && cell.connected || this.neutralAllowed && cell.owner === 0;
+	}
+
+	allowNeutral(allowed)
+	{
+		this.neutralAllowed = allowed;
 	}
 
 	clear(x, z, halfWidth, halfDepth)
