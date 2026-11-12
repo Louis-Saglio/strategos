@@ -25,11 +25,14 @@ export class Economy
 	trainingRequests(world, priorities)
 	{
 		const requests = [];
+		const civilians = world.workers.filter(worker => !worker.soldier).length;
+		const soldiersOnly = civilians >= priorities.military.civilianTarget;
 		for (const trainer of world.trainers)
 		{
 			if (trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
-			const template = this.cheapestWorker(trainer.trainable);
+			const soldiers = trainer.trainable.filter(name => this.catalog.isSoldier(name));
+			const template = this.cheapestWorker(soldiersOnly && soldiers.length ? soldiers : trainer.trainable);
 			if (!template)
 				continue;
 			const count = this.batchSize(world, template);
