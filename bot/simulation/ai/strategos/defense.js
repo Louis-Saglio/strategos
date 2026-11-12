@@ -4,6 +4,10 @@ const ENGAGE_RADIUS = 160;
 const DANGER_RADIUS = 30;
 const SHELTER_RADIUS = 90;
 const RELEASE_DELAY_MS = 8000;
+const COVER_RADIUS = 55;
+const LOCAL_THREAT_RADIUS = 30;
+const LOCAL_FORCE_RADIUS = 50;
+const LOCAL_PARITY = 1;
 const REPORT_PERIOD_MS = 10000;
 
 export class Defense
@@ -61,6 +65,22 @@ export class Defense
 			const { threat, distance } = this.nearestThreat(world, fighter.position);
 			if (!threat || distance > ENGAGE_RADIUS)
 				continue;
+			if (!this.covered(world, threat.position) && !this.locallyMatched(world, threat.position))
+			{
+				const cover = this.nearestCover(world, fighter.position);
+				if (!cover)
+					continue;
+				const sheltered = squareDistance(cover.position, fighter.position) <= COVER_RADIUS * COVER_RADIUS / 4;
+				requests.push({
+					"source": "defense",
+					"action": sheltered ? { "type": "hold", "unit": fighter.id } :
+						{ "type": "walk", "unit": fighter.id, "x": cover.position[0], "z": cover.position[1] },
+					"claims": { "workers": [fighter.id] },
+					"value": priorities.values.defend,
+					"urgency": 1
+				});
+				continue;
+			}
 			requests.push({
 				"source": "defense",
 				"action": { "type": "attack", "unit": fighter.id, "target": threat.id },
@@ -70,6 +90,39 @@ export class Defense
 			});
 		}
 		return requests;
+	}
+
+	nearestCover(world, position)
+	{
+		let best = null;
+		let bestDistance = Infinity;
+		for (const holder of world.holders)
+		{
+			if (!holder.arrows)
+				continue;
+			const distance = squareDistance(holder.position, position);
+			if (distance < bestDistance || (distance === bestDistance && holder.id < best.id))
+			{
+				best = holder;
+				bestDistance = distance;
+			}
+		}
+		return best;
+	}
+
+	covered(world, position)
+	{
+		const cover = this.nearestCover(world, position);
+		return !!cover && squareDistance(cover.position, position) <= COVER_RADIUS * COVER_RADIUS;
+	}
+
+	locallyMatched(world, position)
+	{
+		const threatLimit = LOCAL_THREAT_RADIUS * LOCAL_THREAT_RADIUS;
+		const forceLimit = LOCAL_FORCE_RADIUS * LOCAL_FORCE_RADIUS;
+		const threats = world.threats.filter(threat => squareDistance(threat.position, position) <= threatLimit).length;
+		const force = world.fighters.filter(fighter => squareDistance(fighter.position, position) <= forceLimit).length;
+		return force >= LOCAL_PARITY * threats;
 	}
 
 	shelterRequests(world, priorities)

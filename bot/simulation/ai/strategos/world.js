@@ -220,6 +220,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				"position": ent.position(),
 				"free": capacity - ent.garrisonedSlots(),
 				"garrisoned": garrisoned.length,
+				"arrows": !!ent.get("BuildingAI"),
 				"classes": ent.garrisonableClasses() || ""
 			}));
 		}

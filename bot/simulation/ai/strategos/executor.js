@@ -19,6 +19,8 @@ export class Executor
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
 			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
 			"unload-all": action => this.unloadAll(action),
+			"walk": action => this.walk(action),
+			"hold": () => false,
 			"research": action => this.research(action)
 		};
 	}
@@ -109,6 +111,14 @@ export class Executor
 			return false;
 		Engine.PostCommand(this.player, { "type": "research", "entity": action.researcher, "template": action.tech, "pushFront": false });
 		this.telemetry.line("TECH", this.time, { "research": action.tech, "payback": action.payback });
+		return true;
+	}
+
+	walk(action)
+	{
+		if (!this.gameState.getEntityById(action.unit))
+			return false;
+		Engine.PostCommand(this.player, { "type": "walk", "entities": [action.unit], "x": action.x, "z": action.z, "queued": false });
 		return true;
 	}
 
