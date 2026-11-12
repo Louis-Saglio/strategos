@@ -14,6 +14,8 @@ Matches are paired by tag (default: every tag present in both). Prints:
   two-sided paired t-test p-value. --at MIN reads the gathered resources,
   their total and ratio and the population at minute MIN (harness eco
   lines, see analyze.py).
+- score: per match +1 when player N's side won, -1 when it lost, 0 on a
+  timeout (failed matches are left out), compared like the metrics.
 
 A difference is only worth reading when it is larger than the noise of the
 unchanged matches; small batches are noise.
@@ -79,6 +81,11 @@ def side_result(row, player):
     return {"won": "win", "defeated": "loss"}.get(st, "fail")
 
 
+def score(row, player):
+    """+1 when player's side won, -1 when it lost, 0 on a timeout, None on a failure."""
+    return {"win": 1, "loss": -1, "timeout": 0}.get(side_result(row, player))
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("base")
@@ -108,14 +115,16 @@ def main():
     for k, v in sorted(trans.items()):
         print(f"  {k}: {len(v)} ({' '.join(v[:12])}{' ...' if len(v) > 12 else ''})")
 
-    names = ["game_min"] + analyze.METRICS
+    names = ["score", "game_min"] + analyze.METRICS
     print(f"\n{'metric':10} {'base':>10} {'variant':>10} {'delta':>10} {'p':>7}  n")
     for m in names:
         pairs = []
         for t in tags:
             vals = []
             for row in (base[t], var[t]):
-                if m == "game_min":
+                if m == "score":
+                    v = score(row, a.player)
+                elif m == "game_min":
                     v = row["game_min"]
                 else:
                     st = row["stats"].get(a.player)
