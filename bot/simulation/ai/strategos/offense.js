@@ -9,8 +9,12 @@ const HOME_RADIUS = 50;
 const RETURN_TIMEOUT_MS = 60000;
 const HOME_ALARM_THREATS = 6;
 const RETREAT_FRACTION = 0.4;
+const ASSAULT_RADIUS = 80;
+const ASSAULT_ENTER_SHARE = 0.1;
+const ASSAULT_EXIT_SHARE = 0.25;
 const MOVING_STATES = ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"];
 const TARGET_CLASSES = { "attack": ["Unit", "Structure"], "avoid": ["Palisade", "Wall"] };
+const UNIT_CLASSES = { "attack": ["Unit"], "avoid": ["Palisade", "Wall"] };
 
 export class Offense
 {
@@ -23,6 +27,7 @@ export class Offense
 		this.since = 0;
 		this.target = null;
 		this.rally = null;
+		this.assaulting = false;
 	}
 
 	requests(world, priorities)
@@ -47,6 +52,7 @@ export class Offense
 	{
 		this.mode = mode;
 		this.since = world.time;
+		this.assaulting = false;
 		this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": mode, "army": this.army.size }, details || {}));
 	}
 
@@ -122,10 +128,33 @@ export class Offense
 
 	attackRequests(world, priorities, members)
 	{
-		return members.map(member => MOVING_STATES.some(state => member.state.includes(state)) ?
-			this.order(member, { "type": "hold" }, priorities) :
-			this.order(member, { "type": "attack-walk", "x": this.target.position[0], "z": this.target.position[1],
-				"targetClasses": TARGET_CLASSES }, priorities));
+		const limit = ASSAULT_RADIUS * ASSAULT_RADIUS;
+		const defenders = new Set(world.enemyFighters
+			.filter(enemy => squareDistance(enemy.position, this.target.position) <= limit)
+			.map(enemy => enemy.id));
+		const assault = defenders.size < (this.assaulting ? ASSAULT_EXIT_SHARE : ASSAULT_ENTER_SHARE) * members.length;
+		if (assault !== this.assaulting)
+		{
+			this.assaulting = assault;
+			this.telemetry.line("ATTACK", world.time, { "mode": assault ? "assault" : "fight", "army": members.length, "defenders": defenders.size });
+		}
+		if (assault)
+		{
+			const fighting = new Set(world.enemyFighters.map(enemy => enemy.id));
+			return members.map(member => member.target === this.target.id ||
+				member.state.includes("COMBAT") && fighting.has(member.target) ?
+				this.order(member, { "type": "hold" }, priorities) :
+				this.order(member, { "type": "capture", "target": this.target.id }, priorities));
+		}
+		return members.map(member => {
+			if (member.target === this.target.id)
+				return this.order(member, { "type": "attack-walk", "x": this.target.position[0], "z": this.target.position[1],
+					"targetClasses": UNIT_CLASSES }, priorities);
+			return MOVING_STATES.some(state => member.state.includes(state)) ?
+				this.order(member, { "type": "hold" }, priorities) :
+				this.order(member, { "type": "attack-walk", "x": this.target.position[0], "z": this.target.position[1],
+					"targetClasses": TARGET_CLASSES }, priorities);
+		});
 	}
 
 	returnRequests(world, priorities, members, home)

@@ -17,6 +17,7 @@ export class Executor
 			"construct": action => this.construct(action),
 			"repair": action => this.repair(action),
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
+			"capture": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": true }),
 			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
 			"unload-all": action => this.unloadAll(action),
 			"unload": action => this.unload(action),

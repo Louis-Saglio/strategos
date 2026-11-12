@@ -243,6 +243,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const threats = [];
 	const enemyCentres = [];
 	let enemySoldiers = 0;
+	const enemyFighters = [];
 	const enemyDamage = {};
 	let enemyDamageTotal = 0;
 	for (const enemy of gameState.getEnemies())
@@ -257,6 +258,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
+				if (ent.position())
+					enemyFighters.push(Object.freeze({ "id": ent.id(), "position": ent.position() }));
 				const attacks = catalog.combat(ent.templateName()).attacks;
 				for (const type in attacks)
 					for (const kind in attacks[type].damage)
@@ -286,7 +289,14 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		const position = ent.position();
 		if (!position)
 			continue;
-		fighters.push(Object.freeze({ "id": ent.id(), "position": position, "state": ent.unitAIState() || "", "classes": ent.classes() }));
+		const orders = ent.unitAIOrderData() || [];
+		fighters.push(Object.freeze({
+			"id": ent.id(),
+			"position": position,
+			"state": ent.unitAIState() || "",
+			"classes": ent.classes(),
+			"target": orders.length && orders[0] ? orders[0].target : undefined
+		}));
 		const name = ent.templateName();
 		if (!army.has(name))
 			army.set(name, { "template": name, "classes": ent.classes(), "count": 0, "value": 0 });
@@ -340,6 +350,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
 		"enemySoldiers": enemySoldiers,
+		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyCentres": Object.freeze(enemyCentres),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
