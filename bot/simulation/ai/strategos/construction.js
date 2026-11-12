@@ -1,5 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { techBenefit } from "simulation/ai/strategos/valuation.js";
+import { exchangeOutlook, techBenefit } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -25,6 +25,7 @@ const SETTLEMENT_MAX_DISTANCE = 360;
 const SETTLEMENT_ENEMY_CLEARANCE = 220;
 const SETTLEMENT_WEALTH_CAP = 6000;
 const SETTLEMENT_TRIES = 6;
+const MARKET_SURPLUS = 500;
 
 export class Construction
 {
@@ -62,7 +63,7 @@ export class Construction
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
-			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.expansionRequest])
+			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -403,6 +404,20 @@ export class Construction
 				return this.nearCentreRequest(world, placement, template, priorities.values.phase);
 		}
 		return null;
+	}
+
+	marketRequest(world, priorities, placement)
+	{
+		const isMarket = name => this.catalog.isBarterMarket(name);
+		if (world.barter.open || this.count(world, isMarket) > 0)
+			return null;
+		const { surplus, shortfall } = exchangeOutlook(world);
+		if (!world.codes.some(code => shortfall[code] > 0) || !world.codes.some(code => surplus[code] >= MARKET_SURPLUS))
+			return null;
+		const template = this.cheapest(world, isMarket);
+		if (!template)
+			return null;
+		return this.nearCentreRequest(world, placement, template, priorities.values.market);
 	}
 
 	laboratoryRequest(world, priorities, placement)

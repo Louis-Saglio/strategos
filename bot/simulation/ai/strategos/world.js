@@ -489,6 +489,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"wealth": resourceIndex.grid(gameState),
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
+		"barter": Object.freeze({ "open": !!playerData.canBarter, "prices": playerData.barterPrices }),
 		"enemySoldiers": enemySoldiers,
 		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyCentres": Object.freeze(enemyCentres),

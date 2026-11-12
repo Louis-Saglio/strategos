@@ -301,6 +301,12 @@ export class Catalog
 		return distance && distance.FromClass ? { "fromClass": distance.FromClass, "min": +(distance.MinDistance || 0) } : null;
 	}
 
+	isBarterMarket(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("Barter") && template.hasClass("Structure");
+	}
+
 	isSettlement(name)
 	{
 		const template = this.template(name);

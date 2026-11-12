@@ -73,8 +73,9 @@ export class Allocator
 				}
 				continue;
 			}
-			for (const code of this.codes)
-				spent[code] += request.claims.resources && request.claims.resources[code] || 0;
+			if (!request.conversion)
+				for (const code of this.codes)
+					spent[code] += request.claims.resources && request.claims.resources[code] || 0;
 			this.commit(request, budget);
 			grants.push(request);
 		}
@@ -113,7 +114,8 @@ export class Allocator
 		{
 			const amount = claims.resources && claims.resources[code] || 0;
 			budget.resources[code] -= amount;
-			this.spent[code] += amount;
+			if (!request.conversion)
+				this.spent[code] += amount;
 		}
 	}
 

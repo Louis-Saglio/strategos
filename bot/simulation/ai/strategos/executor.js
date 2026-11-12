@@ -1,5 +1,6 @@
 const CONSTRUCT_CONFIRM_MS = 3000;
 const CONSTRUCT_MATCH_DISTANCE = 1.5;
+const BARTER_REPORT_MS = 30000;
 
 export class Executor
 {
@@ -24,7 +25,8 @@ export class Executor
 			"walk": action => this.walk(action),
 			"hold": () => false,
 			"attack-walk": action => this.attackWalk(action),
-			"research": action => this.research(action)
+			"research": action => this.research(action),
+			"barter": action => this.barter(action)
 		};
 	}
 
@@ -114,6 +116,14 @@ export class Executor
 			return false;
 		Engine.PostCommand(this.player, { "type": "research", "entity": action.researcher, "template": action.tech, "pushFront": false });
 		this.telemetry.line("TECH", this.time, { "research": action.tech, "payback": action.payback });
+		return true;
+	}
+
+	barter(action)
+	{
+		Engine.PostCommand(this.player, { "type": "barter", "sell": action.sell, "buy": action.buy, "amount": action.amount });
+		if (this.telemetry.due("TRADE", this.time, BARTER_REPORT_MS))
+			this.telemetry.line("TRADE", this.time, { "sell": action.sell, "buy": action.buy, "rate": Math.round(action.rate * 100) / 100 });
 		return true;
 	}
 

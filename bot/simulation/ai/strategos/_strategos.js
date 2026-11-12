@@ -9,6 +9,7 @@ import { Offense } from "simulation/ai/strategos/offense.js";
 import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
+import { Trade } from "simulation/ai/strategos/trade.js";
 import { ResourceIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
 const DECISION_PERIOD = 8;
@@ -31,7 +32,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.strategy = new Strategy(this.catalog.codes);
 	this.subsystems = [new Defense(this.telemetry), new Offense(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
-		new Research(this.catalog)];
+		new Research(this.catalog), new Trade()];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
 	this.telemetry.line("STRATEGOS", gameState.getTimeElapsed(), {
