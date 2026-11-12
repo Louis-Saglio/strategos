@@ -127,10 +127,13 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		for (const item of queue)
 			if (item.unitTemplate)
 				queuedPopulation += item.count * catalog.population(item.unitTemplate);
+		const trainable = catalog.trainable(ent);
+		if (!trainable.length)
+			continue;
 		trainers.push(Object.freeze({
 			"id": ent.id(),
 			"queueLength": queue.length,
-			"trainable": Object.freeze(catalog.trainable(ent))
+			"trainable": Object.freeze(trainable)
 		}));
 	}
 
