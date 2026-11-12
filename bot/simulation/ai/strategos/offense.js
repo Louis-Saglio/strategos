@@ -109,12 +109,12 @@ export class Offense
 	launch(world, priorities, home)
 	{
 		const offense = priorities.offense;
-		if (world.threats.length >= HOME_CALM_THREATS || !world.enemyCentres.length)
+		if (world.threats.length >= HOME_CALM_THREATS || !world.enemyTargets.length)
 			return [];
 		const available = world.fighters.filter(fighter => !fighter.state.includes("COMBAT"));
 		if (available.length < offense.minArmy || available.length < offense.superiority * world.enemySoldiers)
 			return [];
-		const target = world.enemyCentres
+		const target = world.enemyTargets
 			.slice()
 			.sort((a, b) => squareDistance(a.position, home.position) - squareDistance(b.position, home.position) || a.id - b.id)[0];
 		const outlook = captureOutlook(available, this.expected(target));
@@ -138,7 +138,7 @@ export class Offense
 			return "alarm";
 		if (members.length < this.launchSize * RETREAT_FRACTION)
 			return "losses";
-		if (this.mode === "attack" && !world.enemyCentres.some(centre => centre.id === this.target.id) &&
+		if (this.mode === "attack" && !world.enemyTargets.some(centre => centre.id === this.target.id) &&
 			!this.retarget(world))
 			return "done";
 		return null;
@@ -163,10 +163,10 @@ export class Offense
 
 	retarget(world)
 	{
-		if (!world.enemyCentres.length)
+		if (!world.enemyTargets.length)
 			return false;
 		const from = this.target.position;
-		this.target = world.enemyCentres
+		this.target = world.enemyTargets
 			.slice()
 			.sort((a, b) => squareDistance(a.position, from) - squareDistance(b.position, from) || a.id - b.id)[0];
 		this.assaulting = false;
@@ -218,7 +218,7 @@ export class Offense
 		const defenders = new Set(world.enemyFighters
 			.filter(enemy => squareDistance(enemy.position, this.target.position) <= limit)
 			.map(enemy => enemy.id));
-		const centre = world.enemyCentres.find(candidate => candidate.id === this.target.id) || this.target;
+		const centre = world.enemyTargets.find(candidate => candidate.id === this.target.id) || this.target;
 		const margins = priorities.offense.capture;
 		const outlook = centre.fire ? captureOutlook(members, centre) : { "power": 0, "losses": 0, "reach": 0 };
 		const capturable = outlook.reach >= (this.assaulting ? margins.exit : margins.enter) * (centre.points || 0);

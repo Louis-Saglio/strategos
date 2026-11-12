@@ -97,6 +97,7 @@ const TERRITORY_OWNER_MASK = 0x1F;
 const TERRITORY_BLINKING_MASK = 0x40;
 const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
 const DEFAULT_DAMAGE_MIX = { "Hack": 0.5, "Pierce": 0.5 };
+const CRITICAL_CLASS = "ConquestCritical";
 
 export function territoryAt(territory, x, z)
 {
@@ -106,6 +107,18 @@ export function territoryAt(territory, x, z)
 		return { "owner": -1, "connected": false };
 	const cell = territory.data[i + j * territory.width];
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
+}
+
+function enemyTarget(gameState, ent, owner, player)
+{
+	return Object.freeze({
+		"id": ent.id(),
+		"owner": owner,
+		"position": ent.position(),
+		"regen": captureRegen(gameState, ent),
+		"points": capturePointsToTake(ent, player),
+		"fire": defensiveFire(gameState, ent)
+	});
 }
 
 function captureRegen(gameState, ent)
@@ -355,6 +368,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const player = gameState.getPlayerID();
 	const threats = [];
 	const enemyCentres = [];
+	const enemyCritical = [];
 	let enemySoldiers = 0;
 	const enemyFighters = [];
 	const enemyDamage = {};
@@ -364,15 +378,14 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		if (enemy === 0)
 			continue;
 		for (const ent of gameState.getEnemyStructures(enemy).values())
-			if (ent.hasClass("CivCentre") && ent.position())
-				enemyCentres.push(Object.freeze({
-					"id": ent.id(),
-					"owner": enemy,
-					"position": ent.position(),
-					"regen": captureRegen(gameState, ent),
-					"points": capturePointsToTake(ent, player),
-					"fire": defensiveFire(gameState, ent)
-				}));
+		{
+			if (!ent.position())
+				continue;
+			if (ent.hasClass("CivCentre"))
+				enemyCentres.push(enemyTarget(gameState, ent, enemy, player));
+			else if (ent.hasClass(CRITICAL_CLASS) && ent.foundationProgress() === undefined)
+				enemyCritical.push(ent);
+		}
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
 			if (ent.hasClass("Soldier"))
@@ -478,6 +491,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"enemySoldiers": enemySoldiers,
 		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyCentres": Object.freeze(enemyCentres),
+		"enemyTargets": Object.freeze(enemyCentres.length ? enemyCentres :
+			enemyCritical.map(ent => enemyTarget(gameState, ent, ent.owner(), player))),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
 		"footprints": Object.freeze(footprints),
