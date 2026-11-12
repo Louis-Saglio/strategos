@@ -152,6 +152,34 @@ function capturePointsToTake(ent, player)
 	return total;
 }
 
+function phaseNeeds(gameState, tech)
+{
+	const template = tech && gameState.getTemplate(tech);
+	const alternatives = template && template.requirements(gameState.getPlayerCiv());
+	if (!alternatives || !alternatives.length)
+		return [];
+	const counts = gameState.playerData.classCounts || {};
+	const variants = gameState.playerData.typeCountsByClass || {};
+	const needs = [];
+	for (const spec of alternatives[0].entities || [])
+	{
+		const have = spec.check === "variants" ? Object.keys(variants[spec.class] || {}).length : counts[spec.class] || 0;
+		if (have < spec.number)
+			needs.push(Object.freeze({ "class": spec.class, "check": spec.check, "missing": spec.number - have }));
+	}
+	return needs;
+}
+
+function techCost(gameState, codes, tech)
+{
+	const template = tech && gameState.getTemplate(tech);
+	const raw = template && template.cost() || {};
+	const cost = {};
+	for (const code of codes)
+		cost[code] = raw[code] || 0;
+	return Object.freeze(cost);
+}
+
 export function captureStrength(ent)
 {
 	return +(ent.get("Attack/Capture/Capture") || 0);
@@ -210,9 +238,20 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	}
 
 	const workers = [];
+	const breakers = [];
 	for (const ent of gameState.getOwnUnits().values())
 	{
 		const position = ent.position();
+		if (position && catalog.isBreaker(ent.templateName()))
+		{
+			const orders = ent.unitAIOrderData() || [];
+			breakers.push(Object.freeze({
+				"id": ent.id(),
+				"position": position,
+				"state": ent.unitAIState() || "",
+				"target": orders.length && orders[0] ? orders[0].target : undefined
+			}));
+		}
 		if (!position || !ent.isGatherer() || ent.hasClass("Ship"))
 			continue;
 		const orders = ent.unitAIOrderData() || [];
@@ -417,6 +456,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"time": gameState.getTimeElapsed(),
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
+		"nextPhaseCost": techCost(gameState, codes, gameState.getPhaseName(gameState.currentPhase() + 1)),
+		"phaseNeeds": Object.freeze(phaseNeeds(gameState, gameState.getPhaseName(gameState.currentPhase() + 1))),
 		"civ": catalog.civ,
 		"codes": codes,
 		"resources": Object.freeze(resources),
@@ -444,6 +485,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),
 		"fighters": Object.freeze(fighters),
+		"breakers": Object.freeze(breakers),
 		"army": Object.freeze([...army.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"enemyDamageMix": Object.freeze(enemyDamageMix),
 		"pendingConstructions": Object.freeze(pendingConstructions),

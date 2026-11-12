@@ -10,6 +10,36 @@ const SPEED_KEY = "ResourceGatherer/BaseSpeed";
 const ATTACK_PREFIX = "Attack/";
 const RESISTANCE_PREFIX = "Resistance/Entity/Damage/";
 const HEALTH_KEY = "Health/Max";
+const EXCHANGE_HORIZON_S = 60;
+const EXCHANGE_BUFFER = 100;
+const EXCHANGE_KEEP = 200;
+const PRICE_FLOOR = 0.1;
+
+export function exchangeOutlook(world)
+{
+	const surplus = {};
+	const shortfall = {};
+	for (const code of world.codes)
+	{
+		const stock = world.resources[code];
+		const unmet = world.demand.unmet[code];
+		shortfall[code] = Math.max(0, unmet + EXCHANGE_BUFFER - stock);
+		surplus[code] = Math.max(0, stock - unmet - world.demand.spendRate[code] * EXCHANGE_HORIZON_S - EXCHANGE_KEEP);
+	}
+	return { surplus, shortfall };
+}
+
+export function resourcePrices(world)
+{
+	const prices = {};
+	for (const code of world.codes)
+	{
+		const stock = world.resources[code];
+		const need = world.demand.unmet[code] + world.demand.spendRate[code] * EXCHANGE_HORIZON_S + EXCHANGE_KEEP;
+		prices[code] = stock <= need ? 1 : Math.max(PRICE_FLOOR, need / stock);
+	}
+	return prices;
+}
 
 export function captureOutlook(members, centre)
 {

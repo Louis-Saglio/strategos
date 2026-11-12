@@ -1,4 +1,4 @@
-import { TECH_HORIZON_S, techBenefit } from "simulation/ai/strategos/valuation.js";
+import { TECH_HORIZON_S, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
 
 const PAYBACK_LIMIT_S = 180;
 const PHASE_QUEUE_LIMIT = 1;
@@ -20,6 +20,7 @@ export class Research
 				benefits.set(tech, techBenefit(world, this.catalog, tech));
 			return benefits.get(tech);
 		};
+		const prices = resourcePrices(world);
 		const phase = this.phaseRequest(world, priorities);
 		if (phase)
 		{
@@ -39,7 +40,7 @@ export class Research
 				if (benefit <= 0)
 					continue;
 				const cost = this.catalog.techCost(tech, researcher.template);
-				const payback = TECH_HORIZON_S * world.codes.reduce((sum, code) => sum + cost[code], 0) / benefit;
+				const payback = TECH_HORIZON_S * world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0) / benefit;
 				if (payback < PAYBACK_LIMIT_S && (!best || payback < best.payback || (payback === best.payback && tech < best.tech)))
 					best = { tech, cost, payback };
 			}

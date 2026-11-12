@@ -21,8 +21,9 @@ const UNIT_CLASSES = { "attack": ["Unit"], "avoid": ["Palisade", "Wall"] };
 
 export class Offense
 {
-	constructor(telemetry)
+	constructor(catalog, telemetry)
 	{
+		this.catalog = catalog;
 		this.telemetry = telemetry;
 		this.mode = "home";
 		this.army = new Set();
@@ -36,11 +37,53 @@ export class Offense
 
 	requests(world, priorities)
 	{
-		const members = world.fighters.filter(fighter => this.army.has(fighter.id));
-		this.army = new Set(members.map(fighter => fighter.id));
 		const home = world.centres[0];
 		if (!home)
 			return [];
+		return this.armyRequests(world, priorities, home).concat(this.breakerRequests(world, priorities, home));
+	}
+
+	breakerRequests(world, priorities, home)
+	{
+		const requests = [];
+		const plan = priorities.offense.breakers;
+		const wanted = Math.min(plan.max, Math.floor(world.fighters.length / plan.perSoldiers));
+		const trains = trainer => trainer.trainable.some(name => this.catalog.isBreaker(name));
+		const trainer = world.trainers.find(candidate => candidate.queueLength === 0 && trains(candidate));
+		if (trainer && !world.trainers.some(candidate => candidate.queueLength > 0 && trains(candidate)) && world.breakers.length < wanted)
+		{
+			const template = trainer.trainable.filter(name => this.catalog.isBreaker(name))
+				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			requests.push({
+				"source": "offense",
+				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
+				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
+				"value": priorities.values.siege,
+				"urgency": 1,
+				"reserve": true
+			});
+		}
+		if (this.mode === "home")
+			return requests;
+		const moving = breaker => MOVING_STATES.some(state => breaker.state.includes(state));
+		for (const breaker of world.breakers)
+		{
+			let action = { "type": "hold" };
+			if (this.mode === "attack" && breaker.target !== this.target.id)
+				action = { "type": "attack", "target": this.target.id };
+			else if (this.mode === "rally" && !moving(breaker))
+				action = { "type": "walk", "x": this.rally[0], "z": this.rally[1] };
+			else if (this.mode === "return" && !moving(breaker))
+				action = { "type": "walk", "x": home.position[0], "z": home.position[1] };
+			requests.push(this.order(breaker, action, priorities));
+		}
+		return requests;
+	}
+
+	armyRequests(world, priorities, home)
+	{
+		const members = world.fighters.filter(fighter => this.army.has(fighter.id));
+		this.army = new Set(members.map(fighter => fighter.id));
 		if (this.mode === "home")
 			return this.launch(world, priorities, home);
 		const reason = this.mode !== "return" && this.retreatReason(world, members, home);
@@ -75,7 +118,7 @@ export class Offense
 			.slice()
 			.sort((a, b) => squareDistance(a.position, home.position) - squareDistance(b.position, home.position) || a.id - b.id)[0];
 		const outlook = captureOutlook(available, this.expected(target));
-		if (outlook.reach < offense.capture.enter * target.points)
+		if (outlook.reach < offense.capture.enter * target.points && world.breakers.length < offense.breakers.launch)
 			return [];
 		this.target = target;
 		const dx = target.position[0] - home.position[0];
@@ -190,7 +233,7 @@ export class Offense
 			this.resistance.regen = Math.max(this.resistance.regen, centre.regen);
 			this.resistance.arrows = Math.max(this.resistance.arrows, centre.fire.arrows);
 		}
-		if (!assault && !capturable && defenders.size < ASSAULT_ENTER_SHARE * members.length)
+		if (!assault && !capturable && !world.breakers.length && defenders.size < ASSAULT_ENTER_SHARE * members.length)
 		{
 			this.switchMode(world, "return", Object.assign(details, { "alive": members.length, "launched": this.launchSize, "reason": "uncapturable" }));
 			return this.returnRequests(world, priorities, members, home);

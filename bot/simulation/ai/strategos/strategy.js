@@ -1,10 +1,13 @@
+import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
+
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "defend": 60, "offense": 30, "build": 25, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "production": 11, "trainWorker": 10, "rebalance": 5 },
+	"values": { "shelter": 70, "defend": 60, "offense": 30, "build": 25, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "production": 11, "siege": 11, "trainWorker": 10, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80 },
-	"phaseUpPopulation": { "2": 120 },
-	"offense": { "minArmy": 25, "superiority": 1.5, "capture": { "enter": 1.2, "exit": 0.8 } },
+	"phaseUpPopulation": { "2": 120, "3": 150 },
+	"surplusPhaseFrom": 3,
+	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 }
 };
 
@@ -25,6 +28,21 @@ export class Strategy
 			this.shares[code] = OPENING.gatherShares[code] || 0;
 		this.reported = Object.assign({}, this.shares);
 		this.started = false;
+		this.phaseWanted = 0;
+	}
+
+	wantsPhase(world)
+	{
+		const next = world.phase + 1;
+		if (this.phaseWanted === next)
+			return true;
+		const byPopulation = world.population >= (OPENING.phaseUpPopulation[next] || Infinity);
+		const { surplus } = exchangeOutlook(world);
+		const bySurplus = next >= OPENING.surplusPhaseFrom && !!world.nextPhaseTech &&
+			world.codes.every(code => surplus[code] >= world.nextPhaseCost[code]);
+		if (bySurplus)
+			this.phaseWanted = next;
+		return byPopulation || bySurplus;
 	}
 
 	update(world)
@@ -41,7 +59,7 @@ export class Strategy
 			"military": OPENING.military,
 			"offense": OPENING.offense,
 			"expansion": OPENING.expansion,
-			"advancePhase": world.population >= (OPENING.phaseUpPopulation[world.phase + 1] || Infinity)
+			"advancePhase": this.wantsPhase(world)
 		});
 		return this.priorities;
 	}

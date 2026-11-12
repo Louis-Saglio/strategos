@@ -62,7 +62,7 @@ export class Construction
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
-			this.expansionRequest])
+			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.expansionRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -370,6 +370,39 @@ export class Construction
 				return this.constructRequest(world, template, site, priorities.values.expansion, 1);
 		}
 		return this.noSite(world, template);
+	}
+
+	siegeWorkshopRequest(world, priorities, placement)
+	{
+		if (world.fighters.length < priorities.offense.minArmy ||
+		    world.trainers.some(trainer => trainer.trainable.some(name => this.catalog.isBreaker(name))))
+			return null;
+		const trains = name => this.catalog.populationBonus(name) <= 0 && this.catalog.trainsBreakers(name);
+		if (world.pendingConstructions.some(pending => trains(pending.template)) ||
+		    world.foundations.some(foundation => trains(foundation.template)))
+			return null;
+		const template = this.cheapest(world, trains);
+		return template ? this.nearCentreRequest(world, placement, template, priorities.values.siege) : null;
+	}
+
+	phaseBuildingRequest(world, priorities, placement)
+	{
+		if (!priorities.advancePhase)
+			return null;
+		for (const need of world.phaseNeeds)
+		{
+			const hasClass = name => this.catalog.template(name).hasClass(need.class);
+			const coming = world.pendingConstructions.filter(pending => hasClass(pending.template)).length +
+				world.foundations.filter(foundation => hasClass(foundation.template)).length;
+			if (coming >= need.missing)
+				continue;
+			const eligible = name => hasClass(name) && this.catalog.populationBonus(name) <= 0 && !this.catalog.isFarm(name);
+			const template = this.cheapest(world, name => eligible(name) && this.count(world, other => other === name) === 0) ||
+				(need.check === "variants" ? null : this.cheapest(world, eligible));
+			if (template)
+				return this.nearCentreRequest(world, placement, template, priorities.values.phase);
+		}
+		return null;
 	}
 
 	laboratoryRequest(world, priorities, placement)

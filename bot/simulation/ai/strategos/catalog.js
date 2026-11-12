@@ -15,6 +15,7 @@ export class Catalog
 		this.researchOpen = new Map();
 		this.technologies = new Map();
 		this.combats = new Map();
+		this.breakers = new Map();
 		this.availabilityTime = undefined;
 	}
 
@@ -238,6 +239,26 @@ export class Catalog
 			this.footprints.set(name, Object.freeze({ "width": width, "depth": depth }));
 		}
 		return this.footprints.get(name);
+	}
+
+	isBreaker(name)
+	{
+		if (!this.breakers.has(name))
+		{
+			const template = this.template(name);
+			const breaks = !!template && (template.attackTypes() || []).some(type => {
+				const preferred = template.get("Attack/" + type + "/PreferredClasses/_string") || "";
+				const restricted = template.get("Attack/" + type + "/RestrictedClasses/_string") || "";
+				return preferred.split(/\s+/).includes("Structure") && restricted.split(/\s+/).includes("Organic");
+			});
+			this.breakers.set(name, breaks);
+		}
+		return this.breakers.get(name);
+	}
+
+	trainsBreakers(name)
+	{
+		return this.trains(name, unit => this.isBreaker(unit));
 	}
 
 	trainsWorkers(name)
