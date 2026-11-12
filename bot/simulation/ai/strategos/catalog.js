@@ -101,6 +101,23 @@ export class Catalog
 		return this.footprints.get(name);
 	}
 
+	maxGatherers(name)
+	{
+		return this.template(name).maxGatherers();
+	}
+
+	isFarm(name)
+	{
+		const template = this.template(name);
+		const type = template.resourceSupplyType();
+		return !!type && type.generic === "food" && template.resourceSupplyMax() === Infinity && template.hasClass("Structure");
+	}
+
+	dropsiteTypes(name)
+	{
+		return this.template(name).resourceDropsiteTypes() || [];
+	}
+
 	isPlaceableOnLand(name)
 	{
 		const template = this.template(name);

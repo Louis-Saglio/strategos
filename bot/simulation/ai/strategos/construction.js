@@ -2,11 +2,18 @@ import { Placement } from "simulation/ai/strategos/placement.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
-const RING_WIDTH = 60;
+const FIELD_MARGIN = 1;
+const HOUSE_RING_WIDTH = 60;
 const CENTRE_CLEARANCE = 8;
 const SECONDS_PER_BUILDER = 25;
 const MAX_BUILDERS = 6;
 const KEEP_AWAY = { "food": 10, "wood": 6, "stone": 14, "metal": 14 };
+const SAME_TYPE_KEEP_AWAY = 3;
+const WILD_FOOD_PER_GATHERER = 150;
+const DROPSITE_REACH = 28;
+const DROPSITE_MIN_GATHERERS = 3;
+const CLUSTER_RADIUS = 20;
+const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 
 export class Construction
 {
@@ -18,16 +25,114 @@ export class Construction
 
 	requests(world, priorities)
 	{
+		if (!world.centres.length)
+			return this.repairRequests(world, priorities);
 		const requests = [];
-		const housing = this.housingRequest(world, priorities);
-		if (housing)
-			requests.push(housing);
+		const placement = new Placement(world, this.player);
+		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest])
+		{
+			const request = plan.call(this, world, priorities, placement);
+			if (request)
+				requests.push(request);
+		}
 		return requests.concat(this.repairRequests(world, priorities));
+	}
+
+	offered(world)
+	{
+		const names = new Set();
+		for (const worker of world.workers)
+			for (const name of worker.buildable)
+				names.add(name);
+		return names;
+	}
+
+	cheapest(world, accept)
+	{
+		let best = null;
+		let bestCost = Infinity;
+		for (const name of this.offered(world))
+		{
+			if (!this.catalog.isPlaceableOnLand(name) || !accept(name))
+				continue;
+			const cost = this.catalog.costSum(name);
+			if (cost < bestCost || (cost === bestCost && name < best))
+			{
+				best = name;
+				bestCost = cost;
+			}
+		}
+		return best;
+	}
+
+	count(world, accept)
+	{
+		let total = 0;
+		for (const name in world.structureCounts)
+			if (accept(name))
+				total += world.structureCounts[name];
+		for (const foundation of world.foundations)
+			if (accept(foundation.template))
+				total += 1;
+		for (const pending of world.pendingConstructions)
+			if (accept(pending.template))
+				total += 1;
+		return total;
 	}
 
 	wantedBuilders(template)
 	{
 		return Math.max(1, Math.min(MAX_BUILDERS, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
+	}
+
+	halfSize(template)
+	{
+		const footprint = this.catalog.footprint(template);
+		return Math.max(footprint.width, footprint.depth) / 2;
+	}
+
+	constructRequest(world, template, site, value, urgency)
+	{
+		const builders = this.pickBuilders(world, template, [site.x, site.z], this.wantedBuilders(template));
+		if (!builders.length)
+			return null;
+		return {
+			"source": "construction",
+			"action": { "type": "construct", "template": template, "x": site.x, "z": site.z, "angle": site.angle, "builders": builders },
+			"claims": { "resources": this.catalog.cost(template), "workers": builders },
+			"value": value,
+			"urgency": urgency,
+			"reserve": true
+		};
+	}
+
+	reservedBoxes(world)
+	{
+		return world.pendingConstructions.map(pending => {
+			const footprint = this.catalog.footprint(pending.template);
+			return { "x": pending.x, "z": pending.z, "halfWidth": footprint.width / 2, "halfDepth": footprint.depth / 2 };
+		});
+	}
+
+	resourceZones(world, spared)
+	{
+		const zones = [];
+		for (const code of world.codes)
+			for (const site of world.sites[code])
+				if (isFinite(site.amount))
+					zones.push({ "position": site.position, "radius": code === spared ? SAME_TYPE_KEEP_AWAY : KEEP_AWAY[code] || 0 });
+		return zones;
+	}
+
+	farmBelts(world)
+	{
+		const farm = this.cheapest(world, name => this.catalog.isFarm(name));
+		if (!farm)
+			return [];
+		const belt = 2 * this.halfSize(farm) + FIELD_MARGIN + 2;
+		return world.anchors
+			.filter(anchor => anchor.types.includes("food"))
+			.map(anchor => ({ "position": anchor.position, "radius": anchor.radius + belt }));
 	}
 
 	populationHeadroom(world)
@@ -43,40 +148,30 @@ export class Construction
 		};
 	}
 
-	housingRequest(world, priorities)
+	housingRequest(world, priorities, placement)
 	{
 		const { capacity, headroom } = this.populationHeadroom(world);
 		const need = priorities.housing.base + priorities.housing.perTrainer * world.trainers.length;
-		if (headroom >= need || capacity >= world.populationMax || !world.centres.length)
+		if (headroom >= need || capacity >= world.populationMax)
 			return null;
 		const template = this.bestHouse(world);
 		if (!template)
 			return null;
-		const site = this.siteNearCentre(world, template);
+		const centre = world.centres[0];
+		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
+			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
+			this.resourceZones(world, null).concat(this.farmBelts(world)));
 		if (!site)
 			return null;
-		const builders = this.pickBuilders(world, template, [site.x, site.z], this.wantedBuilders(template));
-		if (!builders.length)
-			return null;
-		return {
-			"source": "construction",
-			"action": { "type": "construct", "template": template, "x": site.x, "z": site.z, "angle": site.angle, "builders": builders },
-			"claims": { "resources": this.catalog.cost(template), "workers": builders },
-			"value": priorities.values.house,
-			"urgency": 1 + Math.max(0, need - headroom) / need,
-			"reserve": true
-		};
+		return this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need);
 	}
 
 	bestHouse(world)
 	{
-		const offered = new Set();
-		for (const worker of world.workers)
-			for (const name of worker.buildable)
-				offered.add(name);
 		let best = null;
 		let bestRate = 0;
-		for (const name of offered)
+		for (const name of this.offered(world))
 		{
 			const bonus = this.catalog.populationBonus(name);
 			if (bonus <= 0 || !this.catalog.isPlaceableOnLand(name))
@@ -91,31 +186,99 @@ export class Construction
 		return best;
 	}
 
-	siteNearCentre(world, template)
+	farmingRequest(world, priorities, placement)
 	{
-		const footprint = this.catalog.footprint(template);
+		const farm = this.cheapest(world, name => this.catalog.isFarm(name));
+		if (!farm)
+			return null;
+		const desired = priorities.gatherShares.food * (world.workers.length + world.queuedPopulation);
+		let wild = 0;
+		for (const site of world.sites.food)
+			if (isFinite(site.amount))
+				wild += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
+		const farms = this.count(world, name => this.catalog.isFarm(name));
+		const supply = wild + farms * this.catalog.maxGatherers(farm);
+		if (supply >= desired)
+			return null;
+		const urgency = 1 + (desired - supply) / Math.max(1, desired);
+		const footprint = this.catalog.footprint(farm);
+		const half = this.halfSize(farm);
+		const reserved = this.reservedBoxes(world);
+		const zones = this.resourceZones(world, "food");
+		for (const anchor of world.anchors.filter(candidate => candidate.types.includes("food")))
+		{
+			const minRadius = anchor.radius + FIELD_MARGIN + half;
+			const site = placement.around(anchor.position, minRadius, minRadius + 2 * half + 4, footprint, FIELD_MARGIN, reserved, zones);
+			if (site)
+				return this.constructRequest(world, farm, site, priorities.values.farm, urgency);
+		}
+		return this.farmsteadRequest(world, priorities, placement, farm, urgency);
+	}
+
+	farmsteadRequest(world, priorities, placement, farm, urgency)
+	{
+		const isFoodDropsite = name => this.catalog.dropsiteTypes(name).includes("food") && !this.catalog.isFarm(name);
+		if (world.pendingConstructions.some(pending => isFoodDropsite(pending.template)) ||
+		    world.foundations.some(foundation => isFoodDropsite(foundation.template)))
+			return null;
+		const template = this.cheapest(world, isFoodDropsite);
+		if (!template)
+			return null;
 		const centre = world.centres[0];
-		const minRadius = centre.radius + CENTRE_CLEARANCE + Math.max(footprint.width, footprint.depth) / 2;
-		const placement = new Placement(world, this.player);
-		return placement.around(centre.position, minRadius, minRadius + RING_WIDTH, footprint, BUILDING_MARGIN,
-			this.reservedBoxes(world), this.keepAway(world));
+		const site = placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
+			this.catalog.footprint(template), 2 * this.halfSize(farm) * 0.75, this.reservedBoxes(world),
+			this.resourceZones(world, null));
+		if (!site)
+			return null;
+		return this.constructRequest(world, template, site, priorities.values.farm, urgency);
 	}
 
-	reservedBoxes(world)
+	dropsiteRequest(world, priorities, placement)
 	{
-		return world.pendingConstructions.map(pending => {
-			const footprint = this.catalog.footprint(pending.template);
-			return { "x": pending.x, "z": pending.z, "halfWidth": footprint.width / 2, "halfDepth": footprint.depth / 2 };
-		});
-	}
-
-	keepAway(world)
-	{
-		const zones = [];
+		const total = world.workers.length;
 		for (const code of world.codes)
-			for (const site of world.sites[code])
-				zones.push({ "position": site.position, "radius": KEEP_AWAY[code] || 0 });
-		return zones;
+		{
+			if (priorities.gatherShares[code] * total < DROPSITE_MIN_GATHERERS)
+				continue;
+			const sites = world.sites[code].filter(site => isFinite(site.amount));
+			if (!sites.length || Math.min(...sites.map(site => site.anchorDistance)) <= DROPSITE_REACH)
+				continue;
+			const serves = name => this.catalog.dropsiteTypes(name).includes(code) && !this.catalog.isFarm(name);
+			if (world.pendingConstructions.some(pending => serves(pending.template)) ||
+			    world.foundations.some(foundation => serves(foundation.template)))
+				continue;
+			const template = this.cheapest(world, serves);
+			if (!template)
+				continue;
+			const cluster = this.densest(sites);
+			const half = this.halfSize(template);
+			const site = placement.around(cluster.position, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
+				this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
+				this.resourceZones(world, code).concat(this.farmBelts(world)));
+			if (site)
+				return this.constructRequest(world, template, site, priorities.values.dropsite, 1);
+		}
+		return null;
+	}
+
+	densest(sites)
+	{
+		const limit = CLUSTER_RADIUS * CLUSTER_RADIUS;
+		let best = sites[0];
+		let bestCount = -1;
+		for (const site of sites)
+		{
+			let count = 0;
+			for (const other of sites)
+				if (squareDistance(site.position, other.position) <= limit)
+					count += 1;
+			if (count > bestCount)
+			{
+				best = site;
+				bestCount = count;
+			}
+		}
+		return best;
 	}
 
 	pickBuilders(world, template, position, count, taken)

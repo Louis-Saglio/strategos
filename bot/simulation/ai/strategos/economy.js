@@ -100,7 +100,7 @@ export class Economy
 		{
 			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity)
 				continue;
-			const distance = squareDistance(site.position, position);
+			const distance = Math.sqrt(squareDistance(site.position, position)) + 2 * site.anchorDistance;
 			if (distance < bestDistance)
 			{
 				best = site;

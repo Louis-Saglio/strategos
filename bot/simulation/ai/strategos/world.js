@@ -40,19 +40,27 @@ export class ResourceIndex
 		this.sites.set(code, kept.slice(0, SITES_KEPT).map(site => site.id));
 	}
 
-	live(gameState, code)
+	live(gameState, code, anchors)
 	{
+		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
 		const sites = [];
 		for (const id of this.sites.get(code))
 		{
 			const ent = gameState.getEntityById(id);
-			if (!ent || !ent.position() || !(ent.resourceSupplyAmount() > 0))
+			const amount = ent && ent.resourceSupplyAmount();
+			if (!ent || !ent.position() || !(amount > 0))
 				continue;
+			const position = ent.position();
+			let nearest = Infinity;
+			for (const point of points)
+				nearest = Math.min(nearest, squareDistance(point, position));
 			sites.push(Object.freeze({
 				"id": id,
-				"position": ent.position(),
+				"position": position,
+				"amount": amount,
 				"gatherers": ent.resourceSupplyNumGatherers() || 0,
-				"capacity": ent.maxGatherers() || 1
+				"capacity": ent.maxGatherers() || 1,
+				"anchorDistance": Math.sqrt(nearest)
 			}));
 			if (sites.length >= SITES_EXPOSED)
 				break;
@@ -82,7 +90,14 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	{
 		if (ent.foundationProgress() !== undefined || !ent.position())
 			continue;
-		anchors.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "types": ent.resourceDropsiteTypes() }));
+		const footprint = catalog.footprint(ent.templateName());
+		anchors.push(Object.freeze({
+			"id": ent.id(),
+			"template": ent.templateName(),
+			"position": ent.position(),
+			"radius": Math.max(footprint.width, footprint.depth) / 2,
+			"types": ent.resourceDropsiteTypes()
+		}));
 	}
 	resourceIndex.refresh(gameState, anchors);
 
@@ -138,6 +153,11 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		}));
 	}
 
+	const structureCounts = {};
+	for (const ent of gameState.getOwnStructures().values())
+		if (ent.foundationProgress() === undefined)
+			structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+
 	const centres = [];
 	for (const ent of gameState.getOwnEntitiesByClass("CivCentre", true).values())
 	{
@@ -157,7 +177,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const sites = {};
 	for (const code of codes)
-		sites[code] = resourceIndex.live(gameState, code);
+		sites[code] = resourceIndex.live(gameState, code, anchors);
 
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
@@ -177,6 +197,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"anchors": Object.freeze(anchors),
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
+		"structureCounts": Object.freeze(structureCounts),
 		"pendingConstructions": Object.freeze(pendingConstructions),
 		"trainers": Object.freeze(trainers),
 		"workers": Object.freeze(workers),

@@ -1,6 +1,6 @@
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "build": 25, "assignIdleWorker": 20, "house": 15, "trainWorker": 10 },
+	"values": { "build": 25, "assignIdleWorker": 20, "house": 15, "farm": 14, "dropsite": 12, "trainWorker": 10 },
 	"housing": { "base": 3, "perTrainer": 4 }
 };
 
