@@ -139,10 +139,18 @@ export class Catalog
 			this.technologies.set(name, Object.freeze({
 				"modifications": tech && tech.modifications() || [],
 				"affects": tech && tech.affects() || null,
+				"affectLists": tech && tech.affects() && tech.affects().length ? tech.affects().map(affect => affect.split(/\s+/)) : [[]],
 				"researchTime": tech ? tech.researchTime() : 0
 			}));
 		}
 		return this.technologies.get(name);
+	}
+
+	modificationApplies(info, modification, classes)
+	{
+		const extra = modification.affects ? modification.affects.split(/\s+/) : [];
+		return info.affectLists.some(list => list.concat(extra).every(cls =>
+			cls[0] === "!" ? !classes.includes(cls.slice(1)) : classes.includes(cls)));
 	}
 
 	techCost(name, researcherTemplate)

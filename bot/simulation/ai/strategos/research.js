@@ -88,7 +88,7 @@ export class Research
 		let gain = 0;
 		for (const worker of world.workers)
 		{
-			if (!worker.kind || (info.affects && !info.affects.some(affect => MatchesClassList(worker.classes, affect))))
+			if (!worker.kind)
 				continue;
 			const rate = worker.profile.rates[worker.kind] || 0;
 			if (!rate)
@@ -96,6 +96,8 @@ export class Research
 			const capacity = worker.profile.capacities[worker.gathering] || 0;
 			for (const modification of info.modifications)
 			{
+				if (!this.catalog.modificationApplies(info, modification, worker.classes))
+					continue;
 				if (modification.value === RATE_PREFIX + worker.kind || modification.value === SPEED_KEY)
 					gain += rate * ((modification.multiply || 1) - 1);
 				else if (modification.value === CAPACITY_PREFIX + worker.gathering && modification.add && capacity > 0)
