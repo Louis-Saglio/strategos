@@ -21,6 +21,7 @@ export class Executor
 			"unload-all": action => this.unloadAll(action),
 			"walk": action => this.walk(action),
 			"hold": () => false,
+			"attack-walk": action => this.attackWalk(action),
 			"research": action => this.research(action)
 		};
 	}
@@ -111,6 +112,22 @@ export class Executor
 			return false;
 		Engine.PostCommand(this.player, { "type": "research", "entity": action.researcher, "template": action.tech, "pushFront": false });
 		this.telemetry.line("TECH", this.time, { "research": action.tech, "payback": action.payback });
+		return true;
+	}
+
+	attackWalk(action)
+	{
+		if (!this.gameState.getEntityById(action.unit))
+			return false;
+		Engine.PostCommand(this.player, {
+			"type": "attack-walk",
+			"entities": [action.unit],
+			"x": action.x,
+			"z": action.z,
+			"targetClasses": action.targetClasses,
+			"allowCapture": true,
+			"queued": false
+		});
 		return true;
 	}
 

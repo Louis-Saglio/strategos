@@ -232,12 +232,19 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const territory = gameState.sharedScript.territoryMap;
 	const player = gameState.getPlayerID();
 	const threats = [];
+	const enemyCentres = [];
+	let enemySoldiers = 0;
 	for (const enemy of gameState.getEnemies())
 	{
 		if (enemy === 0)
 			continue;
+		for (const ent of gameState.getEnemyStructures(enemy).values())
+			if (ent.hasClass("CivCentre") && ent.position())
+				enemyCentres.push(Object.freeze({ "id": ent.id(), "owner": enemy, "position": ent.position() }));
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
+			if (ent.hasClass("Soldier"))
+				enemySoldiers += 1;
 			const position = ent.position();
 			if (!position || !THREAT_CLASSES.some(cls => ent.hasClass(cls)) || territoryAt(territory, position[0], position[1]).owner !== player)
 				continue;
@@ -298,6 +305,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"anchors": Object.freeze(anchors),
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
+		"enemySoldiers": enemySoldiers,
+		"enemyCentres": Object.freeze(enemyCentres),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
 		"researchers": Object.freeze(researchers),
