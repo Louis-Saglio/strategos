@@ -1,0 +1,7 @@
+{
+	"name": "Strategos",
+	"description": "Strategos, an AI for 0 A.D. (github.com/Louis-Saglio/strategos).",
+	"constructor": "StrategosBot",
+	"filename": "_strategos.js",
+	"useShared": true
+}

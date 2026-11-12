@@ -1,0 +1,7 @@
+{
+	"name": "strategos",
+	"version": "0.1.0",
+	"label": "Strategos",
+	"description": "Strategos, an AI for 0 A.D.",
+	"dependencies": ["0ad=0.28.0"]
+}
