@@ -17,6 +17,12 @@ export class Research
 	{
 		const requests = [];
 		const chosen = new Set();
+		const gains = new Map();
+		const gainOf = tech => {
+			if (!gains.has(tech))
+				gains.set(tech, this.gatherGain(world, tech));
+			return gains.get(tech);
+		};
 		const phase = this.phaseRequest(world, priorities);
 		if (phase)
 		{
@@ -32,7 +38,7 @@ export class Research
 			{
 				if (chosen.has(tech))
 					continue;
-				const gain = this.gatherGain(world, tech);
+				const gain = gainOf(tech);
 				if (gain <= 0)
 					continue;
 				const cost = this.catalog.techCost(tech, researcher.template);
@@ -77,7 +83,7 @@ export class Research
 	gatherGain(world, tech)
 	{
 		const info = this.catalog.technology(tech);
-		if (!info.modifications.length)
+		if (!info.modifications.some(modification => modification.value.startsWith("ResourceGatherer/")))
 			return 0;
 		let gain = 0;
 		for (const worker of world.workers)
