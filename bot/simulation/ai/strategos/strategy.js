@@ -4,7 +4,7 @@ const OPENING = {
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80 },
 	"phaseUpPopulation": { "2": 120 },
-	"offense": { "minArmy": 25, "superiority": 1.5 },
+	"offense": { "minArmy": 25, "superiority": 1.5, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 }
 };
 

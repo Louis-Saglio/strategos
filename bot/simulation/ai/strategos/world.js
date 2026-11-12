@@ -120,6 +120,38 @@ function captureRegen(gameState, ent)
 	return regen;
 }
 
+function defensiveFire(gameState, ent)
+{
+	const damage = ent.get("BuildingAI") && ent.attackStrengths("Ranged");
+	if (!damage)
+		return Object.freeze({ "arrows": 0, "repeat": 1, "damage": Object.freeze({}) });
+	const classes = ent.get("BuildingAI/GarrisonArrowClasses") || "";
+	let shooters = 0;
+	for (const id of ent.garrisoned() || [])
+	{
+		const unit = gameState.getEntityById(id);
+		if (unit && MatchesClassList(unit.classes(), classes))
+			shooters += 1;
+	}
+	const arrows = (+ent.get("BuildingAI/DefaultArrowCount") || 0) +
+		Math.round(shooters * (+ent.get("BuildingAI/GarrisonArrowMultiplier") || 0));
+	return Object.freeze({
+		"arrows": Math.min(arrows, +ent.get("BuildingAI/MaxArrowCount") || Infinity),
+		"repeat": ent.attackTimes("Ranged").repeat / 1000,
+		"damage": Object.freeze(damage)
+	});
+}
+
+function capturePointsToTake(ent, player)
+{
+	const points = ent.capturePoints() || [];
+	let total = 0;
+	for (let owner = 0; owner < points.length; ++owner)
+		if (owner !== player)
+			total += points[owner];
+	return total;
+}
+
 export function captureStrength(ent)
 {
 	return +(ent.get("Attack/Capture/Capture") || 0);
@@ -298,7 +330,9 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 					"id": ent.id(),
 					"owner": enemy,
 					"position": ent.position(),
-					"regen": captureRegen(gameState, ent)
+					"regen": captureRegen(gameState, ent),
+					"points": capturePointsToTake(ent, player),
+					"fire": defensiveFire(gameState, ent)
 				}));
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
@@ -343,6 +377,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"state": ent.unitAIState() || "",
 			"classes": ent.classes(),
 			"capture": captureStrength(ent),
+			"hitpoints": ent.hitpoints(),
+			"resistance": catalog.combat(ent.templateName()).resistance,
 			"target": orders.length && orders[0] ? orders[0].target : undefined
 		}));
 		const name = ent.templateName();

@@ -2,12 +2,34 @@ export const TECH_HORIZON_S = 180;
 const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
 const RESISTANCE_BASE = 0.9;
+const ARROW_HIT_SHARE = 0.5;
+const CAPTURE_ENGAGED_SHARE = 0.9;
 const RATE_PREFIX = "ResourceGatherer/Rates/";
 const CAPACITY_PREFIX = "ResourceGatherer/Capacities/";
 const SPEED_KEY = "ResourceGatherer/BaseSpeed";
 const ATTACK_PREFIX = "Attack/";
 const RESISTANCE_PREFIX = "Resistance/Entity/Damage/";
 const HEALTH_KEY = "Health/Max";
+
+export function captureOutlook(members, centre)
+{
+	let power = 0;
+	let fragility = 0;
+	for (const member of members)
+	{
+		power += CAPTURE_ENGAGED_SHARE * member.capture;
+		for (const kind in centre.fire.damage)
+			fragility += centre.fire.damage[kind] * Math.pow(RESISTANCE_BASE, member.resistance[kind] || 0) / member.hitpoints;
+	}
+	const net = power - centre.regen;
+	const losses = members.length ? ARROW_HIT_SHARE * centre.fire.arrows / centre.fire.repeat * fragility / members.length : 0;
+	const decay = members.length ? losses * power / members.length : 0;
+	return {
+		"power": power,
+		"losses": losses,
+		"reach": net <= 0 ? 0 : decay > 0 ? net * net / (2 * decay) : Infinity
+	};
+}
 
 export function techBenefit(world, catalog, tech)
 {

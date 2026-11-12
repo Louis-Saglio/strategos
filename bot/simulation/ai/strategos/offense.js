@@ -1,4 +1,5 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
+import { captureOutlook } from "simulation/ai/strategos/valuation.js";
 
 const RALLY_FRACTION = 0.35;
 const RALLY_MAX_DISTANCE = 120;
@@ -12,7 +13,6 @@ const RETREAT_FRACTION = 0.4;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
 const ASSAULT_EXIT_SHARE = 0.25;
-const ASSAULT_POWER_MARGIN = 2;
 const MOVING_STATES = ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"];
 const TARGET_CLASSES = { "attack": ["Unit", "Structure"], "avoid": ["Palisade", "Wall"] };
 const UNIT_CLASSES = { "attack": ["Unit"], "avoid": ["Palisade", "Wall"] };
@@ -29,6 +29,7 @@ export class Offense
 		this.target = null;
 		this.rally = null;
 		this.assaulting = false;
+		this.resistance = null;
 	}
 
 	requests(world, priorities)
@@ -45,7 +46,7 @@ export class Offense
 		if (this.mode === "rally")
 			return this.rallyRequests(world, priorities, members);
 		if (this.mode === "attack")
-			return this.attackRequests(world, priorities, members);
+			return this.attackRequests(world, priorities, members, home);
 		return this.returnRequests(world, priorities, members, home);
 	}
 
@@ -68,6 +69,9 @@ export class Offense
 		const target = world.enemyCentres
 			.slice()
 			.sort((a, b) => squareDistance(a.position, home.position) - squareDistance(b.position, home.position) || a.id - b.id)[0];
+		const outlook = captureOutlook(available, this.expected(target));
+		if (outlook.reach < offense.capture.enter * target.points)
+			return [];
 		this.target = target;
 		const dx = target.position[0] - home.position[0];
 		const dz = target.position[1] - home.position[1];
@@ -99,8 +103,20 @@ export class Offense
 			.slice()
 			.sort((a, b) => squareDistance(a.position, from) - squareDistance(b.position, from) || a.id - b.id)[0];
 		this.assaulting = false;
+		this.resistance = { "id": this.target.id, "regen": 0, "arrows": 0 };
 		this.telemetry.line("ATTACK", world.time, { "mode": "retarget", "target": this.target.id });
 		return true;
+	}
+
+	expected(centre)
+	{
+		const seen = this.resistance;
+		if (!seen || seen.id !== centre.id)
+			return centre;
+		return Object.assign({}, centre, {
+			"regen": Math.max(centre.regen, seen.regen),
+			"fire": Object.assign({}, centre.fire, { "arrows": Math.max(centre.fire.arrows, seen.arrows) })
+		});
 	}
 
 	order(member, action, priorities)
@@ -121,30 +137,44 @@ export class Offense
 		if (arrived >= RALLY_QUORUM * members.length || world.time - this.since >= RALLY_TIMEOUT_MS)
 		{
 			this.switchMode(world, "attack", { "arrived": arrived });
-			return this.attackRequests(world, priorities, members);
+			this.resistance = { "id": this.target.id, "regen": 0, "arrows": 0 };
+			return this.attackRequests(world, priorities, members, world.centres[0]);
 		}
 		return members.map(member => squareDistance(member.position, this.rally) <= limit ?
 			this.order(member, { "type": "hold" }, priorities) :
 			this.order(member, { "type": "walk", "x": this.rally[0], "z": this.rally[1] }, priorities));
 	}
 
-	attackRequests(world, priorities, members)
+	attackRequests(world, priorities, members, home)
 	{
 		const limit = ASSAULT_RADIUS * ASSAULT_RADIUS;
 		const defenders = new Set(world.enemyFighters
 			.filter(enemy => squareDistance(enemy.position, this.target.position) <= limit)
 			.map(enemy => enemy.id));
 		const centre = world.enemyCentres.find(candidate => candidate.id === this.target.id) || this.target;
-		const power = members.reduce((sum, member) => sum + member.capture, 0);
-		const assault = power >= ASSAULT_POWER_MARGIN * (centre.regen || 0) &&
+		const margins = priorities.offense.capture;
+		const outlook = centre.fire ? captureOutlook(members, centre) : { "power": 0, "losses": 0, "reach": 0 };
+		const capturable = outlook.reach >= (this.assaulting ? margins.exit : margins.enter) * (centre.points || 0);
+		const assault = capturable &&
 			defenders.size < (this.assaulting ? ASSAULT_EXIT_SHARE : ASSAULT_ENTER_SHARE) * members.length;
+		const details = {
+			"army": members.length, "defenders": defenders.size, "power": outlook.power, "regen": centre.regen,
+			"points": centre.points, "reach": Math.round(Math.min(outlook.reach, 1e6)), "arrows": centre.fire && centre.fire.arrows
+		};
+		if (centre.fire && this.resistance)
+		{
+			this.resistance.regen = Math.max(this.resistance.regen, centre.regen);
+			this.resistance.arrows = Math.max(this.resistance.arrows, centre.fire.arrows);
+		}
+		if (!assault && !capturable && defenders.size < ASSAULT_ENTER_SHARE * members.length)
+		{
+			this.switchMode(world, "return", Object.assign(details, { "alive": members.length, "launched": this.launchSize, "reason": "uncapturable" }));
+			return this.returnRequests(world, priorities, members, home);
+		}
 		if (assault !== this.assaulting)
 		{
 			this.assaulting = assault;
-			this.telemetry.line("ATTACK", world.time, {
-				"mode": assault ? "assault" : "fight", "army": members.length, "defenders": defenders.size,
-				"power": power, "regen": centre.regen
-			});
+			this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": assault ? "assault" : "fight" }, details));
 		}
 		if (assault)
 		{
