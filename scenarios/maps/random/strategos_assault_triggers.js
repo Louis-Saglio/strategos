@@ -7,13 +7,15 @@
  * (arrows and capture regeneration) and soldiers standing around it, who
  * fight with the engine's default stance.
  *
- * The case is read from the map name, maps/random/strategos_assault_aA_gG_dD:
+ * The case is read from the map name, maps/random/strategos_assault_aA_gG_dD[_rR]:
  *   A soldiers for player 1, the basic infantry citizen-soldiers of its
  *     civ (units/CIV/infantry_KIND_b, mercenaries excluded) in equal shares;
  *   G soldiers garrisoned in player 2's civic centre (its first basic
  *     melee infantry citizen-soldier);
  *   D soldiers of player 2 around its civic centre (same shares as the
- *     army).
+ *     army);
+ *   R (optional, default 0) rams for player 1 (units/CIV/siege_ram), beside
+ *     its army; they count in neither the army nor the give-up rule.
  * A new case is a new .json with a matching name.
  *
  * stdout protocol:
@@ -61,10 +63,10 @@ Trigger.prototype.AssaultSpawn = function(source, templates, count, owner)
 
 Trigger.prototype.AssaultInit = function()
 {
-	const match = /strategos_assault_a(\d+)_g(\d+)_d(\d+)$/.exec(InitAttributes.map);
+	const match = /strategos_assault_a(\d+)_g(\d+)_d(\d+)(?:_r(\d+))?$/.exec(InitAttributes.map);
 	if (!match)
 		throw new Error("strategos_assault: no case in the map name " + InitAttributes.map);
-	const [army, garrison, defenders] = match.slice(1).map(n => +n);
+	const [army, garrison, defenders, rams] = match.slice(1).map(n => +(n || 0));
 	const home = TriggerHelper.GetPlayerEntitiesByClass(ASSAULT_ATTACKER, "CivCentre")[0];
 	const centre = TriggerHelper.GetPlayerEntitiesByClass(ASSAULT_DEFENDER, "CivCentre")[0];
 	const armyTemplates = this.AssaultTemplates(ASSAULT_ATTACKER, "CitizenSoldier+Infantry");
@@ -79,11 +81,15 @@ Trigger.prototype.AssaultInit = function()
 		"done": false
 	};
 	TriggerHelper.SpawnGarrisonedUnits(centre, garrisonTemplate, garrison, ASSAULT_DEFENDER);
+	const ramTemplate = "units/" + QueryPlayerIDInterface(ASSAULT_ATTACKER, IID_Identity).GetCiv() + "/siege_ram";
+	if (rams && Engine.QueryInterface(SYSTEM_ENTITY, IID_TemplateManager).TemplateExists(ramTemplate))
+		TriggerHelper.SpawnUnits(home, ramTemplate, rams, ASSAULT_ATTACKER);
 	print("[SCENARIO] start " + JSON.stringify({
 		"scenario": "assault",
 		"army": army,
 		"garrison": garrison,
 		"defenders": defenders,
+		"rams": rams,
 		"armyTemplates": armyTemplates,
 		"garrisonTemplate": garrisonTemplate,
 		"defenderTemplates": defenderTemplates

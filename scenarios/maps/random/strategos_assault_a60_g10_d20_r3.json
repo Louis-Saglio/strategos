@@ -1,0 +1,19 @@
+{
+	"settings": {
+		"Name": "Strategos scenario: assault, army 60, garrison 10, defenders 20, rams 3",
+		"Script": "strategos_assault.js",
+		"Description": "Strategos development scenario (see strategos_assault_triggers.js). Not a playable map.",
+		"Keywords": [
+			"trigger"
+		],
+		"SupportedBiomes": "generic/",
+		"CircularMap": true,
+		"PlayerPlacements": [
+			"circle"
+		],
+		"TriggerScripts": [
+			"scripts/TriggerHelper.js",
+			"random/strategos_assault_triggers.js"
+		]
+	}
+}
