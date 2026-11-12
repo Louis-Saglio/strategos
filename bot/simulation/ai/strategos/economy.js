@@ -1,6 +1,7 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
+const BATCH_MAX = 5;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
@@ -31,12 +32,17 @@ export class Economy
 			const template = this.cheapestWorker(trainer.trainable);
 			if (!template)
 				continue;
+			const count = this.batchSize(world, template);
+			const unitCost = this.catalog.cost(template);
+			const cost = {};
+			for (const code of world.codes)
+				cost[code] = unitCost[code] * count;
 			requests.push({
 				"source": "economy",
-				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
+				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": count },
 				"claims": {
-					"resources": this.catalog.cost(template),
-					"population": this.catalog.population(template),
+					"resources": cost,
+					"population": this.catalog.population(template) * count,
 					"slots": [trainer.id]
 				},
 				"value": priorities.values.trainWorker,
@@ -44,6 +50,19 @@ export class Economy
 			});
 		}
 		return requests;
+	}
+
+	batchSize(world, template)
+	{
+		const cost = this.catalog.cost(template);
+		let count = BATCH_MAX;
+		for (const code of world.codes)
+			if (cost[code] > 0)
+				count = Math.min(count, Math.floor(world.resources[code] / cost[code]));
+		const population = this.catalog.population(template);
+		if (population > 0)
+			count = Math.min(count, Math.floor(world.populationRoom / population));
+		return Math.max(1, count);
 	}
 
 	cheapestWorker(names)

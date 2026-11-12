@@ -116,6 +116,12 @@ export class Catalog
 		return this.footprints.get(name);
 	}
 
+	trainsWorkers(name)
+	{
+		const trainable = this.template(name).trainableEntities(this.civ) || [];
+		return trainable.some(unit => unit && this.template(unit) && this.available(unit) && this.isWorker(unit));
+	}
+
 	maxGatherers(name)
 	{
 		return this.template(name).maxGatherers();

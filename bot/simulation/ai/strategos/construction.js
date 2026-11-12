@@ -14,6 +14,9 @@ const DROPSITE_REACH = 28;
 const DROPSITE_MIN_GATHERERS = 3;
 const CLUSTER_RADIUS = 20;
 const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
+const PRODUCTION_STOCK_BASE = 300;
+const PRODUCTION_STOCK_PER_TRAINER = 300;
+const PRODUCTION_STOCK_CODES = ["food", "wood"];
 
 export class Construction
 {
@@ -29,7 +32,7 @@ export class Construction
 			return this.repairRequests(world, priorities);
 		const requests = [];
 		const placement = new Placement(world, this.player);
-		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest])
+		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -231,6 +234,31 @@ export class Construction
 		if (!site)
 			return null;
 		return this.constructRequest(world, template, site, priorities.values.farm, urgency);
+	}
+
+	productionRequest(world, priorities, placement)
+	{
+		const trains = name => this.catalog.populationBonus(name) <= 0 && this.catalog.trainsWorkers(name);
+		if (world.pendingConstructions.some(pending => trains(pending.template)) ||
+		    world.foundations.some(foundation => trains(foundation.template)))
+			return null;
+		const trainers = world.trainers.filter(trainer => trainer.trainable.some(name => this.catalog.isWorker(name)));
+		if (trainers.some(trainer => trainer.queueLength === 0))
+			return null;
+		const stock = PRODUCTION_STOCK_CODES.reduce((sum, code) => sum + (world.resources[code] || 0), 0);
+		if (stock < PRODUCTION_STOCK_BASE + PRODUCTION_STOCK_PER_TRAINER * trainers.length)
+			return null;
+		const template = this.cheapest(world, trains);
+		if (!template)
+			return null;
+		const centre = world.centres[0];
+		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
+			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
+			this.resourceZones(world, null).concat(this.farmBelts(world)));
+		if (!site)
+			return null;
+		return this.constructRequest(world, template, site, priorities.values.production, 1);
 	}
 
 	dropsiteRequest(world, priorities, placement)
