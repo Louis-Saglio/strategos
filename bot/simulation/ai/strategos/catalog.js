@@ -14,6 +14,7 @@ export class Catalog
 		this.researchables = new Map();
 		this.researchOpen = new Map();
 		this.technologies = new Map();
+		this.combats = new Map();
 		this.availabilityTime = undefined;
 	}
 
@@ -178,6 +179,28 @@ export class Catalog
 		for (const code of this.codes)
 			rates[code] = counts[code] ? sums[code] / counts[code] : 0;
 		return rates;
+	}
+
+	combat(name)
+	{
+		if (!this.combats.has(name))
+		{
+			const template = this.template(name);
+			const attacks = {};
+			for (const type of template.attackTypes() || [])
+			{
+				const damage = type === "Capture" || type === "Slaughter" ? null : template.attackStrengths(type);
+				if (damage)
+					attacks[type] = Object.freeze({ "repeat": template.attackTimes(type).repeat / 1000, "damage": Object.freeze(damage) });
+			}
+			const resistance = (template.resistanceStrengths() || {}).Damage || {};
+			this.combats.set(name, Object.freeze({
+				"hp": template.maxHitpoints(),
+				"attacks": Object.freeze(attacks),
+				"resistance": Object.freeze(Object.assign({}, resistance))
+			}));
+		}
+		return this.combats.get(name);
 	}
 
 	researchable(entity)

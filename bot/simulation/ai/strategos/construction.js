@@ -1,4 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
+import { techBenefit } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -55,7 +56,7 @@ export class Construction
 			return this.repairRequests(world, priorities);
 		const requests = [];
 		const placement = new Placement(world, this.player);
-		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest])
+		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -284,6 +285,11 @@ export class Construction
 		const template = this.cheapest(world, forArmy ? name => trains(name) && this.catalog.trainsOnlySoldierWorkers(name) : trains);
 		if (!template)
 			return null;
+		return this.nearCentreRequest(world, placement, template, priorities.values.production);
+	}
+
+	nearCentreRequest(world, placement, template, value)
+	{
 		const centre = world.centres[0];
 		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
 		if (!this.searchable(world, template))
@@ -293,7 +299,30 @@ export class Construction
 			this.resourceZones(world, null).concat(this.farmBelts(world)));
 		if (!site)
 			return this.noSite(world, template);
-		return this.constructRequest(world, template, site, priorities.values.production, 1);
+		return this.constructRequest(world, template, site, value, 1);
+	}
+
+	laboratoryRequest(world, priorities, placement)
+	{
+		let best = null;
+		for (const name of this.offered(world))
+		{
+			if (!this.catalog.isPlaceableOnLand(name) || !this.catalog.template(name).get("Researcher") ||
+			    this.count(world, other => other === name) > 0)
+				continue;
+			let surplus = 0;
+			for (const tech of this.catalog.researchable(this.catalog.template(name)))
+			{
+				const cost = this.catalog.techCost(tech, name);
+				surplus += Math.max(0, techBenefit(world, this.catalog, tech) - world.codes.reduce((sum, code) => sum + cost[code], 0));
+			}
+			const ratio = surplus / Math.max(1, this.catalog.costSum(name));
+			if (ratio > 1 && (!best || ratio > best.ratio || (ratio === best.ratio && name < best.name)))
+				best = { name, ratio };
+		}
+		if (!best)
+			return null;
+		return this.nearCentreRequest(world, placement, best.name, priorities.values.laboratory);
 	}
 
 	dropsiteRequest(world, priorities, placement)

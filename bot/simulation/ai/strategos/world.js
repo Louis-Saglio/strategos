@@ -74,6 +74,7 @@ export class ResourceIndex
 const TERRITORY_OWNER_MASK = 0x1F;
 const TERRITORY_BLINKING_MASK = 0x40;
 const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
+const DEFAULT_DAMAGE_MIX = { "Hack": 0.5, "Pierce": 0.5 };
 
 export function territoryAt(territory, x, z)
 {
@@ -234,6 +235,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const threats = [];
 	const enemyCentres = [];
 	let enemySoldiers = 0;
+	const enemyDamage = {};
+	let enemyDamageTotal = 0;
 	for (const enemy of gameState.getEnemies())
 	{
 		if (enemy === 0)
@@ -244,7 +247,17 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
 			if (ent.hasClass("Soldier"))
+			{
 				enemySoldiers += 1;
+				const attacks = catalog.combat(ent.templateName()).attacks;
+				for (const type in attacks)
+					for (const kind in attacks[type].damage)
+					{
+						const rate = attacks[type].damage[kind] / attacks[type].repeat;
+						enemyDamage[kind] = (enemyDamage[kind] || 0) + rate;
+						enemyDamageTotal += rate;
+					}
+			}
 			const position = ent.position();
 			if (!position || !THREAT_CLASSES.some(cls => ent.hasClass(cls)) || territoryAt(territory, position[0], position[1]).owner !== player)
 				continue;
@@ -252,13 +265,26 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		}
 	}
 
+	const enemyDamageMix = {};
+	for (const kind in enemyDamage)
+		enemyDamageMix[kind] = enemyDamage[kind] / enemyDamageTotal;
+	if (!enemyDamageTotal)
+		Object.assign(enemyDamageMix, DEFAULT_DAMAGE_MIX);
+
 	const fighters = [];
+	const army = new Map();
 	for (const ent of gameState.getOwnEntitiesByClass("Soldier", true).values())
 	{
 		const position = ent.position();
 		if (!position)
 			continue;
 		fighters.push(Object.freeze({ "id": ent.id(), "position": position, "state": ent.unitAIState() || "" }));
+		const name = ent.templateName();
+		if (!army.has(name))
+			army.set(name, { "template": name, "classes": ent.classes(), "count": 0, "value": 0 });
+		const group = army.get(name);
+		group.count += 1;
+		group.value += catalog.costSum(name);
 	}
 
 	const centres = [];
@@ -312,6 +338,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),
 		"fighters": Object.freeze(fighters),
+		"army": Object.freeze([...army.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
+		"enemyDamageMix": Object.freeze(enemyDamageMix),
 		"pendingConstructions": Object.freeze(pendingConstructions),
 		"demand": demand,
 		"trainers": Object.freeze(trainers),

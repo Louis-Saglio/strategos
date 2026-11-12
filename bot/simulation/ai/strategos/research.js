@@ -1,10 +1,7 @@
+import { TECH_HORIZON_S, techBenefit } from "simulation/ai/strategos/valuation.js";
+
 const PAYBACK_LIMIT_S = 180;
 const PHASE_QUEUE_LIMIT = 1;
-const GATHER_EFFICIENCY = 0.6;
-const WALK_SHARE = 0.35;
-const RATE_PREFIX = "ResourceGatherer/Rates/";
-const CAPACITY_PREFIX = "ResourceGatherer/Capacities/";
-const SPEED_KEY = "ResourceGatherer/BaseSpeed";
 
 export class Research
 {
@@ -17,11 +14,11 @@ export class Research
 	{
 		const requests = [];
 		const chosen = new Set();
-		const gains = new Map();
-		const gainOf = tech => {
-			if (!gains.has(tech))
-				gains.set(tech, this.gatherGain(world, tech));
-			return gains.get(tech);
+		const benefits = new Map();
+		const benefitOf = tech => {
+			if (!benefits.has(tech))
+				benefits.set(tech, techBenefit(world, this.catalog, tech));
+			return benefits.get(tech);
 		};
 		const phase = this.phaseRequest(world, priorities);
 		if (phase)
@@ -38,11 +35,11 @@ export class Research
 			{
 				if (chosen.has(tech))
 					continue;
-				const gain = gainOf(tech);
-				if (gain <= 0)
+				const benefit = benefitOf(tech);
+				if (benefit <= 0)
 					continue;
 				const cost = this.catalog.techCost(tech, researcher.template);
-				const payback = world.codes.reduce((sum, code) => sum + cost[code], 0) / gain;
+				const payback = TECH_HORIZON_S * world.codes.reduce((sum, code) => sum + cost[code], 0) / benefit;
 				if (payback < PAYBACK_LIMIT_S && (!best || payback < best.payback || (payback === best.payback && tech < best.tech)))
 					best = { tech, cost, payback };
 			}
@@ -78,32 +75,5 @@ export class Research
 			"urgency": 1,
 			"reserve": true
 		};
-	}
-
-	gatherGain(world, tech)
-	{
-		const info = this.catalog.technology(tech);
-		if (!info.modifications.some(modification => modification.value.startsWith("ResourceGatherer/")))
-			return 0;
-		let gain = 0;
-		for (const worker of world.workers)
-		{
-			if (!worker.kind)
-				continue;
-			const rate = worker.profile.rates[worker.kind] || 0;
-			if (!rate)
-				continue;
-			const capacity = worker.profile.capacities[worker.gathering] || 0;
-			for (const modification of info.modifications)
-			{
-				if (!this.catalog.modificationApplies(info, modification, worker.classes))
-					continue;
-				if (modification.value === RATE_PREFIX + worker.kind || modification.value === SPEED_KEY)
-					gain += rate * ((modification.multiply || 1) - 1);
-				else if (modification.value === CAPACITY_PREFIX + worker.gathering && modification.add && capacity > 0)
-					gain += rate * WALK_SHARE * modification.add / (capacity + modification.add);
-			}
-		}
-		return gain * GATHER_EFFICIENCY;
 	}
 }
