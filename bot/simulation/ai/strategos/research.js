@@ -1,4 +1,5 @@
 const PAYBACK_LIMIT_S = 180;
+const PHASE_QUEUE_LIMIT = 1;
 const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
 const RATE_PREFIX = "ResourceGatherer/Rates/";
@@ -16,6 +17,12 @@ export class Research
 	{
 		const requests = [];
 		const chosen = new Set();
+		const phase = this.phaseRequest(world, priorities);
+		if (phase)
+		{
+			requests.push(phase);
+			chosen.add(phase.action.tech);
+		}
 		for (const researcher of world.researchers)
 		{
 			if (researcher.queueLength > 0)
@@ -45,6 +52,26 @@ export class Research
 			});
 		}
 		return requests;
+	}
+
+	phaseRequest(world, priorities)
+	{
+		const tech = world.nextPhaseTech;
+		if (!tech || !priorities.advancePhase)
+			return null;
+		const researcher = world.researchers
+			.filter(candidate => candidate.techs.includes(tech) && candidate.queueLength <= PHASE_QUEUE_LIMIT)
+			.sort((a, b) => a.queueLength - b.queueLength || a.id - b.id)[0];
+		if (!researcher)
+			return null;
+		return {
+			"source": "research",
+			"action": { "type": "research", "researcher": researcher.id, "tech": tech, "payback": 0 },
+			"claims": { "resources": this.catalog.techCost(tech, researcher.template), "slots": [researcher.id] },
+			"value": priorities.values.phase,
+			"urgency": 1,
+			"reserve": true
+		};
 	}
 
 	gatherGain(world, tech)

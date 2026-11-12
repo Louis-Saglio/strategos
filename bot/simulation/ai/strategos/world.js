@@ -276,6 +276,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
+		"phase": gameState.currentPhase(),
+		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
 		"civ": catalog.civ,
 		"codes": codes,
 		"resources": Object.freeze(resources),

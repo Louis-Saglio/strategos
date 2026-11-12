@@ -1,8 +1,9 @@
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "defend": 60, "build": 25, "assignIdleWorker": 20, "house": 15, "farm": 14, "research": 13, "dropsite": 12, "production": 11, "trainWorker": 10, "rebalance": 5 },
+	"values": { "shelter": 70, "defend": 60, "build": 25, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "production": 11, "trainWorker": 10, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
-	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25 }
+	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25 },
+	"phaseUpPopulation": { "2": 120 }
 };
 
 const DEMAND_HORIZON_S = 60;
@@ -35,7 +36,8 @@ export class Strategy
 			"gatherShares": Object.freeze(Object.assign({}, this.shares)),
 			"values": OPENING.values,
 			"housing": OPENING.housing,
-			"military": OPENING.military
+			"military": OPENING.military,
+			"advancePhase": world.population >= (OPENING.phaseUpPopulation[world.phase + 1] || Infinity)
 		});
 		return this.priorities;
 	}
