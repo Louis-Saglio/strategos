@@ -9,6 +9,8 @@ const RALLY_TIMEOUT_MS = 45000;
 const HOME_RADIUS = 50;
 const RETURN_TIMEOUT_MS = 60000;
 const HOME_ALARM_THREATS = 6;
+const HOME_CALM_THREATS = 3;
+const ARMY_REACH = 150;
 const RETREAT_FRACTION = 0.4;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
@@ -41,8 +43,11 @@ export class Offense
 			return [];
 		if (this.mode === "home")
 			return this.launch(world, priorities, home);
-		if (this.mode !== "return" && this.shouldRetreat(world, members))
-			this.switchMode(world, "return", { "alive": members.length, "launched": this.launchSize });
+		const reason = this.mode !== "return" && this.retreatReason(world, members, home);
+		if (reason)
+			this.switchMode(world, "return", {
+				"alive": members.length, "launched": this.launchSize, "reason": reason, "threats": world.threats.length
+			});
 		if (this.mode === "rally")
 			return this.rallyRequests(world, priorities, members);
 		if (this.mode === "attack")
@@ -61,7 +66,7 @@ export class Offense
 	launch(world, priorities, home)
 	{
 		const offense = priorities.offense;
-		if (world.threats.length || !world.enemyCentres.length)
+		if (world.threats.length >= HOME_CALM_THREATS || !world.enemyCentres.length)
 			return [];
 		const available = world.fighters.filter(fighter => !fighter.state.includes("COMBAT"));
 		if (available.length < offense.minArmy || available.length < offense.superiority * world.enemySoldiers)
@@ -84,14 +89,33 @@ export class Offense
 		return this.rallyRequests(world, priorities, available);
 	}
 
-	shouldRetreat(world, members)
+	retreatReason(world, members, home)
 	{
-		if (world.threats.length >= HOME_ALARM_THREATS)
-			return true;
+		if (this.threatsOutOfReach(world, members, home) >= HOME_ALARM_THREATS)
+			return "alarm";
 		if (members.length < this.launchSize * RETREAT_FRACTION)
-			return true;
-		return this.mode === "attack" && !world.enemyCentres.some(centre => centre.id === this.target.id) &&
-			!this.retarget(world);
+			return "losses";
+		if (this.mode === "attack" && !world.enemyCentres.some(centre => centre.id === this.target.id) &&
+			!this.retarget(world))
+			return "done";
+		return null;
+	}
+
+	threatsOutOfReach(world, members, home)
+	{
+		if (this.mode !== "attack" || !members.length || world.threats.length < HOME_ALARM_THREATS)
+			return world.threats.length;
+		const centre = [0, 0];
+		for (const member of members)
+		{
+			centre[0] += member.position[0] / members.length;
+			centre[1] += member.position[1] / members.length;
+		}
+		const limit = ARMY_REACH * ARMY_REACH;
+		return world.threats.filter(threat => {
+			const distance = squareDistance(threat.position, centre);
+			return distance > limit || squareDistance(threat.position, home.position) < distance;
+		}).length;
 	}
 
 	retarget(world)
