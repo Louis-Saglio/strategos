@@ -243,12 +243,18 @@ export class Construction
 		    world.foundations.some(foundation => trains(foundation.template)))
 			return null;
 		const trainers = world.trainers.filter(trainer => trainer.trainable.some(name => this.catalog.isWorker(name)));
-		if (trainers.some(trainer => trainer.queueLength === 0))
-			return null;
+		const soldierTrainers = world.trainers.filter(trainer => trainer.trainable.some(name => this.catalog.isSoldier(name)) &&
+			!trainer.trainable.some(name => this.catalog.isCivilian(name)));
+		const military = priorities.military;
+		const wantedSoldierTrainers = world.population < military.firstTrainerPopulation ? 0 :
+			1 + Math.floor((world.population - military.firstTrainerPopulation) / military.populationPerTrainer);
 		const stock = PRODUCTION_STOCK_CODES.reduce((sum, code) => sum + (world.resources[code] || 0), 0);
-		if (stock < PRODUCTION_STOCK_BASE + PRODUCTION_STOCK_PER_TRAINER * trainers.length)
+		const forArmy = soldierTrainers.length < wantedSoldierTrainers;
+		const forStock = !trainers.some(trainer => trainer.queueLength === 0) &&
+			stock >= PRODUCTION_STOCK_BASE + PRODUCTION_STOCK_PER_TRAINER * trainers.length;
+		if (!forArmy && !forStock)
 			return null;
-		const template = this.cheapest(world, trains);
+		const template = this.cheapest(world, forArmy ? name => trains(name) && this.catalog.trainsOnlySoldierWorkers(name) : trains);
 		if (!template)
 			return null;
 		const centre = world.centres[0];

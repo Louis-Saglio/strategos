@@ -167,6 +167,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"gathering": gathering,
 			"kind": kind,
 			"profile": catalog.gathering(ent),
+			"meanRates": Object.freeze(catalog.meanRates(ent)),
 			"target": orders.length && orders[0] ? orders[0].target : undefined,
 			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
 			"buildable": Object.freeze(catalog.buildable(ent))

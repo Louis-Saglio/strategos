@@ -92,6 +92,17 @@ export class Catalog
 		return this.template(name).buildTime() || 0;
 	}
 
+	isSoldier(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("Soldier");
+	}
+
+	isCivilian(name)
+	{
+		return this.isWorker(name) && !this.isSoldier(name);
+	}
+
 	isWorker(name)
 	{
 		const template = this.template(name);
@@ -144,6 +155,23 @@ export class Catalog
 		return cost;
 	}
 
+	meanRates(template)
+	{
+		const raw = this.gathering(template).rates;
+		const sums = {};
+		const counts = {};
+		for (const key in raw)
+		{
+			const code = key.split(".")[0];
+			sums[code] = (sums[code] || 0) + raw[key];
+			counts[code] = (counts[code] || 0) + 1;
+		}
+		const rates = {};
+		for (const code of this.codes)
+			rates[code] = counts[code] ? sums[code] / counts[code] : 0;
+		return rates;
+	}
+
 	researchable(entity)
 	{
 		const producer = entity.templateName();
@@ -183,8 +211,19 @@ export class Catalog
 
 	trainsWorkers(name)
 	{
+		return this.trains(name, unit => this.isWorker(unit));
+	}
+
+	trainsOnlySoldierWorkers(name)
+	{
+		return this.trains(name, unit => this.isWorker(unit) && this.isSoldier(unit)) &&
+			!this.trains(name, unit => this.isCivilian(unit));
+	}
+
+	trains(name, accept)
+	{
 		const trainable = this.template(name).trainableEntities(this.civ) || [];
-		return trainable.some(unit => unit && this.template(unit) && this.available(unit) && this.isWorker(unit));
+		return trainable.some(unit => unit && this.template(unit) && this.available(unit) && accept(unit));
 	}
 
 	maxGatherers(name)

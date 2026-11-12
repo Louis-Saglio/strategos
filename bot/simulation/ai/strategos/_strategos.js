@@ -85,6 +85,7 @@ StrategosBot.prototype.report = function(world, priorities)
 		"population": world.population,
 		"populationLimit": world.populationLimit,
 		"foundations": world.foundations.length,
+		"fighters": world.fighters.length,
 		"workers": world.workers.length,
 		"idle": world.workers.filter(worker => worker.idle).length,
 		"gatherers": world.gatherers,

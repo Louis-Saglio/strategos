@@ -90,12 +90,17 @@ export class Economy
 		if (!idle.length)
 			return requests;
 		const total = world.workers.length;
+		const advantage = this.advantages(world);
 		for (const worker of idle)
 		{
 			const ranked = worker.gatherTypes
 				.filter(code => priorities.gatherShares[code] > 0)
-				.map(code => ({ "code": code, "deficit": priorities.gatherShares[code] * total - assigned[code] }))
-				.sort((a, b) => b.deficit - a.deficit || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
+				.map(code => {
+					const deficit = priorities.gatherShares[code] * total - assigned[code];
+					const edge = advantage(worker, code);
+					return { "code": code, "deficit": deficit, "rank": deficit > 0 ? deficit * edge : deficit / edge };
+				})
+				.sort((a, b) => b.rank - a.rank || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
 			for (const { code, deficit } of ranked)
 			{
 				const site = this.nearestFreeSite(world.sites[code], worker, reserved);
@@ -116,9 +121,28 @@ export class Economy
 		return requests;
 	}
 
+	advantages(world)
+	{
+		const average = {};
+		for (const code of world.codes)
+		{
+			let sum = 0;
+			let count = 0;
+			for (const worker of world.workers)
+				if (worker.meanRates[code] > 0)
+				{
+					sum += worker.meanRates[code];
+					count += 1;
+				}
+			average[code] = count ? sum / count : 0;
+		}
+		return (worker, code) => average[code] > 0 && worker.meanRates[code] > 0 ? worker.meanRates[code] / average[code] : 0.01;
+	}
+
 	rebalanceRequests(world, priorities, assigned, reserved)
 	{
 		const requests = [];
+		const advantage = this.advantages(world);
 		const total = world.workers.length;
 		const gap = Math.max(REBALANCE_MIN_GAP, REBALANCE_GAP_SHARE * total);
 		const balance = code => assigned[code] - priorities.gatherShares[code] * total;
@@ -138,8 +162,10 @@ export class Economy
 				if (!site)
 					continue;
 				const distance = squareDistance(site.position, worker.position);
-				if (!best || distance < best.distance || (distance === best.distance && worker.id < best.worker.id))
-					best = { worker, site, distance };
+				const gain = advantage(worker, deficit) - advantage(worker, surplus);
+				if (!best || gain > best.gain || (gain === best.gain && (distance < best.distance ||
+				    (distance === best.distance && worker.id < best.worker.id))))
+					best = { worker, site, distance, gain };
 			}
 			if (!best)
 				break;
