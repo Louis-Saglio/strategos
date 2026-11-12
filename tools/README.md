@@ -149,6 +149,29 @@ loads every file of `autostart/` in name order, so it wraps the public
 `parseCmdLineArgs` without copying it, and sets each setting as the game
 setup screen would; an unknown key aborts the game start.
 
+### scenarios/ — the strategos-scenarios mod
+
+`scenarios/` (repo root) holds scenario maps: a random-map script that
+builds the situation and a trigger script that plays the side without an
+AI, prints `[SCENARIO]` lines and ends the game as soon as the outcome is
+known. `run.sh` mounts the mod when a map of the batch comes from it, and
+`none` as a player's AI leaves that player to the trigger script:
+
+```sh
+tools/run.sh -l 8 -p 'strategos:*:1' -p 'none:*:2' \
+    -M random/strategos_assault_a60_g20_d0 -b '*' -H local OUTDIR 1-12
+```
+
+`strategos_assault_aA_gG_dD`: player 1 gets A extra basic infantry beside
+its civic centre; player 2 is a lone civic centre with G soldiers
+garrisoned and D standing around it. Outcomes: player 1 wins when the
+centre is captured or destroyed, player 2 wins when a quarter of the army
+or less is left, anything else is a timeout — so `analyze.py` and
+`compare.py` read a scenario batch like a batch of matches. The protocol
+and the meaning of each field are in the header of
+`scenarios/maps/random/strategos_assault_triggers.js`; a new case is a new
+`.json` with a matching name.
+
 ### analyze.py, compare.py
 
 ```sh

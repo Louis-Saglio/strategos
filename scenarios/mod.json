@@ -1,0 +1,7 @@
+{
+	"name": "strategos-scenarios",
+	"version": "0.1.0",
+	"label": "Strategos scenarios",
+	"description": "Scenario maps and trigger scripts that set up one situation and measure one behaviour of Strategos (tools/run.sh -M random/strategos_...). Tooling only.",
+	"dependencies": ["0ad=0.28.0"]
+}

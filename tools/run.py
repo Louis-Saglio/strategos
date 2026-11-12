@@ -21,7 +21,8 @@ Players (-p, repeatable, in player order; default: strategos vs petra):
 
     AI[/DIFF[/BEHAVIOR]]:CIV[:TEAM]
 
-AI is strategos, petra, brennus or any AI a mounted mod provides. DIFF is
+AI is strategos, petra, brennus, any AI a mounted mod provides, or none (a
+player without an AI, for scenarios whose trigger script plays it). DIFF is
 0-5 (Petra: 5 = very hard; default 3), BEHAVIOR balanced | aggressive |
 defensive (default balanced). CIV is a civ code, or * to pick one per seed
 (deterministic, from all 15 civs). TEAM is 1-based; omit it for no team.
@@ -34,8 +35,10 @@ AI mods: strategos is this repo's bot/ (or -m strategos=DIR); brennus is
 ~/Work/brennus at a commit (-m brennus=GIT_DIR@REV, default HEAD), with its
 own harness scripts stripped so only its AI is mounted. Every mod used is
 snapshotted into OUTDIR/mods/ once (provenance in OUTDIR/batch.json), so
-editing the sources during a batch cannot leak into it. The harness mod
-(tools/harness) is always mounted last; -l sets its time limit.
+editing the sources during a batch cannot leak into it. The scenario mod
+(scenarios/) is mounted when a map of the batch comes from it
+(-M random/strategos_...). The harness mod (tools/harness) is always
+mounted last; -l sets its time limit.
 
 Game settings are all explicit: the map, size, placement, biome, victory,
 seeds and players go on the public autostart command line; every other
@@ -103,12 +106,14 @@ REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOOLS = os.path.join(REPO, "tools")
 HOSTS_FILE = os.path.join(TOOLS, "hosts.json")
 HARNESS = os.path.join(TOOLS, "harness")
+SCENARIOS = os.path.join(REPO, "scenarios")
 SRC = os.path.expanduser(os.environ.get("ZEROAD_SRC", "~/Work/0ad"))
 CIVS = ["athen", "brit", "cart", "gaul", "germ", "han", "iber", "kush", "mace", "maur",
         "pers", "ptol", "rome", "sele", "spart"]
 GENERIC_BIOMES = ["generic/aegean", "generic/alpine", "generic/arctic", "generic/autumn", "generic/india",
                   "generic/nubia", "generic/sahara", "generic/savanna", "generic/steppe", "generic/temperate"]
 BUILTIN_AIS = {"petra"}
+NO_AI = "none"
 # Every game setting the public autostart command line cannot set, passed to
 # the harness (tools/harness/autostart/harness_settings.js) and checked after
 # each match against the replay. Keys are the engine's InitAttributes names;
@@ -198,8 +203,10 @@ def engine_args(spec):
     for v in spec["victory"]:
         args.append(f"-autostart-victory={v}")
     for i, p in enumerate(spec["players"], 1):
-        args += [f"-autostart-ai={i}:{p['ai']}", f"-autostart-aidiff={i}:{p['diff']}",
-                 f"-autostart-aibehavior={i}:{p['behavior']}", f"-autostart-civ={i}:{p['civ']}"]
+        args.append(f"-autostart-civ={i}:{p['civ']}")
+        if p["ai"] != NO_AI:
+            args += [f"-autostart-ai={i}:{p['ai']}", f"-autostart-aidiff={i}:{p['diff']}",
+                     f"-autostart-aibehavior={i}:{p['behavior']}"]
         if p.get("team"):
             args.append(f"-autostart-team={i}:{p['team']}")
     args.append("-harness-settings=" + json.dumps(spec["settings"], sort_keys=True, separators=(",", ":")))
@@ -236,14 +243,18 @@ def mod_name(path):
         return json.load(fh)["name"]
 
 
-def snapshot_mods(outdir, ais, sources, limit, map_interval):
+def is_scenario(map_name):
+    return any(os.path.isfile(os.path.join(SCENARIOS, "maps", map_name + ext)) for ext in (".json", ".xml"))
+
+
+def snapshot_mods(outdir, ais, sources, limit, map_interval, scenarios=False):
     """Copy every needed mod into OUTDIR/mods/. Returns (mount order, provenance)."""
     mods_dir = os.path.join(outdir, "mods")
     if os.path.exists(mods_dir):
         shutil.rmtree(mods_dir)
     os.makedirs(mods_dir)
     order, prov = [], {}
-    for ai in sorted(ais - BUILTIN_AIS):
+    for ai in sorted(ais - BUILTIN_AIS - {NO_AI}):
         src = sources.get(ai)
         if ai == "strategos" and not src:
             src = os.path.join(REPO, "bot")
@@ -282,6 +293,12 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval):
         origin["content"] = content_hash(dest)
         prov[name] = origin
         order.append(name)
+    if scenarios:
+        sdest = os.path.join(mods_dir, mod_name(SCENARIOS))
+        shutil.copytree(SCENARIOS, sdest)
+        prov[mod_name(SCENARIOS)] = {"source": SCENARIOS, "commit": git_info(SCENARIOS),
+                                     "content": content_hash(sdest)}
+        order.append(mod_name(SCENARIOS))
     hdest = os.path.join(mods_dir, mod_name(HARNESS))
     shutil.copytree(HARNESS, hdest)
     trig = os.path.join(hdest, "maps/scripts/NonVisualTrigger.js")
@@ -513,9 +530,14 @@ def check_settings(d, spec):
     if len(pdata) != len(spec["players"]):
         bad.append(f"players: wanted {len(spec['players'])}, engine applied {len(pdata)}")
     for i, (p, q) in enumerate(zip(spec["players"], pdata), 1):
-        for key, want, got in (("AI", p["ai"], q.get("AI")), ("AIDiff", p["diff"], q.get("AIDiff")),
-                               ("AIBehavior", p["behavior"], q.get("AIBehavior")), ("Civ", p["civ"], q.get("Civ")),
-                               ("Team", (p["team"] - 1) if p.get("team") else -1, q.get("Team", -1))):
+        checks = [("Civ", p["civ"], q.get("Civ")),
+                  ("Team", (p["team"] - 1) if p.get("team") else -1, q.get("Team", -1))]
+        if p["ai"] == NO_AI:
+            checks.append(("AI", False, q.get("AI") or False))
+        else:
+            checks += [("AI", p["ai"], q.get("AI")), ("AIDiff", p["diff"], q.get("AIDiff")),
+                       ("AIBehavior", p["behavior"], q.get("AIBehavior"))]
+        for key, want, got in checks:
             expect(f"player{i}.{key}", want, got)
     uncontrolled = {k: v for k, v in applied.items() if k not in spec["settings"] and k not in DERIVED_SETTINGS
                     and k != "gameSpeed"}
@@ -702,7 +724,8 @@ def main():
     if not specs:
         die("no match to run")
     ais = {p["ai"] for s in specs for p in s["players"]}
-    order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval)
+    order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval,
+                                scenarios=any(is_scenario(s["map"]) for s in specs))
     syntax_check(os.path.join(outdir, "mods"))
     for s in specs:
         s["mods"] = [m for m in order]
