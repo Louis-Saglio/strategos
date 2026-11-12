@@ -88,7 +88,9 @@ as background jobs with a completion notification.
 headless match (mounted last). It prints `[HARNESS] start` (map size in
 metres, players with civ and engine team — 0-based, -1 for none),
 `[HARNESS] map` snapshots of every player's units and buildings (every
-30 s by default, `--map-interval` ms, 0 = off) and the per-player
+30 s by default, `--map-interval` ms, 0 = off), `[HARNESS] eco` every
+minute (each player's cumulative resources gathered and population, read
+from the statistics tracker) and the per-player
 statistics JSON at game end. At the time limit (`-l` minutes) it prints `[HARNESS] time limit reached` and marks every active
 player as won, so the game ends cleanly (statistics, replay metadata)
 without favouring a side; `analyze.py` reports it as a timeout. Nothing
@@ -97,16 +99,20 @@ else is changed before the limit.
 ### analyze.py, compare.py
 
 ```sh
-tools/analyze.py OUTDIR [TAG...] [--metrics] [--player N] [--tsv F] [--det A,B]
-tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player N]
+tools/analyze.py OUTDIR [TAG...] [--metrics] [--player N] [--at MIN] [--tsv F] [--det A,B]
+tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player N] [--at MIN]
 ```
 
 `analyze.py`: per match the outcome (`T<n> won`, `P<n> won`, `timeout`,
 `none`), each player's `ai/civ:team=W|L|T`, map/biome, game minutes, error
 lines, failed AI creation, host, exit, wall seconds, turns/s and a hash of
 the statistics (equal hash = identical game). `--metrics` adds player N's
-end-of-game resources gathered, units trained/lost/killed, kill/loss value
-ratio, buildings, population and map control.
+end-of-game resources gathered (per resource, total, and `gath_ratio`: the
+total over the best other player's total), units trained/lost/killed,
+kill/loss value ratio, buildings, population and map control. `--at MIN`
+reads the gathered resources, total, ratio and population from the
+harness eco line at minute MIN instead, so one batch can be judged at
+several minutes.
 
 `compare.py`: pairs two batches by tag; identical-game count, outcome
 transitions of player N's side, and for each metric the means, the mean

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Paired comparison of two tools/run.sh batches run on the same matches.
 
-    compare.py BASE_DIR VARIANT_DIR [--player N] [TAG...]
+    compare.py BASE_DIR VARIANT_DIR [--player N] [--at MIN] [TAG...]
 
 Matches are paired by tag (default: every tag present in both). Prints:
 
@@ -11,7 +11,9 @@ Matches are paired by tag (default: every tag present in both). Prints:
   failed in each batch, and the per-match transitions;
 - for each end-of-game metric of player N (tools/analyze.py --metrics, plus
   game minutes): base mean, variant mean, mean paired delta, and the
-  two-sided paired t-test p-value.
+  two-sided paired t-test p-value. --at MIN reads the gathered resources,
+  their total and ratio and the population at minute MIN (harness eco
+  lines, see analyze.py).
 
 A difference is only worth reading when it is larger than the noise of the
 unchanged matches; small batches are noise.
@@ -83,6 +85,7 @@ def main():
     ap.add_argument("variant")
     ap.add_argument("tags", nargs="*")
     ap.add_argument("--player", type=int, default=1)
+    ap.add_argument("--at", type=float)
     a = ap.parse_args()
     base = {r["tag"]: r for r in analyze.rows_for(a.base)}
     var = {r["tag"]: r for r in analyze.rows_for(a.variant)}
@@ -116,7 +119,7 @@ def main():
                     v = row["game_min"]
                 else:
                     st = row["stats"].get(a.player)
-                    v = analyze.metrics(st)[m] if st else None
+                    v = analyze.metrics(st, row, a.at)[m] if st else None
                 try:
                     vals.append(float(v))
                 except (TypeError, ValueError):

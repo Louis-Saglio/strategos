@@ -9,6 +9,9 @@
  * tools/mapview.py):
  *   [HARNESS] start {"mapSize": <metres>, "limitMin": N, "players": [{"id","civ","team"}...]}
  *   [HARNESS] map {"t": <sim s>, "<player id>": [[id,kind,state,x,z], ...], ...}
+ *   [HARNESS] eco {"t": <sim s>, "<player id>": {"gathered": {<resource>: n}, "pop": n}, ...}
+ *     every minute: cumulative resources gathered (StatisticsTracker basic
+ *     statistics) and population, read-only.
  *   [HARNESS] time limit reached {"t": <sim s>}
  *   per-player statistics JSON blocks (as the public script), at game end.
  *
@@ -23,6 +26,7 @@
 
 const HARNESS_LIMIT_MINUTES = 60;
 const HARNESS_MAP_INTERVAL_MS = 30000;
+const HARNESS_ECO_INTERVAL_MS = 60000;
 
 const HARNESS_KINDS = [
 	[6, "CivCentre"],
@@ -128,6 +132,24 @@ Trigger.prototype.HarnessMapSnapshot = function()
 	print("[HARNESS] map " + line + "}\n");
 };
 
+Trigger.prototype.HarnessEconomy = function()
+{
+	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+	const cmpPlayerManager = Engine.QueryInterface(SYSTEM_ENTITY, IID_PlayerManager);
+	const line = { "t": Math.round(now) };
+	for (let id = 1; id < cmpPlayerManager.GetNumPlayers(); ++id)
+	{
+		const cmpStatisticsTracker = QueryPlayerIDInterface(id, IID_StatisticsTracker);
+		const cmpPlayer = QueryPlayerIDInterface(id);
+		const gathered = {};
+		const basic = cmpStatisticsTracker ? cmpStatisticsTracker.GetBasicStatistics().resourcesGathered : {};
+		for (const code of Resources.GetCodes())
+			gathered[code] = basic[code] || 0;
+		line[id] = { "gathered": gathered, "pop": cmpPlayer ? cmpPlayer.GetPopulationCount() : 0 };
+	}
+	print("[HARNESS] eco " + JSON.stringify(line) + "\n");
+};
+
 Trigger.prototype.HarnessTimeLimit = function()
 {
 	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
@@ -148,6 +170,7 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.DoAfterDelay(0, "HarnessStart", {});
 	if (HARNESS_MAP_INTERVAL_MS > 0)
 		cmpTrigger.DoRepeatedly(HARNESS_MAP_INTERVAL_MS, "HarnessMapSnapshot", {});
+	cmpTrigger.DoRepeatedly(HARNESS_ECO_INTERVAL_MS, "HarnessEconomy", {});
 	if (HARNESS_LIMIT_MINUTES > 0)
 		cmpTrigger.DoAfterDelay(HARNESS_LIMIT_MINUTES * 60 * 1000, "HarnessTimeLimit", {});
 }

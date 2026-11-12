@@ -20,12 +20,18 @@ stdout.log, in natural order):
   equal hashes mean identical games (determinism checks).
 
 Usage:
-  analyze.py [--tsv FILE] [--det A,B] [--metrics] [--player N] OUTDIR [TAG...]
+  analyze.py [--tsv FILE] [--det A,B] [--metrics] [--player N] [--at MIN] OUTDIR [TAG...]
 
 --metrics adds, for player N (default 1), statistics from the end of game:
-resources gathered (food/wood/stone/metal), units trained, units lost,
+resources gathered (food/wood/stone/metal and their total), the ratio of
+that total to the best other player's total, units trained, units lost,
 enemy units killed, value killed / value lost, buildings constructed,
 population, map controlled (%).
+
+--at MIN takes the gathered resources, their total and ratio, and the
+population from the harness `[HARNESS] eco` line at minute MIN instead of
+the end of game (a game that ended earlier keeps its last line), so one
+batch can be read at several minutes.
 """
 import argparse
 import hashlib
@@ -36,6 +42,7 @@ import re
 ERROR_RE = re.compile(r"ERROR|JavaScript error|script exception")
 LIMIT_TAG = "[HARNESS] time limit reached"
 START_TAG = "[HARNESS] start "
+ECO_TAG = "[HARNESS] eco "
 
 
 def player_blocks(text):
@@ -64,19 +71,66 @@ def load_stats(text):
     return raws, stats
 
 
-def metrics(stat):
+def eco_lines(text):
+    """[(t, {player id: {"gathered": {...}, "pop": n}})] from the harness eco lines."""
+    out = []
+    for line in text.splitlines():
+        if line.startswith(ECO_TAG):
+            try:
+                obj = json.loads(line[len(ECO_TAG):])
+            except json.JSONDecodeError:
+                continue
+            t = obj.pop("t", 0)
+            out.append((t, {int(k): v for k, v in obj.items()}))
+    return out
+
+
+def eco_at(row, minute):
+    """The last eco snapshot at or before `minute`, or None."""
+    best = None
+    for t, per in row.get("eco", []):
+        if t <= minute * 60 + 1:
+            best = per
+    return best
+
+
+def gathered_totals(row, minute=None):
+    """{player id: total gathered} at `minute` (eco line) or at the end of game."""
+    if minute is not None:
+        per = eco_at(row, minute) or {}
+        return {p: sum(v["gathered"].get(k, 0) for k in RESOURCES) for p, v in per.items()}
+    return {p: sum(st["statistics"].get("resourcesGathered", {}).get(k, 0) for k in RESOURCES)
+            for p, st in row["stats"].items()}
+
+
+RESOURCES = ("food", "wood", "stone", "metal")
+
+
+def metrics(stat, row=None, minute=None):
     s = stat["statistics"]
     g = s.get("resourcesGathered", {})
+    pop = s.get("populationCount", 0)
+    player = stat.get("playerID")
+    if row is not None and minute is not None:
+        snap = (eco_at(row, minute) or {}).get(player)
+        g = snap["gathered"] if snap else {}
+        pop = snap["pop"] if snap else 0
     lost_v = s.get("unitsLostValue", 0) + s.get("buildingsLostValue", 0)
     kill_v = s.get("enemyUnitsKilledValue", 0) + s.get("enemyBuildingsDestroyedValue", 0)
+    total = sum(g.get(k, 0) for k in RESOURCES)
+    ratio = "-"
+    if row is not None:
+        others = [v for p, v in gathered_totals(row, minute).items() if p != player]
+        ratio = f"{total / max(others):.2f}" if others and max(others) else "-"
     return {
         "food": g.get("food", 0), "wood": g.get("wood", 0), "stone": g.get("stone", 0), "metal": g.get("metal", 0),
+        "gathered": total, "gath_ratio": ratio,
         "trained": s.get("unitsTrained", {}).get("total", 0),
         "lost": s.get("unitsLost", {}).get("Unit", 0),
         "killed": s.get("enemyUnitsKilled", {}).get("Unit", 0),
         "kd_value": f"{kill_v / lost_v:.2f}" if lost_v else ("inf" if kill_v else "-"),
         "built": s.get("buildingsConstructed", {}).get("total", 0),
-        "pop": s.get("populationCount", 0),
+        "pop": pop,
         "map%": s.get("percentMapControlled", 0),
     }
 
@@ -130,6 +184,7 @@ def analyze(outdir, tag):
         "hash": hashlib.sha256("".join(raws).encode()).hexdigest()[:12] if raws else "-",
         "stats": stats,
         "spec": spec,
+        "eco": eco_lines(text),
     }
 
 
@@ -139,7 +194,7 @@ def natural(tag):
 
 COLUMNS = ["tag", "outcome", "players", "map", "game_min", "errors", "failed_ai", "host", "exit", "wall_s",
            "turns_s", "hash"]
-METRICS = ["food", "wood", "stone", "metal", "trained", "lost", "killed", "kd_value", "built", "pop", "map%"]
+METRICS = ["food", "wood", "stone", "metal", "gathered", "gath_ratio", "trained", "lost", "killed", "kd_value", "built", "pop", "map%"]
 
 
 def rows_for(outdir, tags=None):
@@ -156,6 +211,7 @@ def main():
     ap.add_argument("--det", help="comma pair of tags whose hashes must match")
     ap.add_argument("--metrics", action="store_true")
     ap.add_argument("--player", type=int, default=1)
+    ap.add_argument("--at", type=float)
     a = ap.parse_args()
     rows = rows_for(a.outdir, a.tags)
     cols = list(COLUMNS)
@@ -163,7 +219,7 @@ def main():
         cols += METRICS
         for r in rows:
             st = r["stats"].get(a.player)
-            r.update(metrics(st) if st else {m: "-" for m in METRICS})
+            r.update(metrics(st, r, a.at) if st else {m: "-" for m in METRICS})
     widths = {c: max([len(c)] + [len(str(r[c])) for r in rows]) for c in cols}
     print("  ".join(c.ljust(widths[c]) for c in cols))
     for r in rows:
