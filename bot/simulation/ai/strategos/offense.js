@@ -12,6 +12,7 @@ const RETREAT_FRACTION = 0.4;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
 const ASSAULT_EXIT_SHARE = 0.25;
+const ASSAULT_POWER_MARGIN = 2;
 const MOVING_STATES = ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"];
 const TARGET_CLASSES = { "attack": ["Unit", "Structure"], "avoid": ["Palisade", "Wall"] };
 const UNIT_CLASSES = { "attack": ["Unit"], "avoid": ["Palisade", "Wall"] };
@@ -97,6 +98,7 @@ export class Offense
 		this.target = world.enemyCentres
 			.slice()
 			.sort((a, b) => squareDistance(a.position, from) - squareDistance(b.position, from) || a.id - b.id)[0];
+		this.assaulting = false;
 		this.telemetry.line("ATTACK", world.time, { "mode": "retarget", "target": this.target.id });
 		return true;
 	}
@@ -132,11 +134,17 @@ export class Offense
 		const defenders = new Set(world.enemyFighters
 			.filter(enemy => squareDistance(enemy.position, this.target.position) <= limit)
 			.map(enemy => enemy.id));
-		const assault = defenders.size < (this.assaulting ? ASSAULT_EXIT_SHARE : ASSAULT_ENTER_SHARE) * members.length;
+		const centre = world.enemyCentres.find(candidate => candidate.id === this.target.id) || this.target;
+		const power = members.reduce((sum, member) => sum + member.capture, 0);
+		const assault = power >= ASSAULT_POWER_MARGIN * (centre.regen || 0) &&
+			defenders.size < (this.assaulting ? ASSAULT_EXIT_SHARE : ASSAULT_ENTER_SHARE) * members.length;
 		if (assault !== this.assaulting)
 		{
 			this.assaulting = assault;
-			this.telemetry.line("ATTACK", world.time, { "mode": assault ? "assault" : "fight", "army": members.length, "defenders": defenders.size });
+			this.telemetry.line("ATTACK", world.time, {
+				"mode": assault ? "assault" : "fight", "army": members.length, "defenders": defenders.size,
+				"power": power, "regen": centre.regen
+			});
 		}
 		if (assault)
 		{

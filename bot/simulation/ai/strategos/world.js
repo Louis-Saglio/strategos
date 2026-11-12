@@ -86,6 +86,23 @@ export function territoryAt(territory, x, z)
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
 }
 
+function captureRegen(gameState, ent)
+{
+	let regen = +(ent.get("Capturable/RegenRate") || 0);
+	const factor = +(ent.get("Capturable/GarrisonRegenRate") || 0);
+	for (const id of ent.garrisoned() || [])
+	{
+		const unit = gameState.getEntityById(id);
+		regen += factor * (unit ? captureStrength(unit) : 0);
+	}
+	return regen;
+}
+
+export function captureStrength(ent)
+{
+	return +(ent.get("Attack/Capture/Capture") || 0);
+}
+
 export function squareDistance(a, b)
 {
 	const dx = a[0] - b[0];
@@ -252,7 +269,12 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			continue;
 		for (const ent of gameState.getEnemyStructures(enemy).values())
 			if (ent.hasClass("CivCentre") && ent.position())
-				enemyCentres.push(Object.freeze({ "id": ent.id(), "owner": enemy, "position": ent.position() }));
+				enemyCentres.push(Object.freeze({
+					"id": ent.id(),
+					"owner": enemy,
+					"position": ent.position(),
+					"regen": captureRegen(gameState, ent)
+				}));
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
 			if (ent.hasClass("Soldier"))
@@ -295,6 +317,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"position": position,
 			"state": ent.unitAIState() || "",
 			"classes": ent.classes(),
+			"capture": captureStrength(ent),
 			"target": orders.length && orders[0] ? orders[0].target : undefined
 		}));
 		const name = ent.templateName();
