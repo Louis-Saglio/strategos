@@ -100,6 +100,17 @@ def main():
     tags = [t for t in tags if t in base and t in var]
     if not tags:
         sys.exit("compare.py: no common tag")
+    # A pair is a pair only if everything but the mods is the same match:
+    # flag (but still compare) pairs whose map, players or game settings differ.
+    differ = {}
+    for t in tags:
+        sb, sv = base[t]["spec"], var[t]["spec"]
+        for k in sorted((set(sb) | set(sv)) - {"mods", "tag"}):
+            if sb.get(k) != sv.get(k):
+                differ.setdefault(k, []).append(t)
+    for k, ts in differ.items():
+        print(f"compare.py: WARNING: {k} differs between the batches on {len(ts)} pair(s) "
+              f"({' '.join(ts[:8])}{' ...' if len(ts) > 8 else ''})", file=sys.stderr)
     same = [t for t in tags if base[t]["hash"] != "-" and base[t]["hash"] == var[t]["hash"]]
     print(f"{len(tags)} paired matches, {len(same)} identical games")
 

@@ -37,10 +37,20 @@ snapshotted into OUTDIR/mods/ once (provenance in OUTDIR/batch.json), so
 editing the sources during a batch cannot leak into it. The harness mod
 (tools/harness) is always mounted last; -l sets its time limit.
 
+Game settings are all explicit: the map, size, placement, biome, victory,
+seeds and players go on the public autostart command line; every other
+setting (GAME_SETTINGS: population cap, starting resources, visibility,
+ceasefire, treasures, spies, nomad, locked teams, last man standing, cheats,
+wonder/relic/regicide options, game speed) goes to the harness as
+-harness-settings=JSON. After each match the settings the engine wrote into
+the replay are compared with the spec: a mismatch is reported as a FAILURE,
+a setting present in the replay that the batch did not choose (a
+map-specific option) as a WARNING.
+
 Per match, in OUTDIR/TAG/: stdout.log (engine output: harness lines, bot
 telemetry, statistics JSON), result.json (spec, host, exit code, wall
-seconds, turns) and home/ (engine logs and the replay; cache and mod copies
-dropped).
+seconds, turns, the settings the engine applied, mismatches) and home/
+(engine logs and the replay; cache and mod copies dropped).
 
 Options:
   -p SPEC        player (repeatable, see above)
@@ -49,6 +59,8 @@ Options:
   -s SIZE        random-map size in tiles (default 192)
   -P PLACEMENT   random-map player placement (default circle)
   -V VICTORY     victory condition, repeatable (default conquest_civic_centers)
+  -S KEY=VALUE   game setting, repeatable, overriding GAME_SETTINGS (below);
+                 VALUE is JSON (true, 200, "team") or a bare string
   -l MIN         in-game time limit in minutes — REQUIRED, > 0 (AGENTS.md,
                  "Game duration": the shortest limit that answers the question)
   -t SEC         wall-clock cap per match (default: derived from -l, see
@@ -97,6 +109,24 @@ CIVS = ["athen", "brit", "cart", "gaul", "germ", "han", "iber", "kush", "mace", 
 GENERIC_BIOMES = ["generic/aegean", "generic/alpine", "generic/arctic", "generic/autumn", "generic/india",
                   "generic/nubia", "generic/sahara", "generic/savanna", "generic/steppe", "generic/temperate"]
 BUILTIN_AIS = {"petra"}
+# Every game setting the public autostart command line cannot set, passed to
+# the harness (tools/harness/autostart/harness_settings.js) and checked after
+# each match against the replay. Keys are the engine's InitAttributes names;
+# -S KEY=VALUE overrides one. Map-specific settings (Daytime, Landscape,
+# WaterLevel, SeaLevelRise, TriggerDifficulty) are not set: a match whose
+# replay carries a setting nobody chose is reported as uncontrolled.
+GAME_SETTINGS = {
+    "PopulationCapType": "player", "PopulationCap": 300, "StartingResources": 300, "Ceasefire": 0,
+    "ExploreMap": False, "RevealMap": False, "AllyView": False, "DisableTreasures": True,
+    "DisableSpies": False, "Nomad": False, "LockTeams": False, "LastManStanding": False,
+    "CheatsEnabled": False, "WonderDuration": 10, "RelicCount": 2, "RelicDuration": 10,
+    "RegicideGarrison": False, "gameSpeed": 1,
+}
+# Kept by the engine only when they apply (their victory condition, a random map).
+CONDITIONAL_SETTINGS = {"WonderDuration", "RelicCount", "RelicDuration", "RegicideGarrison", "Nomad"}
+# Settings the replay carries that come from the command line or the map itself.
+DERIVED_SETTINGS = {"Biome", "Size", "PlayerPlacement", "VictoryConditions", "Seed", "AISeed", "PlayerData",
+                    "mapName", "mapPreview", "TriggerScripts", "CircularMap"}
 MIN_RATE = 20
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30"]
 
@@ -172,6 +202,7 @@ def engine_args(spec):
                  f"-autostart-aibehavior={i}:{p['behavior']}", f"-autostart-civ={i}:{p['civ']}"]
         if p.get("team"):
             args.append(f"-autostart-team={i}:{p['team']}")
+    args.append("-harness-settings=" + json.dumps(spec["settings"], sort_keys=True, separators=(",", ":")))
     args += ["-autostart-player=-1", "-unique-logs", "-nosound", "-mod=public"]
     args += [f"-mod={m}" for m in spec["mods"]]
     return args
@@ -432,9 +463,96 @@ def run_match(outdir, spec, host, hosts, wall):
                     pass
     result = {"tag": tag, "seed": spec["seed"], "host": host, "exit_code": rc, "wall_seconds": wall_s,
               "turns": turns, "spec": spec}
+    result.update(check_settings(d, spec))
     with open(os.path.join(d, "result.json"), "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1)
     return result
+
+
+def check_settings(d, spec):
+    """Compare the settings the engine applied (the replay's start line) with
+    the spec. Returns {"applied": ..., "settings_mismatch": [...],
+    "settings_uncontrolled": {...}} (empty lists/dicts when all is well)."""
+    starts = []
+    for root, _, files in os.walk(os.path.join(d, "home")):
+        if "commands.txt" in files:
+            starts.append(os.path.join(root, "commands.txt"))
+    if len(starts) != 1:
+        return {"applied": None, "settings_mismatch": [f"{len(starts)} replays found"],
+                "settings_uncontrolled": {}}
+    with open(starts[0], encoding="utf-8") as fh:
+        line = fh.readline()
+    try:
+        start = json.loads(line[len("start "):])
+    except ValueError:
+        return {"applied": None, "settings_mismatch": ["unreadable replay start line"],
+                "settings_uncontrolled": {}}
+    applied = dict(start["settings"])
+    applied.pop("mapPreview", None)
+    applied["gameSpeed"] = start.get("gameSpeed")
+    bad = []
+
+    def expect(key, want, got):
+        if want != got:
+            bad.append(f"{key}: wanted {want!r}, engine applied {got!r}")
+
+    for key, want in spec["settings"].items():
+        if key in applied:
+            expect(key, want, applied[key])
+        elif key not in CONDITIONAL_SETTINGS:
+            bad.append(f"{key}: wanted {want!r}, absent from the replay")
+    expect("map", "maps/" + spec["map"], start.get("map"))
+    expect("Seed", spec["seed"], applied.get("Seed"))
+    expect("AISeed", spec["seed"], applied.get("AISeed"))
+    expect("VictoryConditions", sorted(spec["victory"]), sorted(applied.get("VictoryConditions", [])))
+    if spec["map"].startswith("random/"):
+        expect("Size", spec["size"], applied.get("Size"))
+        expect("Biome", spec["biome"], applied.get("Biome"))
+        expect("PlayerPlacement", spec["placement"], applied.get("PlayerPlacement"))
+    pdata = [p for p in applied.get("PlayerData", []) if p]
+    if len(pdata) != len(spec["players"]):
+        bad.append(f"players: wanted {len(spec['players'])}, engine applied {len(pdata)}")
+    for i, (p, q) in enumerate(zip(spec["players"], pdata), 1):
+        for key, want, got in (("AI", p["ai"], q.get("AI")), ("AIDiff", p["diff"], q.get("AIDiff")),
+                               ("AIBehavior", p["behavior"], q.get("AIBehavior")), ("Civ", p["civ"], q.get("Civ")),
+                               ("Team", (p["team"] - 1) if p.get("team") else -1, q.get("Team", -1))):
+            expect(f"player{i}.{key}", want, got)
+    uncontrolled = {k: v for k, v in applied.items() if k not in spec["settings"] and k not in DERIVED_SETTINGS
+                    and k != "gameSpeed"}
+    return {"applied": applied, "settings_mismatch": bad, "settings_uncontrolled": uncontrolled}
+
+
+def parse_setting(text):
+    if "=" not in text:
+        die(f"bad -S {text!r} (KEY=VALUE)")
+    key, raw = text.split("=", 1)
+    if key not in GAME_SETTINGS:
+        die(f"unknown setting {key!r} (known: {', '.join(GAME_SETTINGS)})")
+    try:
+        value = json.loads(raw)
+    except ValueError:
+        value = raw
+    if type(value) is not type(GAME_SETTINGS[key]):
+        die(f"-S {key}: {raw!r} is not a {type(GAME_SETTINGS[key]).__name__} like the default "
+            f"{json.dumps(GAME_SETTINGS[key])}")
+    return key, value
+
+
+def report_settings(results):
+    bad = [(r["tag"], m) for r in results for m in r.get("settings_mismatch", [])]
+    if bad:
+        print(f"run: FAILURE: the engine did not apply the requested settings in "
+              f"{len({t for t, _ in bad})} game(s):", file=sys.stderr)
+        for t, m in bad[:20]:
+            print(f"  {t}: {m}", file=sys.stderr)
+    loose = {}
+    for r in results:
+        for k, v in r.get("settings_uncontrolled", {}).items():
+            loose.setdefault(f"{k}={json.dumps(v)}", []).append(r["tag"])
+    for kv, tags in sorted(loose.items()):
+        print(f"run: WARNING: setting {kv} was chosen by the map/engine, not by the batch, in {len(tags)} "
+              f"game(s) ({' '.join(tags[:8])}): add it to GAME_SETTINGS", file=sys.stderr)
+    sys.stderr.flush()
 
 
 def run_batch(outdir, specs, slots, hosts, wall):
@@ -506,6 +624,7 @@ def main():
     ap.add_argument("-s", dest="size", type=int, default=192)
     ap.add_argument("-P", dest="placement", default="circle")
     ap.add_argument("-V", dest="victory", action="append")
+    ap.add_argument("-S", dest="settings", action="append", default=[])
     ap.add_argument("-l", dest="limit", type=int)
     ap.add_argument("-t", dest="wall", type=int)
     ap.add_argument("-m", dest="sources", action="append", default=[])
@@ -556,9 +675,11 @@ def main():
         players = [parse_player(p) for p in (a.players or ["strategos:athen:1", "petra/3:rome:2"])]
     os.makedirs(outdir, exist_ok=True)
 
+    settings = dict(GAME_SETTINGS)
+    settings.update(parse_setting(t) for t in a.settings)
     base = {"maps": a.maps.split(","), "biomes": ["*"] if a.biomes == "*" else a.biomes.split(","),
             "size": a.size, "placement": a.placement, "victory": a.victory or ["conquest_civic_centers"],
-            "players": players}
+            "settings": settings, "limit_minutes": a.limit, "players": players}
     if a.matches:
         with open(a.matches, encoding="utf-8") as fh:
             specs = [json.loads(line) for line in fh if line.strip()]
@@ -566,6 +687,11 @@ def main():
             for k, v in (("size", a.size), ("placement", a.placement), ("victory", base["victory"]),
                          ("biome", base["biomes"][0]), ("map", base["maps"][0])):
                 s.setdefault(k, v)
+            s["settings"] = dict(settings, **s.get("settings", {}))
+            unknown = set(s["settings"]) - set(GAME_SETTINGS)
+            if unknown:
+                die(f"{s.get('tag')}: unknown setting(s) {', '.join(sorted(unknown))}")
+            s["limit_minutes"] = a.limit
             s["players"] = [parse_player(p) if isinstance(p, str) else p for p in s["players"]]
     else:
         specs = []
@@ -667,6 +793,7 @@ def main():
     if killed:
         print(f"run: FAILURE: {len(killed)} game(s) hit the {a.wall}s wall-clock cap ({' '.join(killed)}): "
               "investigate (hang, stall, slowdown); do not rerun with a bigger cap", file=sys.stderr, flush=True)
+    report_settings(results)
     subprocess.run([sys.executable, os.path.join(TOOLS, "analyze.py"), outdir] + [s["tag"] for s in specs])
 
 

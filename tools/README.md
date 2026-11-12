@@ -5,7 +5,7 @@ Development tooling for Strategos. Not part of the bot.
 | Tool | What it does |
 |---|---|
 | `run.sh` (`run.py`) | run batches of headless matches on every available host |
-| `harness/` | the `strategos-harness` mod mounted in every match: statistics, map snapshots, time limit |
+| `harness/` | the `strategos-harness` mod mounted in every match: game settings, statistics, map snapshots, time limit |
 | `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
 | `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
 | `compare.py` | paired comparison of two batches run on the same matches |
@@ -76,9 +76,51 @@ tools/run.sh --calibrate local 8,12,16,24 -l 45 -p petra/5:athen:1 -p petra/5:ro
 highest total throughput (turns per wall second summed over the games) as
 the host's slot count.
 
+#### Game settings
+
+Every setting is explicit (AGENTS.md, "Every game setting is explicit").
+The defaults of a batch:
+
+| Setting | Option | Default |
+|---|---|---|
+| map | `-M` | `random/mainland` |
+| map size | `-s` | 192 tiles ("Small") |
+| biome | `-b` | `generic/temperate` (`*` = one generic biome per seed) |
+| player placement | `-P` | `circle` |
+| victory conditions | `-V` (repeatable) | `conquest_civic_centers` |
+| map and AI seed | `SEED` | the seed |
+| players, civs, teams, AI difficulty/behaviour | `-p` | see above |
+| `PopulationCapType` / `PopulationCap` | `-S` | `player` / 300 |
+| `StartingResources` | `-S` | 300 |
+| `Ceasefire` (minutes) | `-S` | 0 |
+| `ExploreMap` / `RevealMap` / `AllyView` | `-S` | false / false / false |
+| `DisableTreasures` | `-S` | **true** |
+| `DisableSpies` | `-S` | false |
+| `Nomad` | `-S` | false |
+| `LockTeams` / `LastManStanding` | `-S` | false / false |
+| `CheatsEnabled` | `-S` | false (the public autostart turns it on) |
+| `WonderDuration` / `RelicCount` / `RelicDuration` | `-S` | 10 / 2 / 10 (kept only with their victory condition) |
+| `RegicideGarrison` | `-S` | false (kept only with regicide) |
+| `gameSpeed` | `-S` | 1 |
+
+`-S KEY=VALUE` takes the engine's own setting name and a JSON value
+(`-S PopulationCap=200`, `-S PopulationCapType=team`, `-S
+DisableTreasures=false`); an unknown key or a value of the wrong type is
+refused. The `-S` settings reach the engine through
+`harness/autostart/harness_settings.js` (see below). After each match,
+`run.py` reads the settings the engine wrote into the replay
+(`commands.txt`) and compares them with the spec: a setting the engine did
+not apply as asked (e.g. last man standing with locked teams, which the
+game refuses) is a FAILURE at the end of the batch; a setting the replay
+carries that the batch did not choose (a map-specific option such as
+`Daytime` or `TriggerDifficulty`) is a WARNING, to be added to
+`GAME_SETTINGS`. `compare.py` warns when paired matches differ in
+anything but their mods (settings, limit, map, players).
+
 Per match, in `OUTDIR/TAG/`: `stdout.log` (engine output: harness lines,
 bot telemetry, statistics JSON), `result.json` (spec, host, exit code,
-wall seconds, turns), `home/` (engine logs, the replay; cache and mod
+wall seconds, turns, `applied` settings, `settings_mismatch`,
+`settings_uncontrolled`), `home/` (engine logs, the replay; cache and mod
 copies dropped). The batch ends with an `analyze.py` summary. Run batches
 as background jobs with a completion notification.
 
@@ -95,6 +137,12 @@ statistics JSON at game end. At the time limit (`-l` minutes) it prints `[HARNES
 player as won, so the game ends cleanly (statistics, replay metadata)
 without favouring a side; `analyze.py` reports it as a timeout. Nothing
 else is changed before the limit.
+
+`autostart/harness_settings.js` applies `-harness-settings=JSON` (the
+`-S` settings) on top of the public autostart command line. The engine
+loads every file of `autostart/` in name order, so it wraps the public
+`parseCmdLineArgs` without copying it, and sets each setting as the game
+setup screen would; an unknown key aborts the game start.
 
 ### analyze.py, compare.py
 
