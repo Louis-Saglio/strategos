@@ -203,10 +203,16 @@ export class Offense
 		if (assault)
 		{
 			const fighting = new Set(world.enemyFighters.map(enemy => enemy.id));
-			return members.map(member => member.target === this.target.id ||
-				member.state.includes("COMBAT") && fighting.has(member.target) ?
-				this.order(member, { "type": "hold" }, priorities) :
-				this.order(member, { "type": "capture", "target": this.target.id }, priorities));
+			return members.map(member => {
+				if (member.target === this.target.id || member.state.includes("COMBAT") && fighting.has(member.target))
+					return this.order(member, { "type": "hold" }, priorities);
+				if (squareDistance(member.position, this.target.position) <= limit)
+					return this.order(member, { "type": "capture", "target": this.target.id }, priorities);
+				return MOVING_STATES.some(state => member.state.includes(state)) ?
+					this.order(member, { "type": "hold" }, priorities) :
+					this.order(member, { "type": "attack-walk", "x": this.target.position[0], "z": this.target.position[1],
+						"targetClasses": UNIT_CLASSES }, priorities);
+			});
 		}
 		return members.map(member => {
 			if (member.target === this.target.id)
