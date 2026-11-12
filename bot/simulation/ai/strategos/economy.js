@@ -98,7 +98,7 @@ export class Economy
 				.sort((a, b) => b.deficit - a.deficit || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
 			for (const { code, deficit } of ranked)
 			{
-				const site = this.nearestFreeSite(world.sites[code], worker.position, reserved);
+				const site = this.nearestFreeSite(world.sites[code], worker, reserved);
 				if (!site)
 					continue;
 				reserved.set(site.id, (reserved.get(site.id) || 0) + 1);
@@ -134,7 +134,7 @@ export class Economy
 			{
 				if (worker.gathering !== surplus || moved.has(worker.id) || !worker.gatherTypes.includes(deficit))
 					continue;
-				const site = this.nearestFreeSite(world.sites[deficit], worker.position, reserved);
+				const site = this.nearestFreeSite(world.sites[deficit], worker, reserved);
 				if (!site)
 					continue;
 				const distance = squareDistance(site.position, worker.position);
@@ -158,15 +158,15 @@ export class Economy
 		return requests;
 	}
 
-	nearestFreeSite(sites, position, reserved)
+	nearestFreeSite(sites, worker, reserved)
 	{
 		let best = null;
 		let bestDistance = Infinity;
 		for (const site of sites)
 		{
-			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity)
+			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity || !(worker.profile.rates[site.kind] > 0))
 				continue;
-			const distance = Math.sqrt(squareDistance(site.position, position)) + 2 * site.anchorDistance;
+			const distance = Math.sqrt(squareDistance(site.position, worker.position)) + 2 * site.anchorDistance;
 			if (distance < bestDistance)
 			{
 				best = site;

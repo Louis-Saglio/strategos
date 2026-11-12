@@ -54,8 +54,10 @@ export class ResourceIndex
 			let nearest = Infinity;
 			for (const point of points)
 				nearest = Math.min(nearest, squareDistance(point, position));
+			const type = ent.resourceSupplyType();
 			sites.push(Object.freeze({
 				"id": id,
+				"kind": type.generic + "." + type.specific,
 				"position": position,
 				"amount": amount,
 				"gatherers": ent.resourceSupplyNumGatherers() || 0,
@@ -133,10 +135,10 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	}
 
 	const workers = [];
-	for (const ent of gameState.getOwnEntitiesByClass("Worker", true).values())
+	for (const ent of gameState.getOwnUnits().values())
 	{
 		const position = ent.position();
-		if (!position || !ent.isGatherer())
+		if (!position || !ent.isGatherer() || ent.hasClass("Ship"))
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		const state = ent.unitAIState() || "";
