@@ -3,7 +3,9 @@ import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
 const FIELD_MARGIN = 1;
-const HOUSE_RING_WIDTH = 60;
+const HOUSE_RING_WIDTH = 120;
+const NO_SITE_REPORT_MS = 30000;
+const NO_SITE_RETRY_MS = 20000;
 const CENTRE_CLEARANCE = 8;
 const SECONDS_PER_BUILDER = 25;
 const MAX_BUILDERS = 6;
@@ -20,10 +22,31 @@ const PRODUCTION_STOCK_CODES = ["food", "wood"];
 
 export class Construction
 {
-	constructor(catalog, player)
+	constructor(catalog, player, telemetry)
 	{
 		this.catalog = catalog;
 		this.player = player;
+		this.telemetry = telemetry;
+		this.noSiteReported = new Map();
+		this.noSiteTime = new Map();
+	}
+
+	searchable(world, template)
+	{
+		const failed = this.noSiteTime.get(template);
+		return failed === undefined || world.time - failed >= NO_SITE_RETRY_MS;
+	}
+
+	noSite(world, template)
+	{
+		this.noSiteTime.set(template, world.time);
+		const last = this.noSiteReported.get(template);
+		if (last === undefined || world.time - last >= NO_SITE_REPORT_MS)
+		{
+			this.noSiteReported.set(template, world.time);
+			this.telemetry.line("BUILD", world.time, { "noSite": template });
+		}
+		return null;
 	}
 
 	requests(world, priorities)
@@ -162,11 +185,13 @@ export class Construction
 			return null;
 		const centre = world.centres[0];
 		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		if (!this.searchable(world, template))
+			return null;
 		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
 			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
 			this.resourceZones(world, null).concat(this.farmBelts(world)));
 		if (!site)
-			return null;
+			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need);
 	}
 
@@ -228,11 +253,13 @@ export class Construction
 		if (!template)
 			return null;
 		const centre = world.centres[0];
+		if (!this.searchable(world, template))
+			return null;
 		const site = placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
 			this.catalog.footprint(template), 2 * this.halfSize(farm) * 0.75, this.reservedBoxes(world),
 			this.resourceZones(world, null));
 		if (!site)
-			return null;
+			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, priorities.values.farm, urgency);
 	}
 
@@ -259,11 +286,13 @@ export class Construction
 			return null;
 		const centre = world.centres[0];
 		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		if (!this.searchable(world, template))
+			return null;
 		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
 			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
 			this.resourceZones(world, null).concat(this.farmBelts(world)));
 		if (!site)
-			return null;
+			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, priorities.values.production, 1);
 	}
 

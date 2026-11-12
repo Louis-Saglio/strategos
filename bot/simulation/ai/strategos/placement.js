@@ -2,7 +2,7 @@ import { territoryAt } from "simulation/ai/strategos/world.js";
 
 const RING_STEP = 4;
 const ARC_STEP = 4;
-const MAX_CANDIDATES = 900;
+const MAX_CANDIDATES = 2000;
 
 export const BUILDING_ANGLE = Math.PI;
 
@@ -62,15 +62,27 @@ export class Placement
 			if (dx * dx + dz * dz < reach * reach)
 				return false;
 		}
+		const grid = this.grids.passability;
+		const mask = this.grids.buildingLand;
+		for (const [px, pz] of [[x, z], [x - halfWidth, z - halfDepth], [x + halfWidth, z - halfDepth],
+			[x - halfWidth, z + halfDepth], [x + halfWidth, z + halfDepth]])
+		{
+			const i = Math.floor(px / grid.cellSize);
+			const j = Math.floor(pz / grid.cellSize);
+			if (i < 0 || j < 0 || i >= grid.width || j >= grid.height || grid.data[i + j * grid.width] & mask)
+				return false;
+		}
 		return this.clear(x, z, halfWidth + margin, halfDepth + margin);
 	}
 
 	around(anchor, minRadius, maxRadius, footprint, margin, reserved, keepAway)
 	{
 		let tried = 0;
-		for (let radius = minRadius; radius <= maxRadius; radius += RING_STEP)
+		const stride = Math.max(RING_STEP, Math.min(footprint.width, footprint.depth) / 2);
+		const arc = Math.max(ARC_STEP, Math.min(footprint.width, footprint.depth) / 2);
+		for (let radius = minRadius; radius <= maxRadius; radius += stride)
 		{
-			const steps = Math.max(8, Math.ceil(2 * Math.PI * radius / ARC_STEP));
+			const steps = Math.max(8, Math.ceil(2 * Math.PI * radius / arc));
 			for (let k = 0; k < steps; ++k)
 			{
 				const angle = 2 * Math.PI * k / steps;
