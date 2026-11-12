@@ -19,6 +19,7 @@ export class Executor
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
 			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
 			"unload-all": action => this.unloadAll(action),
+			"unload": action => this.unload(action),
 			"walk": action => this.walk(action),
 			"hold": () => false,
 			"attack-walk": action => this.attackWalk(action),
@@ -144,6 +145,14 @@ export class Executor
 		if (!this.gameState.getEntityById(action.holder))
 			return false;
 		Engine.PostCommand(this.player, { "type": "unload-all", "garrisonHolders": [action.holder] });
+		return true;
+	}
+
+	unload(action)
+	{
+		if (!this.gameState.getEntityById(action.holder))
+			return false;
+		Engine.PostCommand(this.player, { "type": "unload", "garrisonHolder": action.holder, "entities": action.units });
 		return true;
 	}
 

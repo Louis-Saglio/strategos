@@ -8,6 +8,9 @@ const COVER_RADIUS = 55;
 const LOCAL_THREAT_RADIUS = 30;
 const LOCAL_FORCE_RADIUS = 50;
 const LOCAL_PARITY = 1;
+const OUTNUMBERED_ENTER = 1;
+const OUTNUMBERED_EXIT = 0.6;
+const SAFE_RADIUS = 70;
 const REPORT_PERIOD_MS = 10000;
 
 export class Defense
@@ -17,6 +20,7 @@ export class Defense
 		this.telemetry = telemetry;
 		this.lastThreatTime = -Infinity;
 		this.lastReport = -Infinity;
+		this.outnumbered = false;
 	}
 
 	requests(world, priorities)
@@ -24,14 +28,25 @@ export class Defense
 		if (world.threats.length)
 			this.lastThreatTime = world.time;
 		if (!world.threats.length)
+		{
+			this.outnumbered = false;
 			return world.time - this.lastThreatTime >= RELEASE_DELAY_MS ? this.releaseRequests(world, priorities) : [];
-		const requests = this.engageRequests(world, priorities).concat(this.shelterRequests(world, priorities));
+		}
+		const force = world.fighters.length + world.garrisonedSoldiers;
+		const ratio = world.threats.length / Math.max(1, force);
+		this.outnumbered = this.outnumbered ? ratio >= OUTNUMBERED_EXIT : ratio >= OUTNUMBERED_ENTER;
+		const free = new Map(world.holders.map(holder => [holder.id, holder.free]));
+		const requests = this.engageRequests(world, priorities, free)
+			.concat(this.shelterRequests(world, priorities, free))
+			.concat(this.unloadRequests(world, priorities));
 		if (world.time - this.lastReport >= REPORT_PERIOD_MS)
 		{
 			this.lastReport = world.time;
 			this.telemetry.line("DEF", world.time, {
 				"threats": world.threats.length,
 				"fighters": world.fighters.length,
+				"garrisonedSoldiers": world.garrisonedSoldiers,
+				"outnumbered": this.outnumbered,
 				"engage": requests.filter(request => request.action.type === "attack").length,
 				"shelter": requests.filter(request => request.action.type === "garrison").length
 			});
@@ -55,7 +70,37 @@ export class Defense
 		return { "threat": best, "distance": Math.sqrt(bestDistance) };
 	}
 
-	engageRequests(world, priorities)
+	nearestHolder(world, unit, free, accept, radius)
+	{
+		let best = null;
+		let bestDistance = radius * radius;
+		for (const holder of world.holders)
+		{
+			if (free.get(holder.id) <= 0 || !accept(holder) || !MatchesClassList(unit.classes, holder.classes))
+				continue;
+			const distance = squareDistance(holder.position, unit.position);
+			if (distance < bestDistance || (distance === bestDistance && best && holder.id < best.id))
+			{
+				best = holder;
+				bestDistance = distance;
+			}
+		}
+		return best;
+	}
+
+	garrison(unit, holder, free, value, urgency)
+	{
+		free.set(holder.id, free.get(holder.id) - 1);
+		return {
+			"source": "defense",
+			"action": { "type": "garrison", "unit": unit.id, "target": holder.id },
+			"claims": { "workers": [unit.id] },
+			"value": value,
+			"urgency": urgency
+		};
+	}
+
+	engageRequests(world, priorities, free)
 	{
 		const requests = [];
 		for (const fighter of world.fighters)
@@ -65,6 +110,16 @@ export class Defense
 			const { threat, distance } = this.nearestThreat(world, fighter.position);
 			if (!threat || distance > ENGAGE_RADIUS)
 				continue;
+			if (this.outnumbered)
+			{
+				const holder = this.nearestHolder(world, fighter, free,
+					candidate => candidate.arrows && this.nearestThreat(world, candidate.position).distance <= COVER_RADIUS, ENGAGE_RADIUS);
+				if (holder)
+				{
+					requests.push(this.garrison(fighter, holder, free, priorities.values.defend, 1));
+					continue;
+				}
+			}
 			if (!this.covered(world, threat.position) && !this.locallyMatched(world, threat.position))
 			{
 				const cover = this.nearestCover(world, fighter.position);
@@ -125,10 +180,11 @@ export class Defense
 		return force >= LOCAL_PARITY * threats;
 	}
 
-	shelterRequests(world, priorities)
+	shelterRequests(world, priorities, free)
 	{
 		const requests = [];
-		const free = new Map(world.holders.map(holder => [holder.id, holder.free]));
+		const unarmed = holder => !holder.arrows;
+		const any = () => true;
 		for (const worker of world.workers)
 		{
 			if (worker.soldier || worker.state.includes("GARRISON"))
@@ -136,29 +192,31 @@ export class Defense
 			const { distance } = this.nearestThreat(world, worker.position);
 			if (distance > DANGER_RADIUS)
 				continue;
-			let best = null;
-			let bestDistance = SHELTER_RADIUS * SHELTER_RADIUS;
-			for (const holder of world.holders)
-			{
-				if (free.get(holder.id) <= 0 || !MatchesClassList(worker.classes, holder.classes))
-					continue;
-				const d = squareDistance(holder.position, worker.position);
-				if (d < bestDistance)
-				{
-					best = holder;
-					bestDistance = d;
-				}
-			}
-			if (!best)
+			const holder = this.outnumbered && this.nearestHolder(world, worker, free, unarmed, SHELTER_RADIUS) ||
+				this.nearestHolder(world, worker, free, any, SHELTER_RADIUS);
+			if (holder)
+				requests.push(this.garrison(worker, holder, free, priorities.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
+		}
+		return requests;
+	}
+
+	unloadRequests(world, priorities)
+	{
+		const requests = [];
+		for (const holder of world.holders)
+		{
+			if (!holder.garrisoned)
 				continue;
-			free.set(best.id, free.get(best.id) - 1);
-			requests.push({
-				"source": "defense",
-				"action": { "type": "garrison", "unit": worker.id, "target": best.id },
-				"claims": { "workers": [worker.id] },
-				"value": priorities.values.shelter,
-				"urgency": 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS
-			});
+			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
+			const units = holder.soldiers.filter(() => safe || !this.outnumbered);
+			if (units.length)
+				requests.push({
+					"source": "defense",
+					"action": { "type": "unload", "holder": holder.id, "units": units },
+					"claims": { "slots": ["garrison-" + holder.id] },
+					"value": priorities.values.defend,
+					"urgency": 1
+				});
 		}
 		return requests;
 	}

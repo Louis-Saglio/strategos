@@ -197,6 +197,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const structureCounts = {};
 	const holders = [];
+	let garrisonedSoldiers = 0;
 	const researchers = [];
 	for (const ent of gameState.getOwnStructures().values())
 	{
@@ -219,11 +220,17 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		if (capacity > 0 && ent.position())
 		{
 			const garrisoned = ent.garrisoned() || [];
+			const soldiers = garrisoned.filter(id => {
+				const unit = gameState.getEntityById(id);
+				return !!unit && unit.hasClass("Soldier");
+			});
+			garrisonedSoldiers += soldiers.length;
 			holders.push(Object.freeze({
 				"id": ent.id(),
 				"position": ent.position(),
 				"free": capacity - ent.garrisonedSlots(),
 				"garrisoned": garrisoned.length,
+				"soldiers": Object.freeze(soldiers),
 				"arrows": !!ent.get("BuildingAI"),
 				"classes": ent.garrisonableClasses() || ""
 			}));
@@ -278,7 +285,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		const position = ent.position();
 		if (!position)
 			continue;
-		fighters.push(Object.freeze({ "id": ent.id(), "position": position, "state": ent.unitAIState() || "" }));
+		fighters.push(Object.freeze({ "id": ent.id(), "position": position, "state": ent.unitAIState() || "", "classes": ent.classes() }));
 		const name = ent.templateName();
 		if (!army.has(name))
 			army.set(name, { "template": name, "classes": ent.classes(), "count": 0, "value": 0 });
@@ -335,6 +342,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"enemyCentres": Object.freeze(enemyCentres),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
+		"garrisonedSoldiers": garrisonedSoldiers,
 		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),
 		"fighters": Object.freeze(fighters),
