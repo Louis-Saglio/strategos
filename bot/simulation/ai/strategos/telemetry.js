@@ -7,6 +7,7 @@ export class Telemetry
 		this.decisions = 0;
 		this.totalMs = 0;
 		this.maxMs = 0;
+		this.stageMaxMs = {};
 	}
 
 	line(tag, timeMs, data)
@@ -24,11 +25,13 @@ export class Telemetry
 		return true;
 	}
 
-	recordDecision(ms)
+	recordDecision(ms, stages)
 	{
 		this.decisions += 1;
 		this.totalMs += ms;
 		this.maxMs = Math.max(this.maxMs, ms);
+		for (const stage in stages)
+			this.stageMaxMs[stage] = Math.max(this.stageMaxMs[stage] || 0, stages[stage]);
 	}
 
 	flushDecisions(timeMs)
@@ -38,10 +41,12 @@ export class Telemetry
 		this.line("PERF", timeMs, {
 			"decisions": this.decisions,
 			"meanMs": Math.round(this.totalMs / this.decisions * 100) / 100,
-			"maxMs": this.maxMs
+			"maxMs": this.maxMs,
+			"stageMaxMs": this.stageMaxMs
 		});
 		this.decisions = 0;
 		this.totalMs = 0;
 		this.maxMs = 0;
+		this.stageMaxMs = {};
 	}
 }

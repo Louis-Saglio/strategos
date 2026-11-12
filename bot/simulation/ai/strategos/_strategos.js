@@ -47,13 +47,27 @@ StrategosBot.prototype.OnUpdate = function()
 StrategosBot.prototype.decide = function()
 {
 	const started = Date.now();
+	const stages = {};
+	let mark = started;
+	const lap = stage => {
+		const now = Date.now();
+		stages[stage] = now - mark;
+		mark = now;
+	};
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, pending);
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, pending, this.allocator.demand());
+	lap("world");
 	const priorities = this.strategy.update(world);
-	const requests = [].concat(...this.subsystems.map(subsystem => subsystem.requests(world, priorities)));
+	const requests = [];
+	for (const subsystem of this.subsystems)
+	{
+		requests.push(...subsystem.requests(world, priorities));
+		lap(subsystem.constructor.name);
+	}
 	const grants = this.allocator.allocate(world, requests);
 	this.executor.execute(world, grants);
-	this.telemetry.recordDecision(Date.now() - started);
+	lap("allocateExecute");
+	this.telemetry.recordDecision(Date.now() - started, stages);
 	this.report(world, priorities);
 };
 
@@ -71,7 +85,10 @@ StrategosBot.prototype.report = function(world, priorities)
 		"workers": world.workers.length,
 		"idle": world.workers.filter(worker => worker.idle).length,
 		"gatherers": world.gatherers,
-		"resources": world.resources
+		"resources": world.resources,
+		"spendRate": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.spendRate[code] * 100) / 100])),
+		"unmet": world.demand.unmet,
+		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(priorities.gatherShares[code] * 100) / 100]))
 	});
 	this.telemetry.flushDecisions(world.time);
 };

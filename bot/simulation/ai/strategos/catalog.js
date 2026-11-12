@@ -9,6 +9,21 @@ export class Catalog
 		this.trainables = new Map();
 		this.buildables = new Map();
 		this.footprints = new Map();
+		this.availability = new Map();
+		this.availabilityTime = undefined;
+	}
+
+	available(name)
+	{
+		const time = this.gameState.getTimeElapsed();
+		if (time !== this.availabilityTime)
+		{
+			this.availability.clear();
+			this.availabilityTime = time;
+		}
+		if (!this.availability.has(name))
+			this.availability.set(name, !this.gameState.isTemplateDisabled(name) && this.template(name).available(this.gameState));
+		return this.availability.get(name);
 	}
 
 	template(name)
@@ -23,7 +38,7 @@ export class Catalog
 		const producer = entity.templateName();
 		if (!cache.has(producer))
 			cache.set(producer, (list.call(entity, this.civ) || []).filter(name => name && this.template(name)));
-		return cache.get(producer).filter(name => !this.gameState.isTemplateDisabled(name));
+		return cache.get(producer).filter(name => this.available(name));
 	}
 
 	trainable(entity)

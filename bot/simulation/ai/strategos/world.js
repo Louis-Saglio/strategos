@@ -76,7 +76,7 @@ export function squareDistance(a, b)
 	return dx * dx + dz * dz;
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, pendingConstructions)
+export function buildWorld(gameState, catalog, resourceIndex, pendingConstructions, demand)
 {
 	const playerData = gameState.playerData;
 	const codes = catalog.codes;
@@ -125,11 +125,25 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		if (!position || !ent.isGatherer())
 			continue;
 		const orders = ent.unitAIOrderData() || [];
+		const state = ent.unitAIState() || "";
+		let gathering = null;
+		if (state.includes("RETURNRESOURCE"))
+		{
+			const carried = ent.resourceCarrying();
+			gathering = carried && carried.length ? carried[0].type : null;
+		}
+		else if (state.includes("GATHER") && orders.length && orders[0] && orders[0].target !== undefined)
+		{
+			const target = gameState.getEntityById(orders[0].target);
+			const type = target && target.resourceSupplyType();
+			gathering = type ? type.generic : null;
+		}
 		workers.push(Object.freeze({
 			"id": ent.id(),
 			"position": position,
 			"idle": ent.isIdle(),
-			"state": ent.unitAIState() || "",
+			"state": state,
+			"gathering": gathering,
 			"target": orders.length && orders[0] ? orders[0].target : undefined,
 			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
 			"buildable": Object.freeze(catalog.buildable(ent))
@@ -173,7 +187,10 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const gatherers = {};
 	for (const code of codes)
-		gatherers[code] = (playerData.resourceGatherers && playerData.resourceGatherers[code]) || 0;
+		gatherers[code] = 0;
+	for (const worker of workers)
+		if (worker.gathering && gatherers[worker.gathering] !== undefined)
+			gatherers[worker.gathering] += 1;
 
 	const sites = {};
 	for (const code of codes)
@@ -199,6 +216,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"foundations": Object.freeze(foundations),
 		"structureCounts": Object.freeze(structureCounts),
 		"pendingConstructions": Object.freeze(pendingConstructions),
+		"demand": demand,
 		"trainers": Object.freeze(trainers),
 		"workers": Object.freeze(workers),
 		"gatherers": Object.freeze(gatherers),

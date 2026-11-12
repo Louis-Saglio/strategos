@@ -1,6 +1,9 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
+const REBALANCE_MIN_GAP = 2;
+const REBALANCE_GAP_SHARE = 0.08;
+const REBALANCE_PER_DECISION = 2;
 
 export class Economy
 {
@@ -11,7 +14,11 @@ export class Economy
 
 	requests(world, priorities)
 	{
-		return this.trainingRequests(world, priorities).concat(this.gatherRequests(world, priorities));
+		const assigned = Object.assign({}, world.gatherers);
+		const reserved = new Map();
+		return this.trainingRequests(world, priorities)
+			.concat(this.gatherRequests(world, priorities, assigned, reserved))
+			.concat(this.rebalanceRequests(world, priorities, assigned, reserved));
 	}
 
 	trainingRequests(world, priorities)
@@ -57,14 +64,12 @@ export class Economy
 		return best;
 	}
 
-	gatherRequests(world, priorities)
+	gatherRequests(world, priorities, assigned, reserved)
 	{
 		const requests = [];
 		const idle = world.workers.filter(worker => worker.idle);
 		if (!idle.length)
 			return requests;
-		const assigned = Object.assign({}, world.gatherers);
-		const reserved = new Map();
 		const total = world.workers.length;
 		for (const worker of idle)
 		{
@@ -88,6 +93,48 @@ export class Economy
 				});
 				break;
 			}
+		}
+		return requests;
+	}
+
+	rebalanceRequests(world, priorities, assigned, reserved)
+	{
+		const requests = [];
+		const total = world.workers.length;
+		const gap = Math.max(REBALANCE_MIN_GAP, REBALANCE_GAP_SHARE * total);
+		const balance = code => assigned[code] - priorities.gatherShares[code] * total;
+		const moved = new Set();
+		for (let step = 0; step < REBALANCE_PER_DECISION; ++step)
+		{
+			const surplus = world.codes.filter(code => balance(code) > gap).sort((a, b) => balance(b) - balance(a))[0];
+			const deficit = world.codes.filter(code => balance(code) < -gap).sort((a, b) => balance(a) - balance(b))[0];
+			if (!surplus || !deficit)
+				break;
+			let best = null;
+			for (const worker of world.workers)
+			{
+				if (worker.gathering !== surplus || moved.has(worker.id) || !worker.gatherTypes.includes(deficit))
+					continue;
+				const site = this.nearestFreeSite(world.sites[deficit], worker.position, reserved);
+				if (!site)
+					continue;
+				const distance = squareDistance(site.position, worker.position);
+				if (!best || distance < best.distance || (distance === best.distance && worker.id < best.worker.id))
+					best = { worker, site, distance };
+			}
+			if (!best)
+				break;
+			moved.add(best.worker.id);
+			reserved.set(best.site.id, (reserved.get(best.site.id) || 0) + 1);
+			assigned[surplus] -= 1;
+			assigned[deficit] += 1;
+			requests.push({
+				"source": "economy",
+				"action": { "type": "gather", "worker": best.worker.id, "target": best.site.id, "resource": deficit },
+				"claims": { "workers": [best.worker.id] },
+				"value": priorities.values.rebalance,
+				"urgency": 1
+			});
 		}
 		return requests;
 	}

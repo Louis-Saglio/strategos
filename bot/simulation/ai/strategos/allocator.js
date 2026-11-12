@@ -1,3 +1,5 @@
+const SPEND_SMOOTHING = 0.05;
+
 export class Allocator
 {
 	constructor(codes)
@@ -5,8 +7,36 @@ export class Allocator
 		this.codes = codes;
 		this.ledger = new Map();
 		this.spent = {};
+		this.spendRate = {};
+		this.unmet = {};
 		for (const code of codes)
+		{
 			this.spent[code] = 0;
+			this.spendRate[code] = 0;
+			this.unmet[code] = 0;
+		}
+		this.lastTime = undefined;
+	}
+
+	demand()
+	{
+		return Object.freeze({
+			"observed": this.lastTime !== undefined,
+			"spendRate": Object.freeze(Object.assign({}, this.spendRate)),
+			"unmet": Object.freeze(Object.assign({}, this.unmet))
+		});
+	}
+
+	observe(world, spent, unmet)
+	{
+		const seconds = this.lastTime === undefined ? 0 : (world.time - this.lastTime) / 1000;
+		this.lastTime = world.time;
+		for (const code of this.codes)
+		{
+			this.unmet[code] = unmet[code];
+			if (seconds > 0)
+				this.spendRate[code] += SPEND_SMOOTHING * (spent[code] / seconds - this.spendRate[code]);
+		}
 	}
 
 	allocate(world, requests)
@@ -21,19 +51,34 @@ export class Allocator
 			.map((request, index) => ({ request, index, "priority": request.value * request.urgency }))
 			.sort((a, b) => b.priority - a.priority || a.index - b.index);
 		const grants = [];
+		const spent = {};
+		const unmet = {};
+		for (const code of this.codes)
+		{
+			spent[code] = 0;
+			unmet[code] = 0;
+		}
 		for (const { request } of ordered)
 		{
 			const reason = this.denial(world, request, budget);
 			this.record(request, reason || "granted");
 			if (reason)
 			{
-				if (request.reserve && reason.startsWith("resources"))
-					this.hold(request, budget);
+				if (reason.startsWith("resources"))
+				{
+					for (const code of this.codes)
+						unmet[code] += request.claims.resources[code] || 0;
+					if (request.reserve)
+						this.hold(request, budget);
+				}
 				continue;
 			}
+			for (const code of this.codes)
+				spent[code] += request.claims.resources && request.claims.resources[code] || 0;
 			this.commit(request, budget);
 			grants.push(request);
 		}
+		this.observe(world, spent, unmet);
 		return grants;
 	}
 
