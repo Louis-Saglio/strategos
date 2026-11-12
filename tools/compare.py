@@ -72,17 +72,27 @@ def paired_p(deltas):
     return reg_ibeta(df / 2, 0.5, df / (df + t * t))
 
 
+def side_of(row, player):
+    players = row["spec"].get("players", [])
+    team = players[player - 1].get("team") if 0 < player <= len(players) else None
+    return f"T{team}" if team else f"P{player}"
+
+
 def side_result(row, player):
+    """win / loss / timeout / fail for player's side; a timeout with a side
+    ahead on points (analyze.POINTS_RATIO) counts as that side's win."""
     if row["outcome"] in ("none", "?"):
         return "fail"
     if row["outcome"] == "timeout":
         return "timeout"
+    if row["outcome"].endswith(" ahead"):
+        return "win" if row["outcome"].split()[0] == side_of(row, player) else "loss"
     st = row["stats"].get(player, {}).get("playerState")
     return {"won": "win", "defeated": "loss"}.get(st, "fail")
 
 
 def score(row, player):
-    """+1 when player's side won, -1 when it lost, 0 on a timeout, None on a failure."""
+    """+1 when player's side won (or led on points at the limit), -1 when it lost, 0 on a timeout, None on a failure."""
     return {"win": 1, "loss": -1, "timeout": 0}.get(side_result(row, player))
 
 

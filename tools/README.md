@@ -5,7 +5,7 @@ Development tooling for Strategos. Not part of the bot.
 | Tool | What it does |
 |---|---|
 | `run.sh` (`run.py`) | run batches of headless matches on every available host |
-| `harness/` | the `strategos-harness` mod mounted in every match: game settings, statistics, map snapshots, time limit |
+| `harness/` | the `strategos-harness` mod mounted in every match: game settings, statistics, map snapshots, standings, resignation, time limit |
 | `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
 | `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
 | `compare.py` | paired comparison of two batches run on the same matches |
@@ -87,7 +87,7 @@ The defaults of a batch:
 | map size | `-s` | 192 tiles ("Small") |
 | biome | `-b` | `generic/temperate` (`*` = one generic biome per seed) |
 | player placement | `-P` | `circle` |
-| victory conditions | `-V` (repeatable) | `conquest_civic_centers` |
+| victory conditions | `-V` (repeatable) | `conquest` |
 | map and AI seed | `SEED` | the seed |
 | players, civs, teams, AI difficulty/behaviour | `-p` | see above |
 | `PopulationCapType` / `PopulationCap` | `-S` | `player` / 300 |
@@ -140,8 +140,21 @@ defensive fire; read by wrapping `Health.prototype.KilledBy`, which leaves
 the game identical: 64 of 64 games bit-identical with and without it) and
 the per-player statistics JSON at game end. At the time limit (`-l` minutes) it prints `[HARNESS] time limit reached` and marks every active
 player as won, so the game ends cleanly (statistics, replay metadata)
-without favouring a side; `analyze.py` reports it as a timeout. Nothing
-else is changed before the limit.
+without favouring a side; `analyze.py` reports it as a timeout, or as
+`T<n> ahead` when one side's assets are at least 3x every other side's
+(see below).
+
+Every 30 s it prints `[HARNESS] standing {"t","teams":{"<key>":{"players",
+"assets","military"}}}`: per side (engine team, `p<id>` for a player
+without team) the summed resource cost of every unit and structure owned
+(foundations at their built fraction) plus the resource stock; `military`
+is the units with Soldier, Siege or Ship (4 of 4 games bit-identical with
+and without these lines). Resignation (`-R RATIO`, default 0.1, 0 = off):
+a side whose assets stay below RATIO x the strongest other side's for
+2 minutes is defeated, as a player resigning in the GUI, and the line
+`[HARNESS] resign {"t","team","players","ratio"}` is printed; the game
+then ends as the other side's win. This is the only way the harness acts
+on a game before the limit.
 
 `autostart/harness_settings.js` applies `-harness-settings=JSON` (the
 `-S` settings) on top of the public autostart command line. The engine
@@ -180,7 +193,10 @@ tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player N] [--at MIN]
 ```
 
 `analyze.py`: per match the outcome (`T<n> won`, `P<n> won`, `timeout`,
-`none`), each player's `ai/civ:team=W|L|T`, map/biome, game minutes, error
+`T<n> ahead` / `P<n> ahead` — a timeout where that side's assets in the
+last standing line are at least `POINTS_RATIO` (3) x every other side's,
+which `compare.py` scores as that side's win — `none`), the side the
+harness made resign, each player's `ai/civ:team=W|L|T`, map/biome, game minutes, error
 lines, failed AI creation, host, exit, wall seconds, turns/s and a hash of
 the statistics (equal hash = identical game). `--metrics` adds player N's
 end-of-game resources gathered (per resource, total, and `gath_ratio`: the

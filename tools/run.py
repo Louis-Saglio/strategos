@@ -61,11 +61,14 @@ Options:
   -b BIOMES      biome(s) (default generic/temperate)
   -s SIZE        random-map size in tiles (default 192)
   -P PLACEMENT   random-map player placement (default circle)
-  -V VICTORY     victory condition, repeatable (default conquest_civic_centers)
+  -V VICTORY     victory condition, repeatable (default conquest)
   -S KEY=VALUE   game setting, repeatable, overriding GAME_SETTINGS (below);
                  VALUE is JSON (true, 200, "team") or a bare string
   -l MIN         in-game time limit in minutes — REQUIRED, > 0 (AGENTS.md,
                  "Game duration": the shortest limit that answers the question)
+  -R RATIO       harness resignation: a side whose assets (units, structures
+                 and stock, at cost) stay below RATIO x the strongest other
+                 side's for 2 minutes is defeated (default 0.1; 0 = never)
   -t SEC         wall-clock cap per match (default: derived from -l, see
                  below; a larger value is accepted with a warning)
   -m AI=SOURCE   mod source for an AI (repeatable)
@@ -247,7 +250,7 @@ def is_scenario(map_name):
     return any(os.path.isfile(os.path.join(SCENARIOS, "maps", map_name + ext)) for ext in (".json", ".xml"))
 
 
-def snapshot_mods(outdir, ais, sources, limit, map_interval, scenarios=False):
+def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False):
     """Copy every needed mod into OUTDIR/mods/. Returns (mount order, provenance)."""
     mods_dir = os.path.join(outdir, "mods")
     if os.path.exists(mods_dir):
@@ -307,10 +310,12 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval, scenarios=False):
     text = re.sub(r"const HARNESS_LIMIT_MINUTES = \d+;", f"const HARNESS_LIMIT_MINUTES = {limit};", text)
     text = re.sub(r"const HARNESS_MAP_INTERVAL_MS = \d+;", f"const HARNESS_MAP_INTERVAL_MS = {map_interval};",
                   text)
+    text = re.sub(r"const HARNESS_RESIGN_RATIO = [\d.]+;", f"const HARNESS_RESIGN_RATIO = {resign};", text)
     with open(trig, "w", encoding="utf-8") as fh:
         fh.write(text)
     prov[mod_name(HARNESS)] = {"source": HARNESS, "commit": git_info(REPO), "content": content_hash(hdest),
-                               "limit_minutes": limit, "map_interval_ms": map_interval}
+                               "limit_minutes": limit, "map_interval_ms": map_interval,
+                               "resign_ratio": resign}
     order.append(mod_name(HARNESS))
     return order, prov
 
@@ -655,6 +660,7 @@ def main():
     ap.add_argument("--unverified", action="store_true")
     ap.add_argument("--matches")
     ap.add_argument("--map-interval", type=int, default=30000)
+    ap.add_argument("-R", dest="resign", type=float, default=0.1)
     ap.add_argument("--verify-host")
     ap.add_argument("--calibrate", nargs=2, metavar=("HOST", "KS"))
     ap.add_argument("rest", nargs="*")
@@ -700,7 +706,7 @@ def main():
     settings = dict(GAME_SETTINGS)
     settings.update(parse_setting(t) for t in a.settings)
     base = {"maps": a.maps.split(","), "biomes": ["*"] if a.biomes == "*" else a.biomes.split(","),
-            "size": a.size, "placement": a.placement, "victory": a.victory or ["conquest_civic_centers"],
+            "size": a.size, "placement": a.placement, "victory": a.victory or ["conquest"],
             "settings": settings, "limit_minutes": a.limit, "players": players}
     if a.matches:
         with open(a.matches, encoding="utf-8") as fh:
@@ -724,7 +730,7 @@ def main():
     if not specs:
         die("no match to run")
     ais = {p["ai"] for s in specs for p in s["players"]}
-    order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval,
+    order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval, a.resign,
                                 scenarios=any(is_scenario(s["map"]) for s in specs))
     syntax_check(os.path.join(outdir, "mods"))
     for s in specs:

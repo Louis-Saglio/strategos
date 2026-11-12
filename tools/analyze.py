@@ -6,7 +6,11 @@ stdout.log, in natural order):
 
 - outcome: `T<n> won` (the team, or `P<n>` for a teamless player, whose
   players ended `won`), `timeout` when the harness time limit fired (it
-  marks every active player won), `killed` when the wall-clock cap killed
+  marks every active player won) and no side leads on points,
+  `T<n> ahead` / `P<n> ahead` when, at the time limit, that side's assets
+  (last `[HARNESS] standing` line: units, structures and stock at cost)
+  are at least POINTS_RATIO times every other side's — a crushing
+  position, scored as a win by compare.py; `killed` when the wall-clock cap killed
   it (a failure to investigate), `none` when no statistics were printed
   (crash);
 - players: one `id:ai/civ[:team]=W|L|T` item per player (W won, L defeated,
@@ -16,6 +20,8 @@ stdout.log, in natural order):
   failed_ai: "Failed to create AI player" (a wrong AI name plays an idle
   player and still exits 0); either one invalidates the game;
 - host, exit code, wall seconds, turns/s: from result.json;
+- resign: the side the harness made resign (`[HARNESS] resign`), its game
+  then ends as a normal win of the other side;
 - hash: short sha256 of every player's statistics JSON in print order —
   equal hashes mean identical games (determinism checks).
 
@@ -43,6 +49,9 @@ ERROR_RE = re.compile(r"ERROR|JavaScript error|script exception")
 LIMIT_TAG = "[HARNESS] time limit reached"
 START_TAG = "[HARNESS] start "
 ECO_TAG = "[HARNESS] eco "
+STANDING_TAG = "[HARNESS] standing "
+RESIGN_TAG = "[HARNESS] resign "
+POINTS_RATIO = 3.0
 
 
 def player_blocks(text):
@@ -69,6 +78,33 @@ def load_stats(text):
             raws.append(block)
             stats[obj["playerID"]] = obj
     return raws, stats
+
+
+def last_json(text, tag):
+    obj = None
+    for line in text.splitlines():
+        if line.startswith(tag):
+            try:
+                obj = json.loads(line[len(tag):])
+            except json.JSONDecodeError:
+                pass
+    return obj
+
+
+def side_name(key):
+    return key.upper() if key.startswith("p") else f"T{int(key) + 1}"
+
+
+def points_leader(standing):
+    """The side (T<n>/P<n>) whose assets are >= POINTS_RATIO x every other side's, else None."""
+    teams = (standing or {}).get("teams", {})
+    if len(teams) < 2:
+        return None
+    for key, side in teams.items():
+        others = [o["assets"] for k, o in teams.items() if k != key]
+        if all(side["assets"] >= POINTS_RATIO * o for o in others):
+            return side_name(key)
+    return None
 
 
 def eco_lines(text):
@@ -163,7 +199,8 @@ def analyze(outdir, tag):
     elif not stats:
         outcome = "none"
     elif timeout:
-        outcome = "timeout"
+        leader = points_leader(last_json(text, STANDING_TAG))
+        outcome = f"{leader} ahead" if leader else "timeout"
     elif winners:
         outcome = " ".join(sorted(winners)) + " won"
     else:
@@ -181,6 +218,7 @@ def analyze(outdir, tag):
         "exit": run.get("exit_code", "-"),
         "wall_s": f"{wall:.0f}" if wall else "-",
         "turns_s": f"{turns / wall:.0f}" if turns and wall else "-",
+        "resign": side_name(last_json(text, RESIGN_TAG)["team"]) if RESIGN_TAG in text else "-",
         "hash": hashlib.sha256("".join(raws).encode()).hexdigest()[:12] if raws else "-",
         "stats": stats,
         "spec": spec,
@@ -192,7 +230,7 @@ def natural(tag):
     return [int(p) if p.isdigit() else p for p in re.split(r"(\d+)", tag)]
 
 
-COLUMNS = ["tag", "outcome", "players", "map", "game_min", "errors", "failed_ai", "host", "exit", "wall_s",
+COLUMNS = ["tag", "outcome", "players", "map", "game_min", "errors", "failed_ai", "host", "exit", "resign", "wall_s",
            "turns_s", "hash"]
 METRICS = ["food", "wood", "stone", "metal", "gathered", "gath_ratio", "trained", "lost", "killed", "kd_value", "built", "pop", "map%"]
 
