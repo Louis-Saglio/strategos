@@ -69,6 +69,20 @@ export class ResourceIndex
 	}
 }
 
+const TERRITORY_OWNER_MASK = 0x1F;
+const TERRITORY_BLINKING_MASK = 0x40;
+const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
+
+export function territoryAt(territory, x, z)
+{
+	const i = Math.floor(x / territory.cellSize);
+	const j = Math.floor(z / territory.cellSize);
+	if (i < 0 || j < 0 || i >= territory.width || j >= territory.height)
+		return { "owner": -1, "connected": false };
+	const cell = territory.data[i + j * territory.width];
+	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
+}
+
 export function squareDistance(a, b)
 {
 	const dx = a[0] - b[0];
@@ -126,6 +140,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		const state = ent.unitAIState() || "";
+		const soldier = ent.hasClass("Soldier");
 		let gathering = null;
 		if (state.includes("RETURNRESOURCE"))
 		{
@@ -143,6 +158,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"position": position,
 			"idle": ent.isIdle(),
 			"state": state,
+			"soldier": soldier,
+			"classes": ent.classes(),
 			"gathering": gathering,
 			"target": orders.length && orders[0] ? orders[0].target : undefined,
 			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
@@ -168,9 +185,50 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	}
 
 	const structureCounts = {};
+	const holders = [];
 	for (const ent of gameState.getOwnStructures().values())
-		if (ent.foundationProgress() === undefined)
-			structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+	{
+		if (ent.foundationProgress() !== undefined)
+			continue;
+		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+		const capacity = +(ent.garrisonMax() || 0);
+		if (capacity > 0 && ent.position())
+		{
+			const garrisoned = ent.garrisoned() || [];
+			holders.push(Object.freeze({
+				"id": ent.id(),
+				"position": ent.position(),
+				"free": capacity - ent.garrisonedSlots(),
+				"garrisoned": garrisoned.length,
+				"classes": ent.garrisonableClasses() || ""
+			}));
+		}
+	}
+
+	const territory = gameState.sharedScript.territoryMap;
+	const player = gameState.getPlayerID();
+	const threats = [];
+	for (const enemy of gameState.getEnemies())
+	{
+		if (enemy === 0)
+			continue;
+		for (const ent of gameState.getEnemyUnits(enemy).values())
+		{
+			const position = ent.position();
+			if (!position || !THREAT_CLASSES.some(cls => ent.hasClass(cls)) || territoryAt(territory, position[0], position[1]).owner !== player)
+				continue;
+			threats.push(Object.freeze({ "id": ent.id(), "position": position }));
+		}
+	}
+
+	const fighters = [];
+	for (const ent of gameState.getOwnEntitiesByClass("Soldier", true).values())
+	{
+		const position = ent.position();
+		if (!position)
+			continue;
+		fighters.push(Object.freeze({ "id": ent.id(), "position": position, "state": ent.unitAIState() || "" }));
+	}
 
 	const centres = [];
 	for (const ent of gameState.getOwnEntitiesByClass("CivCentre", true).values())
@@ -215,6 +273,9 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"centres": Object.freeze(centres),
 		"foundations": Object.freeze(foundations),
 		"structureCounts": Object.freeze(structureCounts),
+		"holders": Object.freeze(holders),
+		"threats": Object.freeze(threats),
+		"fighters": Object.freeze(fighters),
 		"pendingConstructions": Object.freeze(pendingConstructions),
 		"demand": demand,
 		"trainers": Object.freeze(trainers),

@@ -1,5 +1,5 @@
-const TERRITORY_OWNER_MASK = 0x1F;
-const TERRITORY_BLINKING_MASK = 0x40;
+import { territoryAt } from "simulation/ai/strategos/world.js";
+
 const RING_STEP = 4;
 const ARC_STEP = 4;
 const MAX_CANDIDATES = 900;
@@ -16,13 +16,8 @@ export class Placement
 
 	territoryOwned(x, z)
 	{
-		const territory = this.grids.territory;
-		const i = Math.floor(x / territory.cellSize);
-		const j = Math.floor(z / territory.cellSize);
-		if (i < 0 || j < 0 || i >= territory.width || j >= territory.height)
-			return false;
-		const cell = territory.data[i + j * territory.width];
-		return (cell & TERRITORY_OWNER_MASK) === this.player && (cell & TERRITORY_BLINKING_MASK) === 0;
+		const cell = territoryAt(this.grids.territory, x, z);
+		return cell.owner === this.player && cell.connected;
 	}
 
 	clear(x, z, halfWidth, halfDepth)

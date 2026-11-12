@@ -15,7 +15,10 @@ export class Executor
 			"train": action => this.train(action),
 			"gather": action => this.gather(action),
 			"construct": action => this.construct(action),
-			"repair": action => this.repair(action)
+			"repair": action => this.repair(action),
+			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
+			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
+			"unload-all": action => this.unloadAll(action)
 		};
 	}
 
@@ -88,6 +91,22 @@ export class Executor
 			"queued": false
 		});
 		this.issued.push({ "template": action.template, "x": action.x, "z": action.z, "issuedAt": this.time });
+		return true;
+	}
+
+	unitCommand(action, command)
+	{
+		if (!this.gameState.getEntityById(action.unit) || !this.gameState.getEntityById(action.target))
+			return false;
+		Engine.PostCommand(this.player, Object.assign({ "entities": [action.unit], "queued": false }, command));
+		return true;
+	}
+
+	unloadAll(action)
+	{
+		if (!this.gameState.getEntityById(action.holder))
+			return false;
+		Engine.PostCommand(this.player, { "type": "unload-all", "garrisonHolders": [action.holder] });
 		return true;
 	}
 
