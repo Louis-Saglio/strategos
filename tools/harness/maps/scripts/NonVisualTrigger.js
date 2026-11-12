@@ -12,6 +12,12 @@
  *   [HARNESS] eco {"t": <sim s>, "<player id>": {"gathered": {<resource>: n}, "pop": n}, ...}
  *     every minute: cumulative resources gathered (StatisticsTracker basic
  *     statistics) and population, read-only.
+ *   [HARNESS] kills {"t": <sim s>, "k": [[t,victimOwner,victimKind,x,z,killerOwner,killerKind], ...]}
+ *     every 30 s when something died: every entity killed by an attack since
+ *     the previous line, with what killed it (kinds as in the map snapshot,
+ *     0 for anything else; an arrow kill reads killerKind 5 or 6). Recorded
+ *     by wrapping Health.prototype.KilledBy, which is called and returns
+ *     exactly as before.
  *   [HARNESS] time limit reached {"t": <sim s>}
  *   per-player statistics JSON blocks (as the public script), at game end.
  *
@@ -27,6 +33,7 @@
 const HARNESS_LIMIT_MINUTES = 60;
 const HARNESS_MAP_INTERVAL_MS = 30000;
 const HARNESS_ECO_INTERVAL_MS = 60000;
+const HARNESS_KILLS_INTERVAL_MS = 30000;
 
 const HARNESS_KINDS = [
 	[6, "CivCentre"],
@@ -43,6 +50,7 @@ Trigger.prototype.HarnessEndGame = function()
 	if (!this.harnessOnce || Engine.QueryInterface(SYSTEM_ENTITY, IID_PlayerManager).GetActivePlayers().length)
 		return;
 	this.harnessOnce = false;
+	this.HarnessKills();
 	for (const player of Engine.GetEntitiesWithInterface(IID_StatisticsTracker))
 	{
 		const cmpStatisticsTracker = Engine.QueryInterface(player, IID_StatisticsTracker);
@@ -150,9 +158,33 @@ Trigger.prototype.HarnessEconomy = function()
 	print("[HARNESS] eco " + JSON.stringify(line) + "\n");
 };
 
+Trigger.prototype.HarnessRecordKill = function(victim, killer, killerOwner)
+{
+	const cmpOwnership = Engine.QueryInterface(victim, IID_Ownership);
+	const cmpKillerOwnership = Engine.QueryInterface(killer, IID_Ownership);
+	if (cmpKillerOwnership && cmpKillerOwnership.GetOwner() != INVALID_PLAYER)
+		killerOwner = cmpKillerOwnership.GetOwner();
+	const cmpPosition = Engine.QueryInterface(victim, IID_Position);
+	const pos = cmpPosition && cmpPosition.IsInWorld() ? cmpPosition.GetPosition2D() : null;
+	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+	this.harnessKills.push("[" + now.toFixed(1) + "," + (cmpOwnership ? cmpOwnership.GetOwner() : -1) + "," +
+		this.HarnessKind(victim) + "," + (pos ? Math.round(pos.x) : -1) + "," + (pos ? Math.round(pos.y) : -1) + "," +
+		killerOwner + "," + this.HarnessKind(killer) + "]");
+};
+
+Trigger.prototype.HarnessKills = function()
+{
+	if (!this.harnessKills.length)
+		return;
+	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+	print("[HARNESS] kills {\"t\":" + now.toFixed(0) + ",\"k\":[" + this.harnessKills.join(",") + "]}\n");
+	this.harnessKills = [];
+};
+
 Trigger.prototype.HarnessTimeLimit = function()
 {
 	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+	this.HarnessKills();
 	print("[HARNESS] time limit reached " + JSON.stringify({ "t": now }) + "\n");
 	const active = Engine.QueryInterface(SYSTEM_ENTITY, IID_PlayerManager).GetActivePlayers();
 	Engine.QueryInterface(SYSTEM_ENTITY, IID_EndGameManager).MarkPlayersAsWon(
@@ -165,12 +197,20 @@ Trigger.prototype.HarnessTimeLimit = function()
 	const cmpTrigger = Engine.QueryInterface(SYSTEM_ENTITY, IID_Trigger);
 	cmpTrigger.harnessOnce = true;
 	cmpTrigger.harnessKindCache = new Map();
+	cmpTrigger.harnessKills = [];
+	const harnessBaseKilledBy = Health.prototype.KilledBy;
+	Health.prototype.KilledBy = function(attacker, attackerOwner)
+	{
+		Engine.QueryInterface(SYSTEM_ENTITY, IID_Trigger).HarnessRecordKill(this.entity, attacker, attackerOwner);
+		return harnessBaseKilledBy.call(this, attacker, attackerOwner);
+	};
 	cmpTrigger.RegisterTrigger("OnPlayerWon", "HarnessEndGame", { "enabled": true });
 	cmpTrigger.RegisterTrigger("OnPlayerDefeated", "HarnessEndGame", { "enabled": true });
 	cmpTrigger.DoAfterDelay(0, "HarnessStart", {});
 	if (HARNESS_MAP_INTERVAL_MS > 0)
 		cmpTrigger.DoRepeatedly(HARNESS_MAP_INTERVAL_MS, "HarnessMapSnapshot", {});
 	cmpTrigger.DoRepeatedly(HARNESS_ECO_INTERVAL_MS, "HarnessEconomy", {});
+	cmpTrigger.DoRepeatedly(HARNESS_KILLS_INTERVAL_MS, "HarnessKills", {});
 	if (HARNESS_LIMIT_MINUTES > 0)
 		cmpTrigger.DoAfterDelay(HARNESS_LIMIT_MINUTES * 60 * 1000, "HarnessTimeLimit", {});
 }
