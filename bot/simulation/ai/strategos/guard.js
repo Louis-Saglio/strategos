@@ -72,3 +72,90 @@ export class Guard
 		};
 	}
 }
+
+const RELIC_SQUAD = 10;
+const RELIC_HOME_THREATS = 3;
+const RELIC_COVER_MARGIN = 8;
+const RELIC_POST_CLEARANCE = 14;
+const RELIC_POST_TOLERANCE = 10;
+
+export class Relics
+{
+	constructor(telemetry)
+	{
+		this.telemetry = telemetry;
+		this.squad = new Set();
+		this.target = null;
+	}
+
+	requests(world, priorities)
+	{
+		if (!priorities.seekRelics || !world.centres.length)
+			return [];
+		const home = world.centres[0];
+		const requests = [];
+		for (const relic of world.relics)
+		{
+			if (relic.owner !== world.player)
+				continue;
+			const dx = relic.position[0] - home.position[0];
+			const dz = relic.position[1] - home.position[1];
+			const length = Math.sqrt(dx * dx + dz * dz) || 1;
+			const reach = home.radius + RELIC_POST_CLEARANCE;
+			const post = [home.position[0] + dx / length * reach, home.position[1] + dz / length * reach];
+			const away = squareDistance(relic.position, post) > RELIC_POST_TOLERANCE * RELIC_POST_TOLERANCE;
+			requests.push(this.order(relic.id, away && !relic.state.includes("WALKING") ?
+				{ "type": "walk", "x": post[0], "z": post[1] } : { "type": "hold" }, priorities));
+		}
+		const wanted = world.relics
+			.filter(relic => relic.owner !== world.player && relic.region === world.homeRegion && !this.covered(world, relic))
+			.map(relic => ({ relic, "distance": squareDistance(relic.position, home.position) }))
+			.sort((a, b) => a.distance - b.distance || a.relic.id - b.relic.id)
+			.map(entry => entry.relic)[0];
+		if (!wanted || world.threats.length >= RELIC_HOME_THREATS)
+		{
+			this.squad = new Set();
+			this.target = null;
+			return requests;
+		}
+		if (this.target !== wanted.id)
+		{
+			this.target = wanted.id;
+			this.telemetry.line("RELIC", world.time, { "seek": wanted.id, "owner": wanted.owner, "x": Math.round(wanted.position[0]), "z": Math.round(wanted.position[1]) });
+		}
+		const members = world.fighters.filter(fighter => this.squad.has(fighter.id));
+		const spare = world.fighters
+			.filter(fighter => !this.squad.has(fighter.id) && fighter.region === world.homeRegion && !fighter.state.includes("COMBAT"))
+			.map(fighter => ({ fighter, "distance": squareDistance(fighter.position, wanted.position) }))
+			.sort((a, b) => a.distance - b.distance || a.fighter.id - b.fighter.id)
+			.slice(0, Math.max(0, RELIC_SQUAD - members.length))
+			.map(entry => entry.fighter);
+		const squad = members.concat(spare);
+		this.squad = new Set(squad.map(fighter => fighter.id));
+		for (const fighter of squad)
+			requests.push(this.order(fighter.id, fighter.target === wanted.id ?
+				{ "type": "hold" } : { "type": "capture", "target": wanted.id }, priorities));
+		return requests;
+	}
+
+	covered(world, relic)
+	{
+		return world.enemyStructures.some(structure => {
+			if (!structure.fire.arrows)
+				return false;
+			const reach = structure.range + RELIC_COVER_MARGIN;
+			return squareDistance(structure.position, relic.position) <= reach * reach;
+		});
+	}
+
+	order(unit, action, priorities)
+	{
+		return {
+			"source": "relics",
+			"action": Object.assign({ "unit": unit }, action),
+			"claims": { "workers": [unit] },
+			"value": priorities.values.relic,
+			"urgency": 1
+		};
+	}
+}

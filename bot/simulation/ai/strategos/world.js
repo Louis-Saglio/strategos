@@ -1,4 +1,4 @@
-import { isTreasure } from "simulation/ai/common-api/filters.js";
+import { byClass, isTreasure } from "simulation/ai/common-api/filters.js";
 
 const SITE_RADIUS = 110;
 const TREASURE_RADIUS = 120;
@@ -684,6 +684,16 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			"idle": ent.isIdle()
 		}));
 	}
+	const relics = [];
+	for (const ent of gameState.updatingGlobalCollection("strategos-relics", byClass("Relic")).values())
+		if (ent.position())
+			relics.push(Object.freeze({
+				"id": ent.id(),
+				"position": ent.position(),
+				"owner": ent.owner(),
+				"region": accessibility.getAccessValue(ent.position()),
+				"state": ent.unitAIState() || ""
+			}));
 	const homeRegion = centres.length ? accessibility.getAccessValue(centres[0].position) : 0;
 	const seas = accessibility.regionLinks[homeRegion] || [];
 	const objectives = enemyCentres.length ? enemyCentres :
@@ -709,6 +719,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
 		"heroes": Object.freeze(heroes),
+		"relics": Object.freeze(relics.sort((a, b) => a.id - b.id)),
 		"crossing": crossing ? Object.freeze(crossing) : null,
 		"docks": Object.freeze(docks),
 		"shores": shoreIndex.all(gameState),
