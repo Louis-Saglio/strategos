@@ -205,7 +205,7 @@ export class Defense
 		const requests = [];
 		for (const holder of world.holders)
 		{
-			if (!holder.garrisoned)
+			if (!holder.garrisoned || holder.forward)
 				continue;
 			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
 			const units = holder.units.filter(id => safe || !this.outnumbered && holder.soldiers.includes(id));
@@ -224,7 +224,7 @@ export class Defense
 	releaseRequests(world, priorities)
 	{
 		return world.holders
-			.filter(holder => holder.garrisoned > 0)
+			.filter(holder => holder.garrisoned > 0 && !holder.forward)
 			.map(holder => ({
 				"source": "defense",
 				"action": { "type": "unload-all", "holder": holder.id },

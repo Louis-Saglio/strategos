@@ -20,6 +20,7 @@ export class Executor
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),
 			"capture": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": true }),
 			"garrison": action => this.unitCommand(action, { "type": "garrison", "target": action.target }),
+			"delete": action => this.deleteStructure(action),
 			"unload-all": action => this.unloadAll(action),
 			"unload": action => this.unload(action),
 			"walk": action => this.walk(action),
@@ -124,6 +125,14 @@ export class Executor
 		Engine.PostCommand(this.player, { "type": "barter", "sell": action.sell, "buy": action.buy, "amount": action.amount });
 		if (this.telemetry.due("TRADE", this.time, BARTER_REPORT_MS))
 			this.telemetry.line("TRADE", this.time, { "sell": action.sell, "buy": action.buy, "rate": Math.round(action.rate * 100) / 100 });
+		return true;
+	}
+
+	deleteStructure(action)
+	{
+		if (!this.gameState.getEntityById(action.target))
+			return false;
+		Engine.PostCommand(this.player, { "type": "delete-entities", "entities": [action.target] });
 		return true;
 	}
 

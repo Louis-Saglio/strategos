@@ -102,6 +102,7 @@ const TERRITORY_BLINKING_MASK = 0x40;
 const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
 const DEFAULT_DAMAGE_MIX = { "Hack": 0.5, "Pierce": 0.5 };
 const CRITICAL_CLASS = "ConquestCritical";
+const UNCAPTURABLE_CLASSES = ["Wall", "Palisade", "Field"];
 
 export function territoryAt(territory, x, z)
 {
@@ -113,15 +114,19 @@ export function territoryAt(territory, x, z)
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
 }
 
-function enemyTarget(gameState, ent, owner, player)
+function enemyTarget(gameState, catalog, ent, owner, player)
 {
+	const range = ent.get("BuildingAI") && ent.attackRange("Ranged");
 	return Object.freeze({
 		"id": ent.id(),
 		"owner": owner,
 		"position": ent.position(),
 		"regen": captureRegen(gameState, ent),
 		"points": capturePointsToTake(ent, player),
-		"fire": defensiveFire(gameState, ent)
+		"fire": defensiveFire(gameState, ent),
+		"range": range ? range.max : 0,
+		"centre": ent.hasClass("CivCentre"),
+		"value": catalog.costSum(ent.templateName())
 	});
 }
 
@@ -344,6 +349,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const structureCounts = {};
 	const holders = [];
+	const decaying = [];
 	let garrisonedSoldiers = 0;
 	const researchers = [];
 	const footprints = [];
@@ -354,6 +360,18 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		if (ent.foundationProgress() !== undefined)
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+		const holder = ent.isGarrisonHolder();
+		if (ent.position() && ent.decaying())
+			decaying.push(Object.freeze({
+				"id": ent.id(),
+				"position": ent.position(),
+				"decayRate": ent.territoryDecayRate(),
+				"regen": captureRegen(gameState, ent),
+				"garrisonRegenRate": ent.garrisonRegenRate(),
+				"free": holder ? +(ent.garrisonMax() || 0) - ent.garrisonedSlots() : 0,
+				"classes": holder ? ent.garrisonableClasses() || "" : "",
+				"arrows": !!ent.get("BuildingAI")
+			}));
 		if (ent.get("Researcher"))
 		{
 			const techs = catalog.researchable(ent);
@@ -383,6 +401,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				"units": Object.freeze(garrisoned.slice()),
 				"soldiers": Object.freeze(soldiers),
 				"arrows": !!ent.get("BuildingAI"),
+				"forward": !!ent.decaying(),
 				"classes": ent.garrisonableClasses() || ""
 			}));
 		}
@@ -393,6 +412,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	const threats = [];
 	const enemyCentres = [];
 	const enemyCritical = [];
+	const enemyStructures = [];
 	let enemySoldiers = 0;
 	const enemyFighters = [];
 	const enemyDamage = {};
@@ -406,8 +426,13 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		{
 			if (!ent.position())
 				continue;
+			const capturable = ent.foundationProgress() === undefined && !!ent.get("Capturable") &&
+				!UNCAPTURABLE_CLASSES.some(cls => ent.hasClass(cls));
+			const target = (capturable || ent.hasClass("CivCentre")) && enemyTarget(gameState, catalog, ent, enemy, player);
+			if (capturable)
+				enemyStructures.push(target);
 			if (ent.hasClass("CivCentre"))
-				enemyCentres.push(enemyTarget(gameState, ent, enemy, player));
+				enemyCentres.push(target);
 			else if (ent.hasClass(CRITICAL_CLASS) && ent.foundationProgress() === undefined)
 				enemyCritical.push(ent);
 		}
@@ -535,7 +560,9 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyCentres": Object.freeze(enemyCentres),
 		"enemyTargets": Object.freeze(enemyCentres.length ? enemyCentres :
-			enemyCritical.map(ent => enemyTarget(gameState, ent, ent.owner(), player))),
+			enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player))),
+		"enemyStructures": Object.freeze(enemyStructures),
+		"decaying": Object.freeze(decaying),
 		"structureCounts": Object.freeze(structureCounts),
 		"holders": Object.freeze(holders),
 		"footprints": Object.freeze(footprints),
