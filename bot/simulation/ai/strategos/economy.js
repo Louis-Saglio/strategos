@@ -34,6 +34,8 @@ export class Economy
 				continue;
 			const soldiers = trainer.trainable.filter(name => this.catalog.isFighter(name));
 			const civilian = !soldiersOnly && trainer.trainable.some(name => this.catalog.isCivilian(name));
+			if (soldiersOnly && !soldiers.length)
+				continue;
 			if (!civilian && soldiers.length && !context)
 				context = this.unitContext(world);
 			const template = civilian || !soldiers.length ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
