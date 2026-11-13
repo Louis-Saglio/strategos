@@ -185,6 +185,24 @@ and the meaning of each field are in the header of
 `scenarios/maps/random/strategos_assault_triggers.js`; a new case is a new
 `.json` with a matching name.
 
+`strategos_battle_dD_aA[_cC][_w][_lL]`: the defensive battle. Player 1 gets
+D extra basic infantry (at its centre, or with `_w` cutting a woodline
+~115 m out toward player 2, outside the centre's arrows); at second L
+(default 90) player 2's wave of A basic infantry and C basic cavalry
+attack-walks to player 1's centre and fights the way Petra's attack plans
+do (target choice re-written in the trigger script: counters, support
+units first, at most 3 attackers per target, retaliation). Outcomes: held
+(player 1 wins) when 10 % of the wave or less is left, overrun when player
+1's centre falls; the `tick`/`result` lines carry soldiers and civilians
+lost and attackers killed with their value, the quantities a defence
+change is judged on. Run with `-R 0` (no harness resignation: the trigger
+script ends the game itself):
+
+```sh
+tools/run.sh -l 7 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
+    -M random/strategos_battle_d30_a45_w_l90 -b '*' -H local OUTDIR 1-16
+```
+
 ### analyze.py, compare.py
 
 ```sh

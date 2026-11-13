@@ -1,0 +1,19 @@
+{
+	"settings": {
+		"Name": "Strategos scenario: battle, defenders 30, attackers 30, at the woodline, launch 90 s",
+		"Script": "strategos_battle.js",
+		"Description": "Strategos development scenario (see strategos_battle_triggers.js). Not a playable map.",
+		"Keywords": [
+			"trigger"
+		],
+		"SupportedBiomes": "generic/",
+		"CircularMap": true,
+		"PlayerPlacements": [
+			"circle"
+		],
+		"TriggerScripts": [
+			"scripts/TriggerHelper.js",
+			"random/strategos_battle_triggers.js"
+		]
+	}
+}
