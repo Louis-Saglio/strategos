@@ -209,13 +209,9 @@ export class Construction
 		const template = this.bestHouse(world);
 		if (!template)
 			return null;
-		const centre = world.centres[0];
-		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
 		if (!this.searchable(world, template))
 			return null;
-		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
-			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
-			this.resourceZones(world, null).concat(this.farmBelts(world)));
+		const site = this.ringSite(world, placement, template);
 		if (!site)
 			return this.noSite(world, template);
 		return this.production(this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need));
@@ -313,15 +309,27 @@ export class Construction
 		return this.nearCentreRequest(world, placement, template, priorities.values.production);
 	}
 
-	nearCentreRequest(world, placement, template, value)
+	ringSite(world, placement, template)
 	{
 		const centre = world.centres[0];
 		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		const reserved = this.reservedBoxes(world);
+		const footprint = this.catalog.footprint(template);
+		const belts = this.farmBelts(world);
+		for (const zones of [this.resourceZones(world, null).concat(belts), belts, []])
+		{
+			const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
+			if (site)
+				return site;
+		}
+		return null;
+	}
+
+	nearCentreRequest(world, placement, template, value)
+	{
 		if (!this.searchable(world, template))
 			return null;
-		const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH,
-			this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
-			this.resourceZones(world, null).concat(this.farmBelts(world)));
+		const site = this.ringSite(world, placement, template);
 		if (!site)
 			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, value, 1);
