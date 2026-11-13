@@ -19,6 +19,7 @@ export class ResourceIndex
 		this.cursor += 1;
 		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
 		const kept = [];
+		const beyond = [];
 		const grid = this.grid(gameState);
 		const totals = new Float64Array(grid.width * grid.height);
 		const weighted = new Float64Array(2 * grid.width * grid.height);
@@ -47,11 +48,32 @@ export class ResourceIndex
 				best = Math.min(best, squareDistance(point, position));
 			if (best <= limit)
 				kept.push({ "id": ent.id(), "distance": best });
+			else
+				beyond.push({ "id": ent.id(), "distance": best, "position": position });
 		}
 		grid.totals[code] = totals;
 		grid.weighted[code] = weighted;
+		if (!kept.length)
+			this.reachable(gameState, beyond, points, kept);
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
 		this.sites.set(code, kept.slice(0, SITES_KEPT).map(site => site.id));
+	}
+
+	reachable(gameState, beyond, points, kept)
+	{
+		const accessibility = gameState.sharedScript.accessibility;
+		const territory = gameState.sharedScript.territoryMap;
+		const regions = new Set(points.map(point => accessibility.getAccessValue(point)));
+		beyond.sort((a, b) => a.distance - b.distance || a.id - b.id);
+		for (const supply of beyond)
+		{
+			const owner = territoryAt(territory, supply.position[0], supply.position[1]).owner;
+			if ((owner !== 0 && owner !== this.player) || !regions.has(accessibility.getAccessValue(supply.position)))
+				continue;
+			kept.push(supply);
+			if (kept.length >= SITES_EXPOSED)
+				break;
+		}
 	}
 
 	grid(gameState)
