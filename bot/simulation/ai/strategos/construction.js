@@ -29,6 +29,8 @@ const SETTLEMENT_ENEMY_CLEARANCE = 220;
 const SETTLEMENT_WEALTH_CAP = 6000;
 const SETTLEMENT_TRIES = 6;
 const FOUNDING_MAX_DISTANCE = 200;
+const DOCK_OFFSETS = [0.5, 0.25, 0.75];
+const DOCK_SITES_TRIED = 40;
 const MARKET_SURPLUS = 500;
 
 export class Construction
@@ -40,6 +42,8 @@ export class Construction
 		this.telemetry = telemetry;
 		this.noSiteReported = new Map();
 		this.noSiteTime = new Map();
+		this.dockSite = null;
+		this.dockRefused = new Set();
 	}
 
 	searchable(world, template)
@@ -70,7 +74,7 @@ export class Construction
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
-			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest])
+			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.dockRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -337,6 +341,66 @@ export class Construction
 		if (!template || !this.searchable(world, template))
 			return null;
 		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion);
+	}
+
+	dockRequest(world, priorities)
+	{
+		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
+		const tried = this.dockSite;
+		if (tried)
+		{
+			const pending = world.pendingConstructions.some(order => isDock(order.template));
+			const standing = world.docks.length > 0 || world.foundations.some(foundation => isDock(foundation.template));
+			tried.seen = tried.seen || pending;
+			if (standing)
+				this.dockSite = null;
+			else if (tried.seen && !pending)
+			{
+				this.dockRefused.add(tried.key);
+				this.telemetry.line("BUILD", world.time, { "refused": tried.template, "x": Math.round(tried.x), "z": Math.round(tried.z) });
+				this.dockSite = null;
+			}
+		}
+		if (!world.crossing || world.population < priorities.naval.dockPopulation || this.count(world, isDock) > 0)
+			return null;
+		const template = [...this.offered(world)].filter(isDock)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!template || !this.searchable(world, template))
+			return null;
+		const home = world.centres[0].position;
+		const grid = world.grids.passability;
+		const shores = [];
+		for (let index = 0; index < world.shores.length; ++index)
+		{
+			const shore = world.shores[index];
+			if (shore.region !== world.homeRegion || shore.sea !== world.crossing.sea)
+				continue;
+			const owner = territoryAt(world.grids.territory, shore.land[0], shore.land[1]).owner;
+			if (owner === 0 || owner === this.player)
+				shores.push({ shore, index, "distance": squareDistance(shore.land, home) });
+		}
+		shores.sort((a, b) => a.distance - b.distance || a.index - b.index);
+		for (const { shore, index } of shores.slice(0, DOCK_SITES_TRIED))
+			for (const offset of DOCK_OFFSETS)
+			{
+				const key = index + ":" + offset;
+				if (this.dockRefused.has(key))
+					continue;
+				const x = shore.land[0] + offset * (shore.water[0] - shore.land[0]);
+				const z = shore.land[1] + offset * (shore.water[1] - shore.land[1]);
+				const i = Math.floor(x / grid.cellSize);
+				const j = Math.floor(z / grid.cellSize);
+				if (i < 0 || j < 0 || i >= grid.width || j >= grid.height || grid.data[i + j * grid.width] & world.grids.buildingShore)
+				{
+					this.dockRefused.add(key);
+					continue;
+				}
+				const request = this.constructRequest(world, template, { "x": x, "z": z, "angle": 0 }, priorities.values.dock, 1);
+				if (request)
+					this.dockSite = { key, template, x, z, "seen": false };
+				return request;
+			}
+		return this.noSite(world, template);
 	}
 
 	foundingRequest(world, priorities)

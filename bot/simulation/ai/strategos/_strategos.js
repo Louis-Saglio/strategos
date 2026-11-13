@@ -5,12 +5,13 @@ import { Construction } from "simulation/ai/strategos/construction.js";
 import { Defense } from "simulation/ai/strategos/defense.js";
 import { Economy } from "simulation/ai/strategos/economy.js";
 import { Executor } from "simulation/ai/strategos/executor.js";
+import { Naval } from "simulation/ai/strategos/naval.js";
 import { Offense } from "simulation/ai/strategos/offense.js";
 import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
-import { ResourceIndex, buildWorld } from "simulation/ai/strategos/world.js";
+import { ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
@@ -30,8 +31,9 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.telemetry = new Telemetry(this.player);
 	this.catalog = new Catalog(gameState);
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
+	this.shoreIndex = new ShoreIndex();
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
-	this.subsystems = [new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
+	this.subsystems = [new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
 		new Research(this.catalog), new Trade()];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
@@ -60,7 +62,7 @@ StrategosBot.prototype.decide = function()
 		mark = now;
 	};
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, pending, this.allocator.demand());
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, pending, this.allocator.demand());
 	lap("world");
 	const priorities = this.strategy.update(world);
 	const requests = [];

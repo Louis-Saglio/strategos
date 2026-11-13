@@ -2,13 +2,14 @@ import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuati
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "offense": 30, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "offense": 30, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80 },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
-	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 }
+	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
+	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8 }
 };
 
 const DEMAND_HORIZON_S = 60;
@@ -60,6 +61,7 @@ export class Strategy
 			"military": OPENING.military,
 			"offense": OPENING.offense,
 			"expansion": OPENING.expansion,
+			"naval": OPENING.naval,
 			"advancePhase": this.wantsPhase(world)
 		});
 		return this.priorities;

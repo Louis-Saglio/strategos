@@ -366,6 +366,25 @@ export class Catalog
 			(!distance || !!distance.FromClass && !distance.MaxDistance);
 	}
 
+	isShoreStructure(name)
+	{
+		return (this.template(name).buildPlacementType() || "land") === "shore";
+	}
+
+	transportCapacity(name)
+	{
+		const template = this.template(name);
+		if (!template || !template.hasClass("Ship"))
+			return 0;
+		const accepted = (template.get("GarrisonHolder/List/_string") || "").split(/\s+/);
+		return accepted.includes("Soldier") || accepted.includes("Infantry") ? +(template.get("GarrisonHolder/Max") || 0) : 0;
+	}
+
+	trainsTransports(name)
+	{
+		return this.trains(name, unit => this.transportCapacity(unit) > 0);
+	}
+
 	isPlaceableOnLand(name)
 	{
 		const template = this.template(name);

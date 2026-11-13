@@ -33,7 +33,7 @@ export class ResourceIndex
 			if (owner !== 0 && owner !== this.player)
 				continue;
 			const position = ent.position();
-			if (!position)
+			if (!position || ent.hasClass("SeaCreature"))
 				continue;
 			const amount = ent.resourceSupplyAmount();
 			if (owner === 0 && isFinite(amount) && amount > 0)
@@ -122,6 +122,52 @@ export class ResourceIndex
 	}
 }
 
+const SHORE_SPACING = 12;
+
+export class ShoreIndex
+{
+	constructor()
+	{
+		this.points = null;
+	}
+
+	all(gameState)
+	{
+		if (this.points)
+			return this.points;
+		const accessibility = gameState.sharedScript.accessibility;
+		const land = accessibility.landPassMap;
+		const water = accessibility.navalPassMap;
+		const width = accessibility.width;
+		const height = accessibility.height;
+		const size = accessibility.cellSize;
+		const stride = Math.max(1, Math.round(SHORE_SPACING / size));
+		const points = [];
+		for (let j = stride; j < height - stride; j += stride)
+			for (let i = stride; i < width - stride; i += stride)
+			{
+				const region = land[i + j * width];
+				if (region < 2)
+					continue;
+				for (const [di, dj] of [[stride, 0], [-stride, 0], [0, stride], [0, -stride]])
+				{
+					const sea = water[i + di + (j + dj) * width];
+					if (sea < 2 || land[i + di + (j + dj) * width] === region)
+						continue;
+					points.push(Object.freeze({
+						"land": Object.freeze([(i + 0.5) * size, (j + 0.5) * size]),
+						"water": Object.freeze([(i + di + 0.5) * size, (j + dj + 0.5) * size]),
+						"region": region,
+						"sea": sea
+					}));
+					break;
+				}
+			}
+		this.points = Object.freeze(points);
+		return this.points;
+	}
+}
+
 const TERRITORY_OWNER_MASK = 0x1F;
 const TERRITORY_BLINKING_MASK = 0x40;
 const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
@@ -174,6 +220,7 @@ function enemyTarget(gameState, catalog, ent, owner, player)
 		"id": ent.id(),
 		"owner": owner,
 		"position": ent.position(),
+		"region": gameState.sharedScript.accessibility.getAccessValue(ent.position()),
 		"regen": captureRegen(gameState, ent),
 		"points": capturePointsToTake(ent, player),
 		"fire": defensiveFire(gameState, ent),
@@ -276,8 +323,9 @@ export function squareDistance(a, b)
 	return dx * dx + dz * dz;
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, pendingConstructions, demand)
+export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendingConstructions, demand)
 {
+	const accessibility = gameState.sharedScript.accessibility;
 	const playerData = gameState.playerData;
 	const codes = catalog.codes;
 
@@ -325,6 +373,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	const workers = [];
 	const breakers = [];
+	const anchorRegions = new Set(anchors.map(anchor => accessibility.getAccessValue(anchor.position)));
 	for (const ent of gameState.getOwnUnits().values())
 	{
 		const position = ent.position();
@@ -338,7 +387,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				"target": orders.length && orders[0] ? orders[0].target : undefined
 			}));
 		}
-		if (!position || !ent.isGatherer() || ent.hasClass("Ship"))
+		if (!position || !ent.isGatherer() || ent.hasClass("Ship") ||
+		    anchorRegions.size && !anchorRegions.has(accessibility.getAccessValue(position)))
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		const state = ent.unitAIState() || "";
@@ -402,6 +452,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	}
 
 	const structureCounts = {};
+	const docks = [];
 	const holders = [];
 	const decaying = [];
 	let garrisonedSoldiers = 0;
@@ -414,6 +465,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		if (ent.foundationProgress() !== undefined)
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+		if (ent.position() && catalog.isShoreStructure(ent.templateName()))
+			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position() }));
 		const holder = ent.isGarrisonHolder();
 		if (ent.position() && ent.decaying())
 			decaying.push(Object.freeze({
@@ -552,6 +605,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		fighters.push(Object.freeze({
 			"id": ent.id(),
 			"position": position,
+			"region": accessibility.getAccessValue(position),
 			"template": ent.templateName(),
 			"state": ent.unitAIState() || "",
 			"classes": ent.classes(),
@@ -609,9 +663,50 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	for (const code of codes)
 		sites[code] = resourceIndex.live(gameState, code, anchors);
 
+	const ships = [];
+	for (const ent of gameState.getOwnEntitiesByClass("Ship", true).values())
+	{
+		const capacity = catalog.transportCapacity(ent.templateName());
+		if (!capacity || !ent.position())
+			continue;
+		const cargo = ent.garrisoned() || [];
+		ships.push(Object.freeze({
+			"id": ent.id(),
+			"position": ent.position(),
+			"template": ent.templateName(),
+			"capacity": capacity,
+			"cargo": Object.freeze(cargo.slice()),
+			"state": ent.unitAIState() || "",
+			"idle": ent.isIdle()
+		}));
+	}
+	const homeRegion = centres.length ? accessibility.getAccessValue(centres[0].position) : 0;
+	const seas = accessibility.regionLinks[homeRegion] || [];
+	const objectives = enemyCentres.length ? enemyCentres :
+		enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player));
+	let crossing = null;
+	if (centres.length && objectives.length && !objectives.some(target => target.region === homeRegion))
+	{
+		const home = centres[0].position;
+		for (const target of objectives)
+		{
+			const sea = seas.find(candidate => (accessibility.regionLinks[candidate] || []).includes(target.region));
+			if (sea === undefined)
+				continue;
+			const distance = squareDistance(target.position, home);
+			if (!crossing || distance < crossing.distance || (distance === crossing.distance && target.id < crossing.target))
+				crossing = { "target": target.id, "position": target.position, "region": target.region, "sea": sea, "distance": distance };
+		}
+	}
+
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
 		"player": player,
+		"homeRegion": homeRegion,
+		"crossing": crossing ? Object.freeze(crossing) : null,
+		"docks": Object.freeze(docks),
+		"shores": shoreIndex.all(gameState),
+		"ships": Object.freeze(ships.sort((a, b) => a.id - b.id)),
 		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
@@ -628,7 +723,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"grids": Object.freeze({
 			"passability": gameState.getPassabilityMap(),
 			"territory": gameState.sharedScript.territoryMap,
-			"buildingLand": gameState.getPassabilityClassMask("building-land")
+			"buildingLand": gameState.getPassabilityClassMask("building-land"),
+			"buildingShore": gameState.getPassabilityClassMask("building-shore")
 		}),
 		"anchors": Object.freeze(anchors),
 		"wealth": resourceIndex.grid(gameState),
@@ -638,8 +734,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"enemySoldiers": enemySoldiers,
 		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyCentres": Object.freeze(enemyCentres),
-		"enemyTargets": Object.freeze(enemyCentres.length ? enemyCentres :
-			enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player))),
+		"enemyTargets": Object.freeze(objectives),
 		"enemyStructures": Object.freeze(enemyStructures),
 		"decaying": Object.freeze(decaying),
 		"structureCounts": Object.freeze(structureCounts),

@@ -39,6 +39,9 @@ export class Offense
 		this.assaulting = false;
 		this.resistance = null;
 		this.attacked = new Set();
+		this.region = 0;
+		this.base = null;
+		this.overseas = false;
 	}
 
 	requests(world, priorities)
@@ -125,7 +128,7 @@ export class Offense
 				"reserve": true
 			});
 		}
-		if (this.mode === "home")
+		if (this.mode === "home" || this.overseas)
 			return requests;
 		const moving = breaker => MOVING_STATES.some(state => breaker.state.includes(state));
 		for (const breaker of world.breakers)
@@ -144,10 +147,18 @@ export class Offense
 
 	armyRequests(world, priorities, home, held)
 	{
+		if (this.mode !== "home" && this.overseas)
+			for (const fighter of world.fighters)
+				if (fighter.region === this.region && !this.army.has(fighter.id))
+				{
+					this.army.add(fighter.id);
+					this.launchSize += 1;
+				}
 		const members = world.fighters.filter(fighter => this.army.has(fighter.id));
 		this.army = new Set(members.map(fighter => fighter.id));
 		if (this.mode === "home")
 			return this.launch(world, priorities, home);
+		home = { "position": this.base };
 		const free = members.filter(member => !held.has(member.id) && !member.state.includes("GARRISON"));
 		const reason = this.mode !== "return" && this.retreatReason(world, priorities, free, home);
 		if (reason)
@@ -202,13 +213,13 @@ export class Offense
 		return this.outlookOf(world, members, target).reach >= margin * target.points;
 	}
 
-	chooseTarget(world, priorities, members, from)
+	chooseTarget(world, priorities, members, from, region)
 	{
 		let best = null;
 		let bestScore = 0;
 		for (const target of world.enemyStructures)
 		{
-			if (!this.feasible(world, priorities, members, target, priorities.offense.capture.enter))
+			if (target.region !== region || !this.feasible(world, priorities, members, target, priorities.offense.capture.enter))
 				continue;
 			const weight = target.centre ? TARGET_WEIGHTS.centre : target.fire.arrows ? TARGET_WEIGHTS.defensive : TARGET_WEIGHTS.other;
 			const score = weight * target.value / (1 + Math.sqrt(squareDistance(target.position, from)) / TARGET_DISTANCE_SCALE);
@@ -226,20 +237,47 @@ export class Offense
 		const offense = priorities.offense;
 		if (world.threats.length >= HOME_CALM_THREATS || !world.enemyTargets.length)
 			return [];
-		const available = world.fighters.filter(fighter => !fighter.state.includes("COMBAT"));
-		if (available.length < offense.minArmy || available.length < offense.superiority * world.enemySoldiers)
-			return [];
-		const target = this.chooseTarget(world, priorities, available, home.position);
+		const groups = new Map();
+		for (const fighter of world.fighters)
+		{
+			if (fighter.region === world.homeRegion && fighter.state.includes("COMBAT"))
+				continue;
+			if (!groups.has(fighter.region))
+				groups.set(fighter.region, []);
+			groups.get(fighter.region).push(fighter);
+		}
+		const regions = [...groups.keys()].sort((a, b) =>
+			(b === world.homeRegion) - (a === world.homeRegion) || groups.get(b).length - groups.get(a).length || a - b);
+		let available = null;
+		let target = null;
+		let base = null;
+		for (const region of regions)
+		{
+			const group = groups.get(region);
+			if (group.length < offense.minArmy || region === world.homeRegion && group.length < offense.superiority * world.enemySoldiers)
+				continue;
+			const origin = region === world.homeRegion ? home.position : this.armyCentre(group);
+			const found = this.chooseTarget(world, priorities, group, origin, region);
+			if (!found)
+				continue;
+			available = group;
+			target = found;
+			base = origin;
+			this.region = region;
+			break;
+		}
 		if (!target)
 			return [];
+		this.base = base;
+		this.overseas = this.region !== world.homeRegion;
 		this.target = target;
 		this.attacked.add(target.id);
 		this.resistance = null;
-		const dx = target.position[0] - home.position[0];
-		const dz = target.position[1] - home.position[1];
+		const dx = target.position[0] - base[0];
+		const dz = target.position[1] - base[1];
 		const length = Math.sqrt(dx * dx + dz * dz) || 1;
 		const step = Math.min(RALLY_MAX_DISTANCE, RALLY_FRACTION * length);
-		this.rally = [home.position[0] + dx / length * step, home.position[1] + dz / length * step];
+		this.rally = [base[0] + dx / length * step, base[1] + dz / length * step];
 		this.army = new Set(available.map(fighter => fighter.id));
 		this.launchSize = this.army.size;
 		this.switchMode(world, "rally", { "target": target.id, "value": target.value, "centre": target.centre, "enemySoldiers": world.enemySoldiers });
@@ -250,7 +288,7 @@ export class Offense
 	{
 		if (this.threatsOutOfReach(world, members, home) >= HOME_ALARM_THREATS)
 			return "alarm";
-		if (members.length < this.launchSize * RETREAT_FRACTION)
+		if (!this.overseas && members.length < this.launchSize * RETREAT_FRACTION)
 			return "losses";
 		if (this.mode === "attack" && !world.enemyStructures.some(structure => structure.id === this.target.id) &&
 			!this.retarget(world, priorities, members))
@@ -271,6 +309,8 @@ export class Offense
 
 	threatsOutOfReach(world, members, home)
 	{
+		if (this.overseas)
+			return 0;
 		if (this.mode !== "attack" || !members.length || world.threats.length < HOME_ALARM_THREATS)
 			return world.threats.length;
 		const centre = this.armyCentre(members);
@@ -285,7 +325,7 @@ export class Offense
 	{
 		if (!members.length)
 			return false;
-		const target = this.chooseTarget(world, priorities, members, this.armyCentre(members));
+		const target = this.chooseTarget(world, priorities, members, this.armyCentre(members), this.region);
 		if (!target)
 			return false;
 		this.target = target;
@@ -326,7 +366,7 @@ export class Offense
 		{
 			this.switchMode(world, "attack", { "arrived": arrived });
 			this.resistance = { "id": this.target.id, "regen": 0, "arrows": 0 };
-			return this.attackRequests(world, priorities, members, world.centres[0]);
+			return this.attackRequests(world, priorities, members, { "position": this.base });
 		}
 		return members.map(member => squareDistance(member.position, this.rally) <= limit ?
 			this.order(member, { "type": "hold" }, priorities) :
