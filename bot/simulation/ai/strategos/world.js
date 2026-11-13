@@ -392,14 +392,25 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				const unit = gameState.getEntityById(id);
 				return !!unit && unit.hasClass("Soldier");
 			});
+			const hurt = garrisoned.filter(id => {
+				const unit = gameState.getEntityById(id);
+				return !!unit && unit.hitpoints() < unit.maxHitpoints();
+			});
 			garrisonedSoldiers += soldiers.length;
+			const reach = ent.get("BuildingAI") && ent.attackRange("Ranged");
+			const footprint = catalog.footprint(ent.templateName());
 			holders.push(Object.freeze({
 				"id": ent.id(),
 				"position": ent.position(),
+				"radius": Math.max(footprint.width, footprint.depth) / 2,
+				"fire": defensiveFire(gameState, ent),
+				"range": reach ? +reach.max || 0 : 0,
+				"heal": +(ent.get("GarrisonHolder/BuffHeal") || 0),
 				"free": capacity - ent.garrisonedSlots(),
 				"garrisoned": garrisoned.length,
 				"units": Object.freeze(garrisoned.slice()),
 				"soldiers": Object.freeze(soldiers),
+				"hurt": Object.freeze(hurt),
 				"arrows": !!ent.get("BuildingAI"),
 				"forward": !!ent.decaying(),
 				"classes": ent.garrisonableClasses() || ""
@@ -443,7 +454,17 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 				enemySoldiers += 1;
 				enemyTemplates.set(ent.templateName(), (enemyTemplates.get(ent.templateName()) || 0) + 1);
 				if (ent.position())
-					enemyFighters.push(Object.freeze({ "id": ent.id(), "position": ent.position() }));
+				{
+					const orders = ent.unitAIOrderData() || [];
+					enemyFighters.push(Object.freeze({
+						"id": ent.id(),
+						"position": ent.position(),
+						"template": ent.templateName(),
+						"hitpoints": ent.hitpoints(),
+						"state": ent.unitAIState() || "",
+						"target": orders.length && orders[0] ? orders[0].target : undefined
+					}));
+				}
 				const attacks = catalog.combat(ent.templateName()).attacks;
 				for (const type in attacks)
 					for (const kind in attacks[type].damage)
@@ -477,10 +498,12 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		fighters.push(Object.freeze({
 			"id": ent.id(),
 			"position": position,
+			"template": ent.templateName(),
 			"state": ent.unitAIState() || "",
 			"classes": ent.classes(),
 			"capture": captureStrength(ent),
 			"hitpoints": ent.hitpoints(),
+			"maxHitpoints": ent.maxHitpoints(),
 			"resistance": catalog.combat(ent.templateName()).resistance,
 			"target": orders.length && orders[0] ? orders[0].target : undefined
 		}));
@@ -534,6 +557,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
+		"player": player,
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
 		"nextPhaseCost": techCost(gameState, codes, gameState.getPhaseName(gameState.currentPhase() + 1)),

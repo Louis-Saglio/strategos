@@ -1,3 +1,5 @@
+const RESISTANCE_BASE = 0.9;
+
 export class Catalog
 {
 	constructor(gameState)
@@ -15,6 +17,7 @@ export class Catalog
 		this.researchOpen = new Map();
 		this.technologies = new Map();
 		this.combats = new Map();
+		this.hitRates = new Map();
 		this.breakers = new Map();
 		this.availabilityTime = undefined;
 	}
@@ -211,14 +214,44 @@ export class Catalog
 					"bonuses": Object.freeze(bonuses) });
 			}
 			const resistance = (template.resistanceStrengths() || {}).Damage || {};
+			const ranged = !!attacks.Ranged;
+			const reach = ranged ? template.attackRange("Ranged") : attacks.Melee && template.attackRange("Melee");
 			this.combats.set(name, Object.freeze({
 				"hp": template.maxHitpoints(),
+				"ranged": ranged,
+				"range": reach ? +reach.max || 0 : 0,
+				"speed": template.walkSpeed() || 0,
 				"classes": Object.freeze(template.classes() || []),
 				"attacks": Object.freeze(attacks),
 				"resistance": Object.freeze(Object.assign({}, resistance))
 			}));
 		}
 		return this.combats.get(name);
+	}
+
+	hitRate(attacker, target)
+	{
+		const key = attacker + "|" + target;
+		if (!this.hitRates.has(key))
+		{
+			const own = this.combat(attacker);
+			const other = this.combat(target);
+			let best = 0;
+			for (const type in own.attacks)
+			{
+				const attack = own.attacks[type];
+				let damage = 0;
+				for (const kind in attack.damage)
+					damage += attack.damage[kind] * Math.pow(RESISTANCE_BASE, other.resistance[kind] || 0);
+				let multiplier = 1;
+				for (const bonus of attack.bonuses)
+					if (MatchesClassList(other.classes, bonus.classes))
+						multiplier *= bonus.multiplier;
+				best = Math.max(best, damage * multiplier / Math.max(0.1, attack.repeat));
+			}
+			this.hitRates.set(key, best);
+		}
+		return this.hitRates.get(key);
 	}
 
 	researchable(entity)
