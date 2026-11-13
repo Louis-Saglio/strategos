@@ -54,7 +54,8 @@ export class Economy
 					"slots": [trainer.id]
 				},
 				"value": priorities.values.trainWorker,
-				"urgency": 1
+				"urgency": 1,
+				"tier": trainer.queueLength === 0 ? "production" : "investment"
 			});
 		}
 		return requests;

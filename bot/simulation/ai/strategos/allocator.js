@@ -55,6 +55,26 @@ export class Allocator
 			.map((request, index) => ({ request, index, "priority": request.value * request.urgency }))
 			.sort((a, b) => b.priority - a.priority || a.index - b.index);
 		this.allocations += 1;
+		budget.earmark = {};
+		for (const code of this.codes)
+			budget.earmark[code] = 0;
+		const earmarked = new Map();
+		for (const { request } of ordered)
+		{
+			if (request.tier !== "production")
+				continue;
+			const claim = request.claims.resources || {};
+			const short = this.codes.some(code => (claim[code] || 0) > budget.resources[code] - budget.earmark[code]);
+			if (short && !request.reserve)
+				continue;
+			const part = {};
+			for (const code of this.codes)
+			{
+				part[code] = Math.max(0, Math.min(claim[code] || 0, budget.resources[code] - budget.earmark[code]));
+				budget.earmark[code] += part[code];
+			}
+			earmarked.set(request, part);
+		}
 		const grants = [];
 		const spent = {};
 		const unmet = {};
@@ -65,6 +85,10 @@ export class Allocator
 		}
 		for (const { request } of ordered)
 		{
+			const own = earmarked.get(request);
+			if (own)
+				for (const code of this.codes)
+					budget.earmark[code] -= own[code];
 			const reason = this.denial(world, request, budget);
 			this.record(request, reason || "granted");
 			if (reason)
@@ -102,7 +126,7 @@ export class Allocator
 		if ((claims.population || 0) > budget.population)
 			return "population";
 		for (const code of this.codes)
-			if ((claims.resources && claims.resources[code] || 0) > budget.resources[code])
+			if ((claims.resources && claims.resources[code] || 0) > budget.resources[code] - budget.earmark[code])
 				return "resources-" + code;
 		return null;
 	}
@@ -128,7 +152,7 @@ export class Allocator
 	{
 		for (const code of this.codes)
 		{
-			const held = Math.min(budget.resources[code], request.claims.resources[code] || 0);
+			const held = Math.max(0, Math.min(budget.resources[code] - budget.earmark[code], request.claims.resources[code] || 0));
 			this.held[code] += held;
 			budget.resources[code] -= held;
 		}
@@ -136,7 +160,7 @@ export class Allocator
 
 	record(request, outcome)
 	{
-		const key = request.source + "/" + request.action.type + ":" + outcome;
+		const key = request.source + "/" + request.action.type + (request.tier === "production" ? "!" : "") + ":" + outcome;
 		this.ledger.set(key, (this.ledger.get(key) || 0) + 1);
 	}
 

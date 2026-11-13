@@ -2,6 +2,7 @@ import { TECH_HORIZON_S, resourcePrices, techBenefit } from "simulation/ai/strat
 
 const PAYBACK_LIMIT_S = 180;
 const PHASE_QUEUE_LIMIT = 1;
+const PRODUCTION_PAYBACK_S = 90;
 
 export class Research
 {
@@ -52,7 +53,8 @@ export class Research
 				"action": { "type": "research", "researcher": researcher.id, "tech": best.tech, "payback": Math.round(best.payback) },
 				"claims": { "resources": best.cost, "slots": [researcher.id] },
 				"value": priorities.values.research,
-				"urgency": 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S
+				"urgency": 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S,
+				"tier": best.payback <= PRODUCTION_PAYBACK_S ? "production" : "investment"
 			});
 		}
 		return requests;
@@ -74,7 +76,8 @@ export class Research
 			"claims": { "resources": this.catalog.techCost(tech, researcher.template), "slots": [researcher.id] },
 			"value": priorities.values.phase,
 			"urgency": 1,
-			"reserve": true
+			"reserve": true,
+			"tier": "production"
 		};
 	}
 }

@@ -143,6 +143,11 @@ export class Construction
 		};
 	}
 
+	production(request)
+	{
+		return request ? Object.assign(request, { "tier": "production" }) : request;
+	}
+
 	reservedBoxes(world)
 	{
 		return world.pendingConstructions.map(pending => {
@@ -203,7 +208,7 @@ export class Construction
 			this.resourceZones(world, null).concat(this.farmBelts(world)));
 		if (!site)
 			return this.noSite(world, template);
-		return this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need);
+		return this.production(this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need));
 	}
 
 	bestHouse(world)
@@ -249,9 +254,9 @@ export class Construction
 			const minRadius = anchor.radius + FIELD_MARGIN + half;
 			const site = placement.around(anchor.position, minRadius, minRadius + 2 * half + 4, footprint, FIELD_MARGIN, reserved, zones);
 			if (site)
-				return this.constructRequest(world, farm, site, priorities.values.farm, urgency);
+				return this.production(this.constructRequest(world, farm, site, priorities.values.farm, urgency));
 		}
-		return this.farmsteadRequest(world, priorities, placement, farm, urgency);
+		return this.production(this.farmsteadRequest(world, priorities, placement, farm, urgency));
 	}
 
 	farmsteadRequest(world, priorities, placement, farm, urgency)
