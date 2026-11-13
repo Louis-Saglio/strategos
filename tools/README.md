@@ -51,7 +51,10 @@ set reproducibly and two batches on the same seeds play the same matches.
 A draw outside the scope of the goal (`SCOPE` in `run.py`: fewer than
 128 / 192 / 256 / 320 tiles for 2 / 3-4 / 5-6 / 7-8 players, fewer than
 100 population a player once a team or world cap is shared out, last man
-standing with locked teams) is redrawn; a combination that cannot be
+standing with locked teams, a nomad start with treasures disabled and
+fewer than 300 starting resources — the treasures the map generator puts
+beside the units are then the only way to afford a civic centre) is
+redrawn; a combination that cannot be
 redrawn (nothing sampled) runs with a warning. Before the batch starts the
 runner prints the draw counts of every choice that took more than one
 value (`run: draws size: 128 18, 192 26, ...`): hash picks are uneven on

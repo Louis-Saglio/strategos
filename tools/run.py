@@ -42,7 +42,7 @@ alternatives separated by commas, each a +-joined combination
 setting; --rotate draws the player slots (the -p list rotated). A draw that
 falls outside the scope of the goal (SCOPE below: too many players for the
 map size, too little population per player, last man standing with locked
-teams) is redrawn; the draw counts of every sampled choice are printed
+teams, a nomad start that cannot afford a civic centre) is redrawn; the draw counts of every sampled choice are printed
 before the batch starts, because hash picks are uneven on short ranges.
 
 Each map is given only what it supports, read from its .json in the 0 A.D.
@@ -163,9 +163,13 @@ GAME_SETTINGS = {
 # to the harness with the GAME_SETTINGS and are checked the same way.
 MAP_OPTIONS = {"Daytime": "", "Landscape": "", "SeaLevelRiseTime": 0, "TriggerDifficulty": 0, "waterLevel": ""}
 # The scope of the goal (AGENTS.md: degenerate combinations are out of it): the
-# smallest map size for a player count, and the smallest population a player
-# may end up with once a team or world cap is shared out.
-SCOPE = {"min_tiles": {2: 128, 3: 192, 4: 192, 5: 256, 6: 256, 7: 320, 8: 320}, "min_population": 100}
+# smallest map size for a player count, the smallest population a player may
+# end up with once a team or world cap is shared out, and the starting
+# resources below which a nomad start needs the treasures the map generator
+# places beside the units (rmgen-common/player.js, placePlayersNomad: up to
+# the civic centre's cost, 300 of its dearest resource).
+SCOPE = {"min_tiles": {2: 128, 3: 192, 4: 192, 5: 256, 6: 256, 7: 320, 8: 320}, "min_population": 100,
+         "nomad_resources": 300}
 REDRAWS = 32
 # Kept by the engine only when they apply (their victory condition, a random map).
 CONDITIONAL_SETTINGS = {"WonderDuration", "RelicCount", "RelicDuration", "RegicideGarrison", "Nomad"}
@@ -326,6 +330,9 @@ def out_of_scope(spec):
         return f"population cap {s['PopulationCap']} per {s['PopulationCapType']}: {s['PopulationCap'] // share} a player"
     if s["LastManStanding"] and (s["LockTeams"] or s["PopulationCapType"] == "team"):
         return "last man standing with locked teams (a team cap locks them)"
+    if s["Nomad"] and s["DisableTreasures"] and s["StartingResources"] < SCOPE["nomad_resources"]:
+        return (f"nomad with {s['StartingResources']} resources and no treasures: the map generator's "
+                "treasures are the only way to afford a civic centre")
     return None
 
 
