@@ -12,6 +12,10 @@ const OPENING = {
 	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8 }
 };
 
+const PLANS = {
+	"regicide": world => world.victory.includes("regicide")
+};
+
 const DEMAND_HORIZON_S = 60;
 const STOCK_BUFFER = 100;
 const SHORTFALL_WEIGHT = 3;
@@ -47,6 +51,11 @@ export class Strategy
 		return byPopulation || bySurplus;
 	}
 
+	plans(world)
+	{
+		return Object.keys(PLANS).filter(name => PLANS[name](world));
+	}
+
 	update(world)
 	{
 		this.changed = !this.started;
@@ -62,6 +71,7 @@ export class Strategy
 			"offense": OPENING.offense,
 			"expansion": OPENING.expansion,
 			"naval": OPENING.naval,
+			"protectHero": this.plans(world).includes("regicide"),
 			"advancePhase": this.wantsPhase(world)
 		});
 		return this.priorities;

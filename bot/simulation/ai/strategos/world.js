@@ -595,11 +595,15 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		Object.assign(enemyDamageMix, DEFAULT_DAMAGE_MIX);
 
 	const fighters = [];
+	const heroes = [];
 	const army = new Map();
+	for (const ent of gameState.getOwnEntitiesByClass("Hero", true).values())
+		if (ent.position())
+			heroes.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "state": ent.unitAIState() || "" }));
 	for (const ent of gameState.getOwnEntitiesByClass("Soldier", true).values())
 	{
 		const position = ent.position();
-		if (!position)
+		if (!position || ent.hasClass("Hero"))
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		fighters.push(Object.freeze({
@@ -703,6 +707,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"time": gameState.getTimeElapsed(),
 		"player": player,
 		"homeRegion": homeRegion,
+		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
+		"heroes": Object.freeze(heroes),
 		"crossing": crossing ? Object.freeze(crossing) : null,
 		"docks": Object.freeze(docks),
 		"shores": shoreIndex.all(gameState),

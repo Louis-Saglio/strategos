@@ -26,6 +26,7 @@ export class Executor
 			"unload": action => this.unload(action),
 			"walk": action => this.walk(action),
 			"hold": () => false,
+			"stance": action => this.stance(action),
 			"attack-walk": action => this.attackWalk(action),
 			"research": action => this.research(action),
 			"barter": action => this.barter(action)
@@ -150,6 +151,14 @@ export class Executor
 			"allowCapture": true,
 			"queued": false
 		});
+		return true;
+	}
+
+	stance(action)
+	{
+		if (!this.gameState.getEntityById(action.unit))
+			return false;
+		Engine.PostCommand(this.player, { "type": "stance", "entities": [action.unit], "name": action.name });
 		return true;
 	}
 
