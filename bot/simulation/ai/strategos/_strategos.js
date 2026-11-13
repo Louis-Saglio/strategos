@@ -73,6 +73,9 @@ StrategosBot.prototype.decide = function()
 	this.executor.execute(world, grants);
 	lap("allocateExecute");
 	this.telemetry.recordDecision(Date.now() - started, stages);
+	for (const trainer of world.trainers)
+		this.telemetry.recordProduction(trainer.trainable.some(name => this.catalog.isCivilian(name)) ? "civilian" :
+			trainer.trainable.some(name => this.catalog.isFighter(name)) ? "military" : "other", trainer.queueLength === 0);
 	this.report(world, priorities);
 };
 
@@ -98,5 +101,6 @@ StrategosBot.prototype.report = function(world, priorities)
 		"unmet": world.demand.unmet,
 		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(priorities.gatherShares[code] * 100) / 100]))
 	});
+	this.telemetry.flushProduction(world.time);
 	this.telemetry.flushDecisions(world.time);
 };

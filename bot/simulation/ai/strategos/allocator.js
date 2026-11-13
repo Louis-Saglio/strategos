@@ -16,6 +16,10 @@ export class Allocator
 			this.unmet[code] = 0;
 		}
 		this.lastTime = undefined;
+		this.held = {};
+		this.allocations = 0;
+		for (const code of codes)
+			this.held[code] = 0;
 	}
 
 	demand()
@@ -50,6 +54,7 @@ export class Allocator
 		const ordered = requests
 			.map((request, index) => ({ request, index, "priority": request.value * request.urgency }))
 			.sort((a, b) => b.priority - a.priority || a.index - b.index);
+		this.allocations += 1;
 		const grants = [];
 		const spent = {};
 		const unmet = {};
@@ -122,7 +127,11 @@ export class Allocator
 	hold(request, budget)
 	{
 		for (const code of this.codes)
-			budget.resources[code] = Math.max(0, budget.resources[code] - (request.claims.resources[code] || 0));
+		{
+			const held = Math.min(budget.resources[code], request.claims.resources[code] || 0);
+			this.held[code] += held;
+			budget.resources[code] -= held;
+		}
 	}
 
 	record(request, outcome)
@@ -133,8 +142,15 @@ export class Allocator
 
 	flushLedger()
 	{
-		const summary = { "outcomes": Object.fromEntries(this.ledger), "spentTotal": Object.assign({}, this.spent) };
+		const summary = {
+			"outcomes": Object.fromEntries(this.ledger),
+			"spentTotal": Object.assign({}, this.spent),
+			"heldMean": Object.fromEntries(this.codes.map(code => [code, Math.round(this.held[code] / Math.max(1, this.allocations))]))
+		};
 		this.ledger.clear();
+		for (const code of this.codes)
+			this.held[code] = 0;
+		this.allocations = 0;
 		return summary;
 	}
 }

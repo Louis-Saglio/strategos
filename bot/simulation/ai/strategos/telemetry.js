@@ -8,6 +8,25 @@ export class Telemetry
 		this.totalMs = 0;
 		this.maxMs = 0;
 		this.stageMaxMs = {};
+		this.production = new Map();
+	}
+
+	recordProduction(kind, idle)
+	{
+		const entry = this.production.get(kind) || { "decisions": 0, "idle": 0, "trainers": 0 };
+		entry.trainers += 1;
+		if (idle)
+			entry.idle += 1;
+		this.production.set(kind, entry);
+	}
+
+	flushProduction(timeMs)
+	{
+		const data = {};
+		for (const [kind, entry] of this.production)
+			data[kind] = { "trainers": Math.round(entry.trainers / Math.max(1, this.decisions) * 10) / 10, "idleShare": Math.round(entry.idle / entry.trainers * 100) / 100 };
+		this.production.clear();
+		this.line("PROD", timeMs, data);
 	}
 
 	line(tag, timeMs, data)
