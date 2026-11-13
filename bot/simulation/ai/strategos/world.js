@@ -258,6 +258,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			continue;
 		trainers.push(Object.freeze({
 			"id": ent.id(),
+			"template": ent.templateName(),
+			"batchTimeModifier": +(ent.get("Trainer/BatchTimeModifier") || 1),
 			"queueLength": queue.length,
 			"trainable": Object.freeze(trainable)
 		}));

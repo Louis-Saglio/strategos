@@ -1,4 +1,4 @@
-import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
+import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -20,9 +20,10 @@ const SHARE_REPORT_STEP = 0.05;
 
 export class Strategy
 {
-	constructor(codes)
+	constructor(codes, catalog)
 	{
 		this.codes = codes;
+		this.catalog = catalog;
 		this.shares = {};
 		for (const code of codes)
 			this.shares[code] = OPENING.gatherShares[code] || 0;
@@ -68,9 +69,10 @@ export class Strategy
 	{
 		const weights = {};
 		let total = 0;
+		const planned = productionFlow(world, this.catalog, OPENING.military.civilianTarget);
 		for (const code of this.codes)
 		{
-			const flow = world.demand.spendRate[code] * DEMAND_HORIZON_S;
+			const flow = Math.max(world.demand.spendRate[code], planned[code]) * DEMAND_HORIZON_S;
 			const shortfall = Math.max(0, world.demand.unmet[code] + STOCK_BUFFER - world.resources[code]);
 			weights[code] = flow + SHORTFALL_WEIGHT * shortfall;
 			total += weights[code];

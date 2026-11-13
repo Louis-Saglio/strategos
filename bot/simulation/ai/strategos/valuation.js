@@ -15,6 +15,36 @@ const EXCHANGE_BUFFER = 100;
 const EXCHANGE_KEEP = 200;
 const PRICE_FLOOR = 0.1;
 
+export const TRAINING_BATCH = 5;
+
+export function productionFlow(world, catalog, civilianTarget)
+{
+	const flow = {};
+	for (const code of world.codes)
+		flow[code] = 0;
+	const civilians = world.workers.filter(worker => !worker.soldier).length < civilianTarget;
+	for (const trainer of world.trainers)
+	{
+		const settlement = catalog.isSettlement(trainer.template);
+		const civilian = settlement && civilians && trainer.trainable.some(name => catalog.isCivilian(name));
+		const wanted = name => civilian ? catalog.isCivilian(name) : catalog.isFighter(name);
+		let cheapest = null;
+		for (const name of trainer.trainable)
+			if (wanted(name) && (!cheapest || catalog.costSum(name) < catalog.costSum(cheapest) ||
+				(catalog.costSum(name) === catalog.costSum(cheapest) && name < cheapest)))
+				cheapest = name;
+		if (!cheapest)
+			continue;
+		const seconds = catalog.buildTime(cheapest) * Math.pow(TRAINING_BATCH, trainer.batchTimeModifier) / TRAINING_BATCH;
+		if (!(seconds > 0))
+			continue;
+		const cost = catalog.cost(cheapest);
+		for (const code of world.codes)
+			flow[code] += cost[code] / seconds;
+	}
+	return flow;
+}
+
 export function exchangeOutlook(world)
 {
 	const surplus = {};

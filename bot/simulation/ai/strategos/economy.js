@@ -1,8 +1,7 @@
-import { combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
+import { TRAINING_BATCH, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
-const BATCH_MAX = 5;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
@@ -64,14 +63,15 @@ export class Economy
 	batchSize(world, template)
 	{
 		const cost = this.catalog.cost(template);
-		let count = BATCH_MAX;
+		let affordable = TRAINING_BATCH;
 		for (const code of world.codes)
 			if (cost[code] > 0)
-				count = Math.min(count, Math.floor(world.resources[code] / cost[code]));
+				affordable = Math.min(affordable, Math.floor(world.resources[code] / cost[code]));
+		let count = TRAINING_BATCH;
 		const population = this.catalog.population(template);
 		if (population > 0)
 			count = Math.min(count, Math.floor(world.populationRoom / population));
-		return Math.max(1, count);
+		return Math.max(1, affordable > 0 ? Math.min(count, affordable) : count);
 	}
 
 	unitContext(world)
