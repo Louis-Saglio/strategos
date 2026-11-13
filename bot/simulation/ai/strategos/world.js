@@ -21,6 +21,7 @@ export class ResourceIndex
 		const kept = [];
 		const grid = this.grid(gameState);
 		const totals = new Float64Array(grid.width * grid.height);
+		const weighted = new Float64Array(2 * grid.width * grid.height);
 		const limit = SITE_RADIUS * SITE_RADIUS;
 		for (const ent of gameState.getResourceSupplies(code).values())
 		{
@@ -36,6 +37,8 @@ export class ResourceIndex
 				const i = Math.min(grid.width - 1, Math.max(0, Math.floor(position[0] / grid.cellSize)));
 				const j = Math.min(grid.height - 1, Math.max(0, Math.floor(position[1] / grid.cellSize)));
 				totals[i + j * grid.width] += amount;
+				weighted[2 * (i + j * grid.width)] += amount * position[0];
+				weighted[2 * (i + j * grid.width) + 1] += amount * position[1];
 			}
 			if (!points.length)
 				continue;
@@ -46,6 +49,7 @@ export class ResourceIndex
 				kept.push({ "id": ent.id(), "distance": best });
 		}
 		grid.totals[code] = totals;
+		grid.weighted[code] = weighted;
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
 		this.sites.set(code, kept.slice(0, SITES_KEPT).map(site => site.id));
 	}
@@ -57,7 +61,7 @@ export class ResourceIndex
 			const territory = gameState.sharedScript.territoryMap;
 			const size = territory.width * territory.cellSize;
 			const cells = Math.ceil(size / WEALTH_CELL);
-			this.wealth = { "cellSize": WEALTH_CELL, "width": cells, "height": cells, "totals": {} };
+			this.wealth = { "cellSize": WEALTH_CELL, "width": cells, "height": cells, "totals": {}, "weighted": {} };
 		}
 		return this.wealth;
 	}
@@ -198,6 +202,15 @@ export function captureStrength(ent)
 	return +(ent.get("Attack/Capture/Capture") || 0);
 }
 
+function anchorDistance(anchors, code, position)
+{
+	let best = Infinity;
+	for (const anchor of anchors)
+		if (anchor.types.includes(code))
+			best = Math.min(best, squareDistance(anchor.position, position));
+	return Math.sqrt(best);
+}
+
 export function squareDistance(a, b)
 {
 	const dx = a[0] - b[0];
@@ -272,6 +285,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		const soldier = ent.hasClass("Soldier");
 		let gathering = null;
 		let kind = null;
+		let haul = null;
+		let targetPosition = null;
 		if (state.includes("RETURNRESOURCE"))
 		{
 			const carried = ent.resourceCarrying();
@@ -283,6 +298,11 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			const type = target && target.resourceSupplyType();
 			gathering = type ? type.generic : null;
 			kind = type ? type.generic + "." + type.specific : null;
+			if (type && target.position() && isFinite(target.resourceSupplyAmount()))
+			{
+				targetPosition = target.position();
+				haul = anchorDistance(anchors, type.generic, targetPosition);
+			}
 		}
 		workers.push(Object.freeze({
 			"id": ent.id(),
@@ -293,6 +313,8 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"classes": ent.classes(),
 			"gathering": gathering,
 			"kind": kind,
+			"haul": haul,
+			"targetPosition": targetPosition,
 			"profile": catalog.gathering(ent),
 			"meanRates": Object.freeze(catalog.meanRates(ent)),
 			"target": orders.length && orders[0] ? orders[0].target : undefined,
@@ -458,11 +480,26 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	}
 
 	const gatherers = {};
+	const hauls = {};
+	const hauled = {};
 	for (const code of codes)
+	{
 		gatherers[code] = 0;
+		hauls[code] = 0;
+		hauled[code] = 0;
+	}
 	for (const worker of workers)
+	{
 		if (worker.gathering && gatherers[worker.gathering] !== undefined)
 			gatherers[worker.gathering] += 1;
+		if (worker.haul !== null && isFinite(worker.haul) && hauls[worker.gathering] !== undefined)
+		{
+			hauls[worker.gathering] += worker.haul;
+			hauled[worker.gathering] += 1;
+		}
+	}
+	for (const code of codes)
+		hauls[code] = hauled[code] ? hauls[code] / hauled[code] : 0;
 
 	const sites = {};
 	for (const code of codes)
@@ -514,6 +551,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 		"trainers": Object.freeze(trainers),
 		"workers": Object.freeze(workers),
 		"gatherers": Object.freeze(gatherers),
+		"hauls": Object.freeze(hauls),
 		"sites": Object.freeze(sites)
 	});
 }

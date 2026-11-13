@@ -92,6 +92,7 @@ StrategosBot.prototype.report = function(world, priorities)
 		"workers": world.workers.length,
 		"idle": world.workers.filter(worker => worker.idle).length,
 		"gatherers": world.gatherers,
+		"haul": Object.fromEntries(world.codes.map(code => [code, Math.round(world.hauls[code])])),
 		"resources": world.resources,
 		"spendRate": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.spendRate[code] * 100) / 100])),
 		"unmet": world.demand.unmet,

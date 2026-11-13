@@ -16,6 +16,9 @@ const WILD_FOOD_PER_GATHERER = 150;
 const DROPSITE_REACH = 28;
 const DROPSITE_MIN_GATHERERS = 3;
 const CLUSTER_RADIUS = 20;
+const DROPSITE_SEARCH = 160;
+const DROPSITE_DISTANCE_BIAS = 40;
+const DROPSITE_CELLS_TRIED = 4;
 const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 const PRODUCTION_STOCK_BASE = 300;
 const PRODUCTION_STOCK_PER_TRAINER = 300;
@@ -460,15 +463,44 @@ export class Construction
 			const template = this.cheapest(world, serves);
 			if (!template)
 				continue;
-			const cluster = this.densest(sites);
 			const half = this.halfSize(template);
-			const site = placement.around(cluster.position, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
-				this.catalog.footprint(template), BUILDING_MARGIN, this.reservedBoxes(world),
-				this.resourceZones(world, code).concat(this.farmBelts(world)));
-			if (site)
-				return this.constructRequest(world, template, site, priorities.values.dropsite, 1);
+			const zones = this.resourceZones(world, code).concat(this.farmBelts(world));
+			const reserved = this.reservedBoxes(world);
+			for (const centre of this.richestCells(world, code).concat([this.densest(sites).position]))
+			{
+				const site = placement.around(centre, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
+					this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
+				if (site)
+					return this.constructRequest(world, template, site, priorities.values.dropsite, 1);
+			}
 		}
 		return null;
+	}
+
+	richestCells(world, code)
+	{
+		const grid = world.wealth;
+		const totals = grid.totals[code];
+		const weighted = grid.weighted[code];
+		if (!totals || !weighted)
+			return [];
+		const home = world.centres[0].position;
+		const served = world.anchors.filter(anchor => anchor.types.includes(code));
+		const cells = [];
+		for (let index = 0; index < totals.length; ++index)
+		{
+			const amount = totals[index];
+			if (!(amount > 0))
+				continue;
+			const position = [weighted[2 * index] / amount, weighted[2 * index + 1] / amount];
+			const distance = Math.sqrt(squareDistance(position, home));
+			if (distance > DROPSITE_SEARCH || territoryAt(world.grids.territory, position[0], position[1]).owner !== this.player ||
+			    served.some(anchor => squareDistance(anchor.position, position) <= DROPSITE_REACH * DROPSITE_REACH))
+				continue;
+			cells.push({ position, "score": amount / (distance + DROPSITE_DISTANCE_BIAS), index });
+		}
+		cells.sort((a, b) => b.score - a.score || a.index - b.index);
+		return cells.slice(0, DROPSITE_CELLS_TRIED).map(cell => cell.position);
 	}
 
 	densest(sites)
