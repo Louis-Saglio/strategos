@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """Paired comparison of two tools/run.sh batches run on the same matches.
 
-    compare.py BASE_DIR VARIANT_DIR [--player N] [--at MIN] [TAG...]
+    compare.py BASE_DIR VARIANT_DIR [--player WHO] [--at MIN] [--by KEYS] [TAG...]
+
+WHO is a player number or an AI name, as in analyze.py (default: the first
+strategos player, else player 1).
 
 Matches are paired by tag (default: every tag present in both). Prints:
 
@@ -16,6 +19,10 @@ Matches are paired by tag (default: every tag present in both). Prints:
   lines, see analyze.py).
 - score: per match +1 when player N's side won, -1 when it lost, 0 on a
   timeout (failed matches are left out), compared like the metrics.
+
+--by KEY[,KEY...] (the keys of analyze.py --by) adds, per value of each
+KEY, the number of pairs and each batch's wins / losses / timeouts and mean
+score, so a change can be read setting by setting.
 
 A difference is only worth reading when it is larger than the noise of the
 unchanged matches; small batches are noise.
@@ -72,28 +79,7 @@ def paired_p(deltas):
     return reg_ibeta(df / 2, 0.5, df / (df + t * t))
 
 
-def side_of(row, player):
-    players = row["spec"].get("players", [])
-    team = players[player - 1].get("team") if 0 < player <= len(players) else None
-    return f"T{team}" if team else f"P{player}"
-
-
-def side_result(row, player):
-    """win / loss / timeout / fail for player's side; a timeout with a side
-    ahead on points (analyze.POINTS_RATIO) counts as that side's win."""
-    if row["outcome"] in ("none", "?"):
-        return "fail"
-    if row["outcome"] == "timeout":
-        return "timeout"
-    if row["outcome"].endswith(" ahead"):
-        return "win" if row["outcome"].split()[0] == side_of(row, player) else "loss"
-    st = row["stats"].get(player, {}).get("playerState")
-    return {"won": "win", "defeated": "loss"}.get(st, "fail")
-
-
-def score(row, player):
-    """+1 when player's side won (or led on points at the limit), -1 when it lost, 0 on a timeout, None on a failure."""
-    return {"win": 1, "loss": -1, "timeout": 0}.get(side_result(row, player))
+side_result, score = analyze.side_result, analyze.score
 
 
 def main():
@@ -101,8 +87,9 @@ def main():
     ap.add_argument("base")
     ap.add_argument("variant")
     ap.add_argument("tags", nargs="*")
-    ap.add_argument("--player", type=int, default=1)
+    ap.add_argument("--player")
     ap.add_argument("--at", type=float)
+    ap.add_argument("--by", default="")
     a = ap.parse_args()
     base = {r["tag"]: r for r in analyze.rows_for(a.base)}
     var = {r["tag"]: r for r in analyze.rows_for(a.variant)}
@@ -121,18 +108,20 @@ def main():
     for k, ts in differ.items():
         print(f"compare.py: WARNING: {k} differs between the batches on {len(ts)} pair(s) "
               f"({' '.join(ts[:8])}{' ...' if len(ts) > 8 else ''})", file=sys.stderr)
+    who = a.player or "strategos"
+    pid = lambda row: analyze.player_id(row, a.player)
     same = [t for t in tags if base[t]["hash"] != "-" and base[t]["hash"] == var[t]["hash"]]
     print(f"{len(tags)} paired matches, {len(same)} identical games")
 
     trans, counts = {}, {"base": {}, "variant": {}}
     for t in tags:
-        rb, rv = side_result(base[t], a.player), side_result(var[t], a.player)
+        rb, rv = side_result(base[t], pid(base[t])), side_result(var[t], pid(var[t]))
         counts["base"][rb] = counts["base"].get(rb, 0) + 1
         counts["variant"][rv] = counts["variant"].get(rv, 0) + 1
         if rb != rv:
             trans.setdefault(f"{rb} -> {rv}", []).append(t)
     for k in ("base", "variant"):
-        print(f"  player {a.player} side, {k}: " + ", ".join(f"{v} {r}" for r, v in sorted(counts[k].items())))
+        print(f"  player {who} side, {k}: " + ", ".join(f"{v} {r}" for r, v in sorted(counts[k].items())))
     for k, v in sorted(trans.items()):
         print(f"  {k}: {len(v)} ({' '.join(v[:12])}{' ...' if len(v) > 12 else ''})")
 
@@ -144,11 +133,11 @@ def main():
             vals = []
             for row in (base[t], var[t]):
                 if m == "score":
-                    v = score(row, a.player)
+                    v = score(row, pid(row))
                 elif m == "game_min":
                     v = row["game_min"]
                 else:
-                    st = row["stats"].get(a.player)
+                    st = row["stats"].get(pid(row))
                     v = analyze.metrics(st, row, a.at)[m] if st else None
                 try:
                     vals.append(float(v))
@@ -162,6 +151,22 @@ def main():
         mv = sum(p[1] for p in pairs) / len(pairs)
         p = paired_p([p[1] - p[0] for p in pairs])
         print(f"{m:10} {mb:10.1f} {mv:10.1f} {mv - mb:+10.1f} {('%.3f' % p) if p is not None else '-':>7}  {len(pairs)}")
+
+
+    for key in filter(None, a.by.split(",")):
+        rows = {"base": analyze.breakdown([base[t] for t in tags], key, a.player),
+                "variant": analyze.breakdown([var[t] for t in tags], key, a.player)}
+        values = [v for v, *_ in rows["base"]]
+        byv = {k: {v: (res, mean) for v, _, res, mean in rows[k]} for k in rows}
+        width = max([len(key)] + [len(v) for v in values])
+        fmt = lambda x: f"{x[0]['win']}/{x[0]['loss']}/{x[0]['timeout']}" + (f"/{x[0]['fail']}f" if x[0]["fail"] else "")
+        sc = lambda x: f"{x[1]:+.2f}" if x[1] is not None else "-"
+        print(f"\n{key.ljust(width)}  pairs  {'base W/L/T':>12} {'variant W/L/T':>14} {'base':>6} {'variant':>8}")
+        for v, n, _, _ in rows["base"]:
+            b, w = byv["base"][v], byv["variant"].get(v)
+            if w is None:
+                continue
+            print(f"{v.ljust(width)}  {n:5d}  {fmt(b):>12} {fmt(w):>14} {sc(b):>6} {sc(w):>8}")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,9 @@
  * because some settings constrain others (the cap type resets the cap,
  * locked teams make last man standing unavailable). Wonder, relic and
  * regicide settings are kept by the engine only when their victory condition
- * is active; Nomad only on random maps.
+ * is active; Nomad only on random maps. The last five are options of
+ * particular maps (day time, landscape, sea level rise, trigger difficulty,
+ * water level): left alone, the engine picks the first two at random.
  */
 
 const HARNESS_SETTERS = [
@@ -37,7 +39,13 @@ const HARNESS_SETTERS = [
 	["RelicCount", (s, v) => s.relic.setCount(+v)],
 	["RelicDuration", (s, v) => s.relic.setDuration(+v)],
 	["RegicideGarrison", (s, v) => s.regicideGarrison.setEnabled(!!v)],
-	["gameSpeed", (s, v) => s.gameSpeed.setSpeed(+v)]
+	["gameSpeed", (s, v) => s.gameSpeed.setSpeed(+v)],
+	// Options only some maps have; tools/run.py sends them for those maps only.
+	["Daytime", (s, v) => s.daytime.setValue(v)],
+	["Landscape", (s, v) => s.landscape.setValue(v)],
+	["SeaLevelRiseTime", (s, v) => s.seaLevelRise.setValue(+v)],
+	["TriggerDifficulty", (s, v) => s.triggerDifficulty.setValue(+v)],
+	["waterLevel", (s, v) => { s.waterLevel.value = v; }]
 ];
 
 const harnessBaseParseCmdLineArgs = parseCmdLineArgs;

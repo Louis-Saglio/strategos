@@ -29,10 +29,45 @@ Every match runs the documented `pyrogenesis` command line
 (`docs/pyrogenesis_cli.md` §3) in its own HOME, under `nice -n 10` /
 `ionice -c 3`, observer, `seed = aiseed`. Players are given in order with
 `-p AI[/DIFF[/BEHAVIOR]]:CIV[:TEAM]` (default `strategos:athen:1` vs
-`petra/3:rome:2`); a civ `*`, a map list `-M a,b` or a biome `*` picks one
-per seed with a fixed hash of the seed, so a seed range samples civs, maps
-and biomes reproducibly. Any number of players and teams; `--matches
-FILE.jsonl` runs an explicit list of match specs instead.
+`petra/3:rome:2`). Any number of players and teams; `--matches FILE.jsonl`
+runs an explicit list of match specs instead (tag, seed and players
+required; whatever else a line leaves out is drawn as for a seed).
+
+Sampling: every choice of a batch is one value or a set from which each
+seed draws one with a fixed hash of the seed, so a seed range covers the
+set reproducibly and two batches on the same seeds play the same matches.
+
+| Choice | One value | A set drawn per seed |
+|---|---|---|
+| civ | `-p strategos:athen:1` | `-p 'strategos:*:1'` (all 15) |
+| map | `-M random/mainland` | `-M a,b`, `-M '*'` (the 82 random maps, demo maps excluded), `-M '*land'` (67), `-M '*naval'` (15, by the map's `naval` keyword) |
+| biome | `-b generic/temperate` | `-b a,b`, `-b '*'` (the biomes the drawn map supports) |
+| size | `-s 192` | `-s 128,192,256` |
+| placement | `-P circle` | `-P circle,river`, `-P '*'` (the placements the drawn map supports) |
+| victory | `-V conquest -V wonder` (one combination) | `-V conquest,conquest_units,conquest+wonder` (alternatives, `+` joins a combination) |
+| setting | `-S PopulationCap=200` | `-S PopulationCap=150,200,300` |
+| player slot | the `-p` order | `--rotate` (the `-p` list rotated; team and civ follow the player) |
+
+A draw outside the scope of the goal (`SCOPE` in `run.py`: fewer than
+128 / 192 / 256 / 320 tiles for 2 / 3-4 / 5-6 / 7-8 players, fewer than
+100 population a player once a team or world cap is shared out, last man
+standing with locked teams) is redrawn; a combination that cannot be
+redrawn (nothing sampled) runs with a warning. Before the batch starts the
+runner prints the draw counts of every choice that took more than one
+value (`run: draws size: 128 18, 192 26, ...`): hash picks are uneven on
+short ranges, so read them before trusting a per-value result.
+
+Each map gets only what it supports, read from its `.json` in the 0 A.D.
+source checkout (`ZEROAD_SRC`, default `~/Work/0ad`) or in `scenarios/`: a
+biome only when the map declares `SupportedBiomes` (47 random maps have
+none), a placement only when it declares `PlayerPlacements` (57 have none
+and refuse one), and its own options — `Daytime` (danubius, polar_sea),
+`Landscape` (unknown), `SeaLevelRiseTime` (extinct_volcano),
+`TriggerDifficulty` (jebel_barkal), `waterLevel` (flood). The engine would
+pick `Daytime` and `Landscape` at random, so they are drawn per seed; the
+others take the map's default; `-S` overrides any of them for the maps
+that have the option. A biome or placement the map does not offer is an
+error, not a fallback.
 
 Duration (AGENTS.md, "Game duration"): `-l MIN` (in-game limit) is
 mandatory and must be > 0 — pick the shortest one that answers the
@@ -50,6 +85,10 @@ tools/run.sh -l 20 -p strategos:mace:1 -p strategos:pers:1 -p petra/5:rome:2 -p 
     -P river tmp/2v2 1-10                                            # team game
 tools/run.sh -l 20 -p strategos:athen:1 -p brennus:gaul:2 tmp/vs-brennus 1-20
 tools/run.sh -l 15 -m strategos=tmp/variant/bot tmp/ab/variant 1-40  # A/B: a modified copy
+tools/run.sh -l 30 -p 'strategos:*:1' -p 'petra/5:*:2' -M '*' -b '*' -P '*' tmp/maps 1-164   # every map
+tools/run.sh -l 30 -p 'strategos:*:1' -p 'petra/5:*:2' -b '*' -P '*' --rotate -s 128,192,256 \
+    -V conquest,conquest_units,conquest+wonder -S PopulationCap=150,200,300 \
+    -S StartingResources=300,1000,3000 tmp/settings 1-64                                    # settings sampled
 ```
 
 Mods: `strategos` is this repo's `bot/` (`-m strategos=DIR` for a copy),
@@ -85,9 +124,11 @@ The defaults of a batch:
 |---|---|---|
 | map | `-M` | `random/mainland` |
 | map size | `-s` | 192 tiles ("Small") |
-| biome | `-b` | `generic/temperate` (`*` = one generic biome per seed) |
-| player placement | `-P` | `circle` |
+| biome | `-b` | `generic/temperate` (none on a map without biomes) |
+| player placement | `-P` | `circle` (none on a map without placements) |
 | victory conditions | `-V` (repeatable) | `conquest` |
+| `Daytime` / `Landscape` | `-S` | one of the map's per seed (maps that have them) |
+| `SeaLevelRiseTime` / `TriggerDifficulty` / `waterLevel` | `-S` | the map's default (maps that have them) |
 | map and AI seed | `SEED` | the seed |
 | players, civs, teams, AI difficulty/behaviour | `-p` | see above |
 | `PopulationCapType` / `PopulationCap` | `-S` | `player` / 300 |
@@ -112,9 +153,8 @@ refused. The `-S` settings reach the engine through
 (`commands.txt`) and compares them with the spec: a setting the engine did
 not apply as asked (e.g. last man standing with locked teams, which the
 game refuses) is a FAILURE at the end of the batch; a setting the replay
-carries that the batch did not choose (a map-specific option such as
-`Daytime` or `TriggerDifficulty`) is a WARNING, to be added to
-`GAME_SETTINGS`. `compare.py` warns when paired matches differ in
+carries that the batch did not choose is a WARNING, to be added to
+`GAME_SETTINGS` or `MAP_OPTIONS`. `compare.py` warns when paired matches differ in
 anything but their mods (settings, limit, map, players).
 
 Per match, in `OUTDIR/TAG/`: `stdout.log` (engine output: harness lines,
@@ -206,17 +246,27 @@ tools/run.sh -l 7 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
 ### analyze.py, compare.py
 
 ```sh
-tools/analyze.py OUTDIR [TAG...] [--metrics] [--player N] [--at MIN] [--tsv F] [--det A,B]
-tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player N] [--at MIN]
+tools/analyze.py OUTDIR [TAG...] [--metrics] [--player WHO] [--at MIN] [--by KEYS] [--tsv F] [--det A,B]
+tools/compare.py BASE_DIR VARIANT_DIR [TAG...] [--player WHO] [--at MIN] [--by KEYS]
 ```
+
+`--player WHO` is a player number or an AI name (that AI's first player,
+wherever `--rotate` put it); the default is the first `strategos` player,
+else player 1. `--by KEY[,KEY...]` breaks WHO's results down per value of
+`map`, `biome`, `size`, `placement`, `victory`, `civ`, `slot`, `opponent`,
+`opponent_civ` or any game setting (`PopulationCap`, `Landscape`, ...):
+`analyze.py` prints games / win / loss / timeout / fail / mean score per
+value, `compare.py` the pairs and both batches' W/L/T and score.
 
 `analyze.py`: per match the outcome (`T<n> won`, `P<n> won`, `timeout`,
 `T<n> ahead` / `P<n> ahead` — a timeout where that side's assets in the
 last standing line are at least `POINTS_RATIO` (3) x every other side's,
 which `compare.py` scores as that side's win — `none`), the side the
-harness made resign, each player's `ai/civ:team=W|L|T`, map/biome, game minutes, error
+harness made resign, each player's `ai/civ:team=W|L|T`, map/biome, the
+setup (size, placement, victory, non-default settings; shown when the
+matches differ in it), game minutes, error
 lines, failed AI creation, host, exit, wall seconds, turns/s and a hash of
-the statistics (equal hash = identical game). `--metrics` adds player N's
+the statistics (equal hash = identical game). `--metrics` adds WHO's
 end-of-game resources gathered (per resource, total, and `gath_ratio`: the
 total over the best other player's total), units trained/lost/killed,
 kill/loss value ratio, buildings, population and map control. `--at MIN`
@@ -225,7 +275,7 @@ harness eco line at minute MIN instead, so one batch can be judged at
 several minutes.
 
 `compare.py`: pairs two batches by tag; identical-game count, outcome
-transitions of player N's side, and for each metric the means, the mean
+transitions of WHO's side, and for each metric the means, the mean
 paired delta and the paired t-test p-value.
 
 ## Seeing a match

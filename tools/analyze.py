@@ -15,6 +15,9 @@ stdout.log, in natural order):
   (crash);
 - players: one `id:ai/civ[:team]=W|L|T` item per player (W won, L defeated,
   T still active at the time limit);
+- map: map/biome (`-` for a map without biomes); setup, shown when the
+  matches of the batch differ in it: size, placement, victory conditions
+  and every game setting that is not the runner's default;
 - game_min: in-game minutes (turns / 300, one turn = 200 ms);
 - errors: lines with ERROR, "JavaScript error" or "script exception";
   failed_ai: "Failed to create AI player" (a wrong AI name plays an idle
@@ -26,9 +29,19 @@ stdout.log, in natural order):
   equal hashes mean identical games (determinism checks).
 
 Usage:
-  analyze.py [--tsv FILE] [--det A,B] [--metrics] [--player N] [--at MIN] OUTDIR [TAG...]
+  analyze.py [--tsv FILE] [--det A,B] [--metrics] [--player WHO] [--at MIN] [--by KEYS] OUTDIR [TAG...]
 
---metrics adds, for player N (default 1), statistics from the end of game:
+--player WHO is a player number or an AI name (the first player run by that
+AI, wherever --rotate put it); default: the first `strategos` player, else
+player 1.
+
+--by KEY[,KEY...] adds a breakdown of WHO's results (win / loss / timeout /
+fail and the mean score, as compare.py counts them) per value of each KEY,
+with the number of games each value drew: map, biome, size, placement,
+victory, civ, slot (WHO's), opponent, opponent_civ, or any game setting
+(PopulationCap, StartingResources, Landscape, ...).
+
+--metrics adds, for player WHO, statistics from the end of game:
 resources gathered (food/wood/stone/metal and their total), the ratio of
 that total to the best other player's total, units trained, units lost,
 enemy units killed, value killed / value lost, buildings constructed,
@@ -171,6 +184,107 @@ def metrics(stat, row=None, minute=None):
     }
 
 
+def player_id(row, who=None):
+    """The player number `who` designates in a match: a number, an AI name
+    (its first player), or by default the first strategos player, else 1."""
+    players = row["spec"].get("players", [])
+    if who is not None and str(who).isdigit():
+        return int(who)
+    for i, p in enumerate(players, 1):
+        if p["ai"] == (who or "strategos"):
+            return i
+    return 1 if who is None else 0
+
+
+def side_of(row, player):
+    players = row["spec"].get("players", [])
+    team = players[player - 1].get("team") if 0 < player <= len(players) else None
+    return f"T{team}" if team else f"P{player}"
+
+
+def side_result(row, player):
+    """win / loss / timeout / fail for player's side; a timeout with a side
+    ahead on points (POINTS_RATIO) counts as that side's win."""
+    if row["outcome"] in ("none", "?"):
+        return "fail"
+    if row["outcome"] == "timeout":
+        return "timeout"
+    if row["outcome"].endswith(" ahead"):
+        return "win" if row["outcome"].split()[0] == side_of(row, player) else "loss"
+    st = row["stats"].get(player, {}).get("playerState")
+    return {"won": "win", "defeated": "loss"}.get(st, "fail")
+
+
+def score(row, player):
+    """+1 when player's side won (or led on points at the limit), -1 when it lost, 0 on a timeout, None on a failure."""
+    return {"win": 1, "loss": -1, "timeout": 0}.get(side_result(row, player))
+
+
+def spec_value(row, key, player):
+    """The value of a --by key in a match, as a string."""
+    spec = row["spec"]
+    players = spec.get("players", [])
+    others = [p for i, p in enumerate(players, 1) if i != player]
+    if key == "civ":
+        v = players[player - 1]["civ"] if 0 < player <= len(players) else None
+    elif key == "slot":
+        v = player
+    elif key == "opponent":
+        v = " ".join(sorted(f"{p['ai']}/{p['diff']}/{p['behavior']}" for p in others))
+    elif key == "opponent_civ":
+        v = " ".join(p["civ"] for p in others)
+    elif key == "victory":
+        v = "+".join(spec.get("victory", []))
+    elif key == "map":
+        v = spec.get("map", "-").split("/")[-1]
+    elif key in spec:
+        v = spec[key]
+    else:
+        v = spec.get("settings", {}).get(key)
+    return "-" if v is None else v if isinstance(v, str) else json.dumps(v)
+
+
+def breakdown(rows, key, who=None):
+    """[(value, games, {result: count}, mean score | None)] for one --by key."""
+    groups = {}
+    for r in rows:
+        player = player_id(r, who)
+        groups.setdefault(spec_value(r, key, player), []).append(side_result(r, player))
+    out = []
+    for value in sorted(groups, key=natural):
+        res = groups[value]
+        played = [x for x in res if x != "fail"]
+        mean = (res.count("win") - res.count("loss")) / len(played) if played else None
+        out.append((value, len(res), {k: res.count(k) for k in ("win", "loss", "timeout", "fail")}, mean))
+    return out
+
+
+def print_breakdown(rows, key, who=None):
+    table = breakdown(rows, key, who)
+    width = max([len(key)] + [len(v) for v, *_ in table])
+    print(f"\n{key.ljust(width)}  games   win  loss  timeout  fail  score")
+    for value, n, res, mean in table:
+        print(f"{value.ljust(width)}  {n:5d} {res['win']:5d} {res['loss']:5d} {res['timeout']:8d} {res['fail']:5d}  "
+              + (f"{mean:+.2f}" if mean is not None else "-"))
+
+
+# The runner's defaults (tools/run.py GAME_SETTINGS): a setup shows what departs from them.
+DEFAULT_SETTINGS = {
+    "PopulationCapType": "player", "PopulationCap": 300, "StartingResources": 300, "Ceasefire": 0,
+    "ExploreMap": False, "RevealMap": False, "AllyView": False, "DisableTreasures": True,
+    "DisableSpies": False, "Nomad": False, "LockTeams": False, "LastManStanding": False,
+    "CheatsEnabled": False, "WonderDuration": 10, "RelicCount": 2, "RelicDuration": 10,
+    "RegicideGarrison": False, "gameSpeed": 1,
+}
+
+
+def setup(spec):
+    parts = [str(spec.get("size") or "-"), spec.get("placement") or "-", "+".join(spec.get("victory", [])) or "-"]
+    parts += [f"{k}={json.dumps(v) if not isinstance(v, str) else v}"
+              for k, v in spec.get("settings", {}).items() if DEFAULT_SETTINGS.get(k, None) != v]
+    return " ".join(parts)
+
+
 def analyze(outdir, tag):
     d = os.path.join(outdir, tag)
     path = os.path.join(d, "stdout.log")
@@ -210,7 +324,8 @@ def analyze(outdir, tag):
         "tag": tag,
         "outcome": outcome,
         "players": " ".join(items),
-        "map": f"{spec.get('map', '-').split('/')[-1]}/{spec.get('biome', '-').split('/')[-1]}",
+        "map": f"{spec.get('map', '-').split('/')[-1]}/{(spec.get('biome') or '-').split('/')[-1]}",
+        "setup": setup(spec),
         "game_min": f"{turns / 300:.1f}" if turns else "-",
         "errors": len(ERROR_RE.findall(text)),
         "failed_ai": int("Failed to create AI player" in text),
@@ -248,15 +363,18 @@ def main():
     ap.add_argument("--tsv")
     ap.add_argument("--det", help="comma pair of tags whose hashes must match")
     ap.add_argument("--metrics", action="store_true")
-    ap.add_argument("--player", type=int, default=1)
+    ap.add_argument("--player")
     ap.add_argument("--at", type=float)
+    ap.add_argument("--by", default="")
     a = ap.parse_args()
     rows = rows_for(a.outdir, a.tags)
     cols = list(COLUMNS)
+    if len({r["setup"] for r in rows}) > 1:
+        cols.insert(cols.index("map") + 1, "setup")
     if a.metrics:
         cols += METRICS
         for r in rows:
-            st = r["stats"].get(a.player)
+            st = r["stats"].get(player_id(r, a.player))
             r.update(metrics(st, r, a.at) if st else {m: "-" for m in METRICS})
     widths = {c: max([len(c)] + [len(str(r[c])) for r in rows]) for c in cols}
     print("  ".join(c.ljust(widths[c]) for c in cols))
@@ -270,6 +388,8 @@ def main():
           f"; {count(lambda r: r['outcome'] == 'killed')} killed by the wall-clock cap, "
           f"{count(lambda r: r['errors'])} with errors, {count(lambda r: r['failed_ai'])} failed-AI, "
           f"{count(lambda r: r['exit'] not in (0, '-'))} nonzero exit")
+    for key in filter(None, a.by.split(",")):
+        print_breakdown(rows, key, a.player)
     if a.tsv:
         with open(a.tsv, "w") as fh:
             fh.write("\t".join(cols) + "\n")

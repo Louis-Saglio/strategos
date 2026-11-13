@@ -31,6 +31,28 @@ Examples: -p strategos:athen:1 -p petra/5:*:2
 Maps and biomes (-M / -b) accept a comma-separated list or *: each seed
 picks one deterministically (biome * = the generic biomes).
 
+Sampling: every choice of a batch can be one value or a set from which each
+seed draws one with a fixed hash of the seed, so a seed range covers the
+set reproducibly and two batches run on the same seeds play the same
+matches. -M, -b, -s and -P take comma-separated lists; -M also takes *
+(every playable random map), *land and *naval (by the map's "naval"
+keyword); -b * and -P * mean whatever the drawn map supports. -V takes
+alternatives separated by commas, each a +-joined combination
+(-V conquest,conquest+wonder,conquest_units); -S KEY=V1,V2,V3 draws the
+setting; --rotate draws the player slots (the -p list rotated). A draw that
+falls outside the scope of the goal (SCOPE below: too many players for the
+map size, too little population per player, last man standing with locked
+teams) is redrawn; the draw counts of every sampled choice are printed
+before the batch starts, because hash picks are uneven on short ranges.
+
+Each map is given only what it supports, read from its .json in the 0 A.D.
+source checkout (ZEROAD_SRC, default ~/Work/0ad) or in scenarios/: a biome
+and a player placement only when the map declares them, and its own options
+(MAP_OPTIONS: Daytime, Landscape, SeaLevelRiseTime, TriggerDifficulty,
+waterLevel). The engine would pick Daytime and Landscape at random, so they
+are drawn per seed; the others take the map's default; -S overrides any of
+them for the maps that have the option.
+
 AI mods: strategos is this repo's bot/ (or -m strategos=DIR); brennus is
 ~/Work/brennus at a commit (-m brennus=GIT_DIR@REV, default HEAD), with its
 own harness scripts stripped so only its AI is mounted. Every mod used is
@@ -57,13 +79,19 @@ seconds, turns, the settings the engine applied, mismatches) and home/
 
 Options:
   -p SPEC        player (repeatable, see above)
-  -M MAPS        map(s) (default random/mainland)
-  -b BIOMES      biome(s) (default generic/temperate)
-  -s SIZE        random-map size in tiles (default 192)
-  -P PLACEMENT   random-map player placement (default circle)
-  -V VICTORY     victory condition, repeatable (default conquest)
-  -S KEY=VALUE   game setting, repeatable, overriding GAME_SETTINGS (below);
-                 VALUE is JSON (true, 200, "team") or a bare string
+  -M MAPS        map(s), or * / *land / *naval (default random/mainland)
+  -b BIOMES      biome(s), or * for the map's own (default generic/temperate)
+  -s SIZES       random-map size(s) in tiles (default 192)
+  -P PLACEMENTS  random-map player placement(s), or * for the map's own
+                 (default circle)
+  -V VICTORY     victory condition, repeatable for a combination; or one -V
+                 with comma-separated alternatives, each a +-joined
+                 combination (default conquest)
+  -S KEY=VALUE   game setting, repeatable, overriding GAME_SETTINGS or a
+                 map option (MAP_OPTIONS); VALUE is JSON (true, 200, "team")
+                 or a bare string, or a comma-separated set drawn per seed
+  --rotate       draw the player slots per seed: the -p list is rotated, so
+                 every AI plays every slot (teams and civs follow the player)
   -l MIN         in-game time limit in minutes — REQUIRED, > 0 (AGENTS.md,
                  "Game duration": the shortest limit that answers the question)
   -R RATIO       harness resignation: a side whose assets (units, structures
@@ -77,7 +105,8 @@ Options:
   -j N           override the local slot count
   --unverified   also use hosts whose determinism is not verified
   --matches F    run the matches of a JSON-lines file instead (one spec per
-                 line, keys as in result.json "spec"; tag and seed required)
+                 line, keys as in result.json "spec"; tag, seed and players
+                 required, anything else missing is drawn as for a seed)
   --verify-host HOST [SEEDS]  run SEEDS (default 1-3) on local and on HOST
                  and mark HOST verified in tools/hosts.json if every game is
                  bit-identical (statistics hash)
@@ -90,7 +119,9 @@ Options:
 import argparse
 import base64
 import concurrent.futures
+import collections
 import datetime
+import functools
 import hashlib
 import json
 import os
@@ -113,16 +144,14 @@ SCENARIOS = os.path.join(REPO, "scenarios")
 SRC = os.path.expanduser(os.environ.get("ZEROAD_SRC", "~/Work/0ad"))
 CIVS = ["athen", "brit", "cart", "gaul", "germ", "han", "iber", "kush", "mace", "maur",
         "pers", "ptol", "rome", "sele", "spart"]
-GENERIC_BIOMES = ["generic/aegean", "generic/alpine", "generic/arctic", "generic/autumn", "generic/india",
-                  "generic/nubia", "generic/sahara", "generic/savanna", "generic/steppe", "generic/temperate"]
+PUBLIC = os.path.join(SRC, "binaries/data/mods/public")
 BUILTIN_AIS = {"petra"}
 NO_AI = "none"
 # Every game setting the public autostart command line cannot set, passed to
 # the harness (tools/harness/autostart/harness_settings.js) and checked after
 # each match against the replay. Keys are the engine's InitAttributes names;
-# -S KEY=VALUE overrides one. Map-specific settings (Daytime, Landscape,
-# WaterLevel, SeaLevelRise, TriggerDifficulty) are not set: a match whose
-# replay carries a setting nobody chose is reported as uncontrolled.
+# -S KEY=VALUE overrides one. A match whose replay carries a setting nobody
+# chose is reported as uncontrolled.
 GAME_SETTINGS = {
     "PopulationCapType": "player", "PopulationCap": 300, "StartingResources": 300, "Ceasefire": 0,
     "ExploreMap": False, "RevealMap": False, "AllyView": False, "DisableTreasures": True,
@@ -130,6 +159,14 @@ GAME_SETTINGS = {
     "CheatsEnabled": False, "WonderDuration": 10, "RelicCount": 2, "RelicDuration": 10,
     "RegicideGarrison": False, "gameSpeed": 1,
 }
+# Options only some maps have (map_info), with a value of their type. They go
+# to the harness with the GAME_SETTINGS and are checked the same way.
+MAP_OPTIONS = {"Daytime": "", "Landscape": "", "SeaLevelRiseTime": 0, "TriggerDifficulty": 0, "waterLevel": ""}
+# The scope of the goal (AGENTS.md: degenerate combinations are out of it): the
+# smallest map size for a player count, and the smallest population a player
+# may end up with once a team or world cap is shared out.
+SCOPE = {"min_tiles": {2: 128, 3: 192, 4: 192, 5: 256, 6: 256, 7: 320, 8: 320}, "min_population": 100}
+REDRAWS = 32
 # Kept by the engine only when they apply (their victory condition, a random map).
 CONDITIONAL_SETTINGS = {"WonderDuration", "RelicCount", "RelicDuration", "RegicideGarrison", "Nomad"}
 # Settings the replay carries that come from the command line or the map itself.
@@ -179,21 +216,193 @@ def pick(options, seed, salt):
     return options[int.from_bytes(h[:4], "big") % len(options)]
 
 
-def expand(spec_lists, seed):
-    """Resolve the per-seed choices (*, lists) of a batch into one match spec."""
-    maps, biomes, players = spec_lists["maps"], spec_lists["biomes"], spec_lists["players"]
-    spec = {k: v for k, v in spec_lists.items() if k not in ("maps", "biomes", "players")}
-    spec["seed"] = seed
-    spec["map"] = pick(maps, seed, "map") if len(maps) > 1 else maps[0]
-    blist = GENERIC_BIOMES if biomes == ["*"] else biomes
-    spec["biome"] = pick(blist, seed, "biome") if len(blist) > 1 else blist[0]
-    spec["players"] = []
-    for i, p in enumerate(players, 1):
-        q = dict(p)
-        if q["civ"] == "*":
-            q["civ"] = pick(CIVS, seed, f"civ{i}")
-        spec["players"].append(q)
+def draw(options, seed, salt, attempt=0):
+    """One of `options` for this seed; `attempt` > 0 is a redraw after an out-of-scope combination."""
+    if len(options) == 1:
+        return options[0]
+    return pick(options, seed, f"{salt}#{attempt}" if attempt else salt)
+
+
+@functools.lru_cache(maxsize=None)
+def biome_ids():
+    root = os.path.join(PUBLIC, "maps/random/rmbiome")
+    if not os.path.isdir(root):
+        die(f"no 0 A.D. source checkout at {SRC} (ZEROAD_SRC): map metadata cannot be read")
+    return sorted(f"{d}/{f[:-5]}" for d in os.listdir(root) if os.path.isdir(os.path.join(root, d))
+                  for f in os.listdir(os.path.join(root, d)) if f.endswith(".json"))
+
+
+def map_settings(name):
+    """The "settings" object of a random map's .json (scenarios/ first), or None."""
+    for root in (os.path.join(SCENARIOS, "maps"), os.path.join(PUBLIC, "maps")):
+        path = os.path.join(root, name + ".json")
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as fh:
+                return json.load(fh).get("settings")
+    return None
+
+
+@functools.lru_cache(maxsize=None)
+def map_info(name):
+    """What the game setup can choose on a map, as the engine's gamesettings
+    attributes read it from the map's .json: {"biomes": [ids], "placements":
+    [ids], "options": {MAP_OPTIONS key: {"values": [...] | None, "range":
+    (min, max) | None, "default": value | None}}}. Only random maps have any."""
+    info = {"biomes": [], "placements": [], "options": {}}
+    if not name.startswith("random/"):
+        return info
+    s = map_settings(name)
+    if s is None:
+        die(f"map {name!r}: no {name}.json with settings in scenarios/ or in {PUBLIC}/maps")
+    supported = s.get("SupportedBiomes")
+    if isinstance(supported, str):
+        info["biomes"] = [b for b in biome_ids() if b.startswith(supported)]
+    elif supported:
+        info["biomes"] = [b for b in biome_ids() if b in supported]
+    info["placements"] = list(s.get("PlayerPlacements") or [])
+    opts = info["options"]
+    if s.get("Daytime"):
+        opts["Daytime"] = {"values": [d["Id"] for d in s["Daytime"]], "range": None, "default": None}
+    if s.get("Landscapes"):
+        opts["Landscape"] = {"values": [i["Id"] for g in s["Landscapes"] for i in g["Items"]], "range": None,
+                             "default": None}
+    if s.get("SeaLevelRise"):
+        r = s["SeaLevelRise"]
+        opts["SeaLevelRiseTime"] = {"values": None, "range": (r["Min"], r["Max"]), "default": r["Default"]}
+    if s.get("SupportedTriggerDifficulties"):
+        with open(os.path.join(PUBLIC, "simulation/data/settings/trigger_difficulties.json"), encoding="utf-8") as fh:
+            levels = [d for d in json.load(fh)["Data"] if d["Name"] in s["SupportedTriggerDifficulties"]["Values"]]
+        opts["TriggerDifficulty"] = {"values": [d["Difficulty"] for d in levels], "range": None,
+                                     "default": next(d["Difficulty"] for d in levels if d.get("Default"))}
+    if s.get("WaterLevels"):
+        opts["waterLevel"] = {"values": [w["Name"] for w in s["WaterLevels"]], "range": None,
+                              "default": next(w["Name"] for w in s["WaterLevels"] if w.get("Default"))}
+    return info
+
+
+def random_maps(kind):
+    """-M *, *land, *naval: the random maps of the game, demo maps excluded."""
+    out = []
+    root = os.path.join(PUBLIC, "maps/random")
+    if not os.path.isdir(root):
+        die(f"no 0 A.D. source checkout at {SRC} (ZEROAD_SRC): the map list cannot be read")
+    for f in sorted(os.listdir(root)):
+        if not f.endswith(".json"):
+            continue
+        s = map_settings("random/" + f[:-5])
+        if not s or "Script" not in s or "demo" in (s.get("Keywords") or []):
+            continue
+        naval = "naval" in (s.get("Keywords") or [])
+        if kind == "*" or (kind == "*naval") == naval:
+            out.append("random/" + f[:-5])
+    return out
+
+
+def supported_choice(kind, mapname, supported, wanted, given, seed, attempt):
+    """The biome or placement of a match: None when the map has none, else one
+    the map supports among the batch's (`*` = all of the map's)."""
+    if kind in given:
+        value = given[kind]
+        if (value is None) != (not supported) or (supported and value not in supported):
+            die(f"{mapname}: {kind} {value!r} given, the map supports {supported or 'none'}")
+        return value
+    if not supported:
+        return None
+    options = supported if wanted == ["*"] else [w for w in wanted if w in supported]
+    if not options:
+        die(f"{mapname} supports none of the {kind}s {', '.join(wanted)} (it has {', '.join(supported)}): "
+            f"give one of them or '*'")
+    return draw(options, seed, kind, attempt)
+
+
+def out_of_scope(spec):
+    """Why a match is outside the scope of the goal, or None."""
+    n, s = len(spec["players"]), spec["settings"]
+    if spec["size"] and spec["size"] < SCOPE["min_tiles"].get(n, max(SCOPE["min_tiles"].values())):
+        return f"{n} players on {spec['size']} tiles"
+    teams = collections.Counter(p["team"] for p in spec["players"] if p.get("team"))
+    share = {"team": max(teams.values(), default=1), "world": n}.get(s["PopulationCapType"], 1)
+    if s["PopulationCap"] / share < SCOPE["min_population"]:
+        return f"population cap {s['PopulationCap']} per {s['PopulationCapType']}: {s['PopulationCap'] // share} a player"
+    if s["LastManStanding"] and (s["LockTeams"] or s["PopulationCapType"] == "team"):
+        return "last man standing with locked teams (a team cap locks them)"
+    return None
+
+
+def expand(base, seed, given=None):
+    """Resolve the per-seed choices of a batch into one match spec. `given`
+    (a --matches line) fixes any of them. Returns (spec, out-of-scope reason)."""
+    given = given or {}
+    for attempt in range(REDRAWS):
+        spec = expand_once(base, seed, given, attempt)
+        why = out_of_scope(spec)
+        if not why:
+            break
+    return spec, why
+
+
+def expand_once(base, seed, given, attempt):
+    spec = {"seed": seed, "limit_minutes": base["limit_minutes"]}
+    spec["map"] = given.get("map") or draw(base["maps"], seed, "map")
+    info = map_info(spec["map"])
+    is_random = spec["map"].startswith("random/")
+    spec["size"] = (given.get("size") or draw(base["sizes"], seed, "size", attempt)) if is_random else None
+    spec["biome"] = supported_choice("biome", spec["map"], info["biomes"], base["biomes"], given, seed, 0)
+    spec["placement"] = supported_choice("placement", spec["map"], info["placements"], base["placements"], given,
+                                         seed, attempt)
+    spec["victory"] = list(given.get("victory") or draw(base["victories"], seed, "victory", attempt))
+    fixed = given.get("settings", {})
+    spec["settings"] = {k: fixed[k] if k in fixed else draw(base["settings"][k], seed, k, attempt)
+                        for k in GAME_SETTINGS}
+    for key, opt in info["options"].items():
+        wanted = [fixed[key]] if key in fixed else base["settings"].get(key)
+        if wanted:
+            for v in wanted:
+                lo, hi = opt["range"] or (v, v)
+                if (opt["values"] is not None and v not in opt["values"]) or not lo <= v <= hi:
+                    die(f"{spec['map']}: {key}={v!r} is not one of {opt['values'] or opt['range']}")
+            spec["settings"][key] = draw(wanted, seed, key, attempt)
+        elif opt["default"] is not None:
+            spec["settings"][key] = opt["default"]
+        else:
+            spec["settings"][key] = draw(opt["values"], seed, key)
+    stray = set(fixed) - set(spec["settings"])
+    if stray:
+        die(f"{given.get('tag')}: setting(s) {', '.join(sorted(stray))} unknown or not an option of {spec['map']}")
+    if "players" in given:
+        spec["players"] = [parse_player(p) if isinstance(p, str) else dict(p) for p in given["players"]]
+        if any(p["civ"] == "*" for p in spec["players"]):
+            die(f"{given.get('tag')}: a --matches line names every civ")
+    else:
+        players = []
+        for i, p in enumerate(base["players"], 1):
+            q = dict(p)
+            if q["civ"] == "*":
+                q["civ"] = pick(CIVS, seed, f"civ{i}")
+            players.append(q)
+        k = pick(range(len(players)), seed, "slot") if base["rotate"] else 0
+        spec["players"] = players[k:] + players[:k]
     return spec
+
+
+def describe_draws(specs):
+    """One line per choice that took more than one value in the batch."""
+    def values(s):
+        out = {"map": s["map"].split("/", 1)[-1], "biome": s["biome"], "size": s["size"],
+               "placement": s["placement"], "victory": "+".join(s["victory"]),
+               "slots": ",".join(p["ai"] for p in s["players"])}
+        out.update({f"civ{i}": p["civ"] for i, p in enumerate(s["players"], 1)})
+        out.update(s["settings"])
+        return out
+    counts = {}
+    for s in specs:
+        for k, v in values(s).items():
+            counts.setdefault(k, collections.Counter())[json.dumps(v) if not isinstance(v, str) else v] += 1
+    lines = []
+    for k, c in counts.items():
+        if len(c) > 1 or sum(c.values()) < len(specs):
+            lines.append(f"run: draws {k}: " + ", ".join(f"{v} {n}" for v, n in sorted(c.items())))
+    return lines
 
 
 def engine_args(spec):
@@ -201,8 +410,11 @@ def engine_args(spec):
             f"-autostart-aiseed={spec['seed']}", "-autostart-nonvisual",
             f"-autostart-players={len(spec['players'])}"]
     if spec["map"].startswith("random/"):
-        args += [f"-autostart-size={spec['size']}", f"-autostart-biome={spec['biome']}",
-                 f"-autostart-placement={spec['placement']}"]
+        args.append(f"-autostart-size={spec['size']}")
+        if spec["biome"]:
+            args.append(f"-autostart-biome={spec['biome']}")
+        if spec["placement"]:
+            args.append(f"-autostart-placement={spec['placement']}")
     for v in spec["victory"]:
         args.append(f"-autostart-victory={v}")
     for i, p in enumerate(spec["players"], 1):
@@ -529,8 +741,8 @@ def check_settings(d, spec):
     expect("VictoryConditions", sorted(spec["victory"]), sorted(applied.get("VictoryConditions", [])))
     if spec["map"].startswith("random/"):
         expect("Size", spec["size"], applied.get("Size"))
-        expect("Biome", spec["biome"], applied.get("Biome"))
-        expect("PlayerPlacement", spec["placement"], applied.get("PlayerPlacement"))
+        expect("Biome", spec.get("biome"), applied.get("Biome"))
+        expect("PlayerPlacement", spec.get("placement"), applied.get("PlayerPlacement"))
     pdata = [p for p in applied.get("PlayerData", []) if p]
     if len(pdata) != len(spec["players"]):
         bad.append(f"players: wanted {len(spec['players'])}, engine applied {len(pdata)}")
@@ -550,19 +762,45 @@ def check_settings(d, spec):
 
 
 def parse_setting(text):
+    """-S KEY=VALUE or KEY=V1,V2,...: (key, [values]), each of the type of the key's default."""
     if "=" not in text:
         die(f"bad -S {text!r} (KEY=VALUE)")
     key, raw = text.split("=", 1)
-    if key not in GAME_SETTINGS:
-        die(f"unknown setting {key!r} (known: {', '.join(GAME_SETTINGS)})")
+    kinds = dict(GAME_SETTINGS, **MAP_OPTIONS)
+    if key not in kinds:
+        die(f"unknown setting {key!r} (known: {', '.join(kinds)})")
+
+    def parse(item):
+        try:
+            return json.loads(item)
+        except ValueError:
+            return item
     try:
-        value = json.loads(raw)
+        values = [json.loads(raw)]
     except ValueError:
-        value = raw
-    if type(value) is not type(GAME_SETTINGS[key]):
-        die(f"-S {key}: {raw!r} is not a {type(GAME_SETTINGS[key]).__name__} like the default "
-            f"{json.dumps(GAME_SETTINGS[key])}")
-    return key, value
+        values = [parse(item) for item in raw.split(",")]
+    for value in values:
+        if type(value) is not type(kinds[key]):
+            die(f"-S {key}: {raw!r} is not a {type(kinds[key]).__name__} like {json.dumps(kinds[key])}")
+    return key, values
+
+
+def parse_victories(args):
+    """-V: repeated for one combination, or one -V of comma-separated +-joined alternatives."""
+    args = args or ["conquest"]
+    if any("," in a or "+" in a for a in args):
+        if len(args) > 1:
+            die("-V: give either repeated conditions (one combination) or a single list of alternatives")
+        alternatives = [alt.split("+") for alt in args[0].split(",")]
+    else:
+        alternatives = [args]
+    root = os.path.join(PUBLIC, "simulation/data/settings/victory_conditions")
+    known = {f[:-5] for f in os.listdir(root)} if os.path.isdir(root) else None
+    for alt in alternatives:
+        for name in alt:
+            if known is not None and name not in known:
+                die(f"unknown victory condition {name!r} (known: {', '.join(sorted(known))})")
+    return alternatives
 
 
 def report_settings(results):
@@ -648,7 +886,7 @@ def main():
     ap.add_argument("-p", dest="players", action="append")
     ap.add_argument("-M", dest="maps", default="random/mainland")
     ap.add_argument("-b", dest="biomes", default="generic/temperate")
-    ap.add_argument("-s", dest="size", type=int, default=192)
+    ap.add_argument("-s", dest="sizes", default="192")
     ap.add_argument("-P", dest="placement", default="circle")
     ap.add_argument("-V", dest="victory", action="append")
     ap.add_argument("-S", dest="settings", action="append", default=[])
@@ -659,6 +897,7 @@ def main():
     ap.add_argument("-j", dest="jobs", type=int)
     ap.add_argument("--unverified", action="store_true")
     ap.add_argument("--matches")
+    ap.add_argument("--rotate", action="store_true")
     ap.add_argument("--map-interval", type=int, default=30000)
     ap.add_argument("-R", dest="resign", type=float, default=0.1)
     ap.add_argument("--verify-host")
@@ -703,30 +942,35 @@ def main():
         players = [parse_player(p) for p in (a.players or ["strategos:athen:1", "petra/3:rome:2"])]
     os.makedirs(outdir, exist_ok=True)
 
-    settings = dict(GAME_SETTINGS)
+    settings = {k: [v] for k, v in GAME_SETTINGS.items()}
     settings.update(parse_setting(t) for t in a.settings)
-    base = {"maps": a.maps.split(","), "biomes": ["*"] if a.biomes == "*" else a.biomes.split(","),
-            "size": a.size, "placement": a.placement, "victory": a.victory or ["conquest"],
-            "settings": settings, "limit_minutes": a.limit, "players": players}
+    maps = [m for item in a.maps.split(",") for m in (random_maps(item) if item.startswith("*") else [item])]
+    try:
+        sizes = [int(s) for s in a.sizes.split(",")]
+    except ValueError:
+        die(f"-s {a.sizes!r}: sizes are tile counts")
+    base = {"maps": maps, "biomes": a.biomes.split(","), "sizes": sizes, "placements": a.placement.split(","),
+            "victories": parse_victories(a.victory), "settings": settings, "limit_minutes": a.limit,
+            "players": players, "rotate": a.rotate}
     if a.matches:
         with open(a.matches, encoding="utf-8") as fh:
-            specs = [json.loads(line) for line in fh if line.strip()]
-        for s in specs:
-            for k, v in (("size", a.size), ("placement", a.placement), ("victory", base["victory"]),
-                         ("biome", base["biomes"][0]), ("map", base["maps"][0])):
-                s.setdefault(k, v)
-            s["settings"] = dict(settings, **s.get("settings", {}))
-            unknown = set(s["settings"]) - set(GAME_SETTINGS)
-            if unknown:
-                die(f"{s.get('tag')}: unknown setting(s) {', '.join(sorted(unknown))}")
-            s["limit_minutes"] = a.limit
-            s["players"] = [parse_player(p) if isinstance(p, str) else p for p in s["players"]]
+            lines = [json.loads(line) for line in fh if line.strip()]
+        todo = [(g["tag"], g["seed"], g) for g in lines]
     else:
-        specs = []
-        for tag, seed in seeds:
-            s = expand(base, seed)
-            s["tag"] = tag
-            specs.append(s)
+        todo = [(tag, seed, None) for tag, seed in seeds]
+    specs, beyond = [], {}
+    for tag, seed, given in todo:
+        s, why = expand(base, seed, given)
+        s["tag"] = tag
+        specs.append(s)
+        if why:
+            beyond.setdefault(why, []).append(tag)
+    unused = [k for k in settings if k in MAP_OPTIONS and not any(k in s["settings"] for s in specs)]
+    if unused:
+        die(f"-S {', '.join(unused)}: no map of the batch has that option")
+    for why, tags in beyond.items():
+        print(f"run: WARNING: {len(tags)} match(es) outside the scope of the goal ({why}): "
+              f"{' '.join(tags[:8])}{' ...' if len(tags) > 8 else ''}", file=sys.stderr)
     if not specs:
         die("no match to run")
     ais = {p["ai"] for s in specs for p in s["players"]}
@@ -805,6 +1049,8 @@ def main():
         json.dump(batch, fh, indent=1)
     print(f"run: {len(specs)} matches on {len(slots)} slots "
           f"({', '.join(f'{h}:{v['slots']}' for h, v in info.items())}) -> {outdir}", flush=True)
+    for line in describe_draws(specs):
+        print(line, flush=True)
     rate = sum(hosts[h].get("calibrated", {}).get("turns_per_s", 0) * min(1.0, len(specs) / max(1, v["slots"]))
                for h, v in info.items())
     turns = 300 * a.limit * len(specs)
