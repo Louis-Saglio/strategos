@@ -28,6 +28,7 @@ const SETTLEMENT_MAX_DISTANCE = 360;
 const SETTLEMENT_ENEMY_CLEARANCE = 220;
 const SETTLEMENT_WEALTH_CAP = 6000;
 const SETTLEMENT_TRIES = 6;
+const FOUNDING_MAX_DISTANCE = 200;
 const MARKET_SURPLUS = 500;
 
 export class Construction
@@ -62,7 +63,10 @@ export class Construction
 	requests(world, priorities)
 	{
 		if (!world.centres.length)
-			return this.repairRequests(world, priorities);
+		{
+			const founding = this.foundingRequest(world, priorities);
+			return (founding ? [founding] : []).concat(this.repairRequests(world, priorities));
+		}
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
@@ -117,8 +121,10 @@ export class Construction
 		return total;
 	}
 
-	wantedBuilders(template)
+	wantedBuilders(world, template)
 	{
+		if (!world.centres.length && this.catalog.isSettlement(template))
+			return world.workers.length;
 		return Math.max(1, Math.min(MAX_BUILDERS, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
 	}
 
@@ -130,7 +136,7 @@ export class Construction
 
 	constructRequest(world, template, site, value, urgency)
 	{
-		const builders = this.pickBuilders(world, template, [site.x, site.z], this.wantedBuilders(template));
+		const builders = this.pickBuilders(world, template, [site.x, site.z], this.wantedBuilders(world, template));
 		if (!builders.length)
 			return null;
 		return {
@@ -330,10 +336,34 @@ export class Construction
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
+		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion);
+	}
+
+	foundingRequest(world, priorities)
+	{
+		const isSettlement = name => this.catalog.isSettlement(name);
+		if (!world.workers.length || !world.codes.every(code => world.wealth.totals[code]) ||
+		    world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
+		    world.foundations.some(foundation => isSettlement(foundation.template)))
+			return null;
+		const template = [...this.offered(world)].filter(isSettlement)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!template || !this.searchable(world, template))
+			return null;
+		const origin = [0, 0];
+		for (const worker of world.workers)
+		{
+			origin[0] += worker.position[0] / world.workers.length;
+			origin[1] += worker.position[1] / world.workers.length;
+		}
+		return this.settlementRequest(world, template, origin, FOUNDING_MAX_DISTANCE, priorities.values.founding);
+	}
+
+	settlementRequest(world, template, home, reach, value)
+	{
 		const spacing = this.catalog.spacing(template);
 		const minimum = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN + world.wealth.cellSize * Math.SQRT2;
 		const spaced = spacing ? world.footprints.filter(footprint => footprint.classes.includes(spacing.fromClass)) : [];
-		const home = world.centres[0].position;
 		const grid = world.wealth;
 		const candidates = [];
 		for (let j = 0; j < grid.height; ++j)
@@ -341,7 +371,7 @@ export class Construction
 			{
 				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
 				const fromHome = Math.sqrt(squareDistance(position, home));
-				if (fromHome > SETTLEMENT_MAX_DISTANCE ||
+				if (fromHome > reach ||
 				    spaced.some(footprint => squareDistance(footprint.position, position) < minimum * minimum))
 					continue;
 				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => Math.sqrt(squareDistance(centre.position, position))));
@@ -365,7 +395,7 @@ export class Construction
 					wealth += Math.min(total, SETTLEMENT_WEALTH_CAP);
 				}
 				if (wealth > 0)
-					candidates.push({ position, "score": wealth * (1 - fromHome / (2 * SETTLEMENT_MAX_DISTANCE)), "index": i + j * grid.width });
+					candidates.push({ position, "score": wealth * (1 - fromHome / (2 * reach)), "index": i + j * grid.width });
 			}
 		candidates.sort((a, b) => b.score - a.score || a.index - b.index);
 		const placement = new Placement(world, this.player);
@@ -376,7 +406,7 @@ export class Construction
 			const site = placement.around(candidate.position, 0, grid.cellSize, this.catalog.footprint(template), BUILDING_MARGIN,
 				this.reservedBoxes(world), zones);
 			if (site)
-				return this.constructRequest(world, template, site, priorities.values.expansion, 1);
+				return this.constructRequest(world, template, site, value, 1);
 		}
 		return this.noSite(world, template);
 	}
@@ -549,7 +579,7 @@ export class Construction
 		const taken = new Set();
 		for (const foundation of world.foundations)
 		{
-			const missing = this.wantedBuilders(foundation.template) - (assigned.get(foundation.id) || 0);
+			const missing = this.wantedBuilders(world, foundation.template) - (assigned.get(foundation.id) || 0);
 			if (missing <= 0)
 				continue;
 			for (const id of this.pickBuilders(world, foundation.template, foundation.position, missing, taken))

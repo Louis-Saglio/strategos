@@ -15,6 +15,7 @@ export class Executor
 		this.handlers = {
 			"train": action => this.train(action),
 			"gather": action => this.gather(action),
+			"collect": action => this.unitCommand(action, { "type": "collect-treasure", "target": action.target }),
 			"construct": action => this.construct(action),
 			"repair": action => this.repair(action),
 			"attack": action => this.unitCommand(action, { "type": "attack", "target": action.target, "allowCapture": false }),

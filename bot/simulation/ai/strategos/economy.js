@@ -18,6 +18,7 @@ export class Economy
 		const assigned = Object.assign({}, world.gatherers);
 		const reserved = new Map();
 		return this.trainingRequests(world, priorities)
+			.concat(this.treasureRequests(world, priorities))
 			.concat(this.gatherRequests(world, priorities, assigned, reserved))
 			.concat(this.rebalanceRequests(world, priorities, assigned, reserved));
 	}
@@ -130,6 +131,46 @@ export class Economy
 			}
 		}
 		return best;
+	}
+
+	treasureRequests(world, priorities)
+	{
+		const collected = new Set();
+		for (const worker of world.workers)
+			if (worker.state.includes("COLLECTTREASURE") && worker.target !== undefined)
+				collected.add(worker.target);
+		const requests = [];
+		const taken = new Set();
+		for (const treasure of world.treasures)
+		{
+			if (collected.has(treasure.id))
+				continue;
+			let best = null;
+			let bestDistance = Infinity;
+			for (const worker of world.workers)
+			{
+				if (!worker.collector || taken.has(worker.id) ||
+				    !(worker.idle || worker.state.includes("GATHER") || worker.state.includes("RETURNRESOURCE")))
+					continue;
+				const distance = squareDistance(worker.position, treasure.position);
+				if (distance < bestDistance || (distance === bestDistance && worker.id < best.id))
+				{
+					best = worker;
+					bestDistance = distance;
+				}
+			}
+			if (!best)
+				continue;
+			taken.add(best.id);
+			requests.push({
+				"source": "economy",
+				"action": { "type": "collect", "unit": best.id, "target": treasure.id },
+				"claims": { "workers": [best.id] },
+				"value": priorities.values.treasure,
+				"urgency": 1
+			});
+		}
+		return requests;
 	}
 
 	gatherRequests(world, priorities, assigned, reserved)

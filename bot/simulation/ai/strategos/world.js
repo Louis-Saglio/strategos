@@ -1,4 +1,7 @@
+import { isTreasure } from "simulation/ai/common-api/filters.js";
+
 const SITE_RADIUS = 110;
+const TREASURE_RADIUS = 120;
 const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
@@ -134,6 +137,34 @@ export function territoryAt(territory, x, z)
 		return { "owner": -1, "connected": false };
 	const cell = territory.data[i + j * territory.width];
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
+}
+
+function treasuresWithin(gameState, player, anchors, workers)
+{
+	const origins = anchors.map(anchor => anchor.position);
+	if (!origins.length && workers.length)
+		origins.push([
+			workers.reduce((sum, worker) => sum + worker.position[0], 0) / workers.length,
+			workers.reduce((sum, worker) => sum + worker.position[1], 0) / workers.length
+		]);
+	const treasures = [];
+	if (!origins.length)
+		return treasures;
+	const accessibility = gameState.sharedScript.accessibility;
+	const territory = gameState.sharedScript.territoryMap;
+	const regions = new Set(origins.map(origin => accessibility.getAccessValue(origin)));
+	const limit = TREASURE_RADIUS * TREASURE_RADIUS;
+	for (const ent of gameState.updatingGlobalCollection("strategos-treasures", isTreasure()).values())
+	{
+		const position = ent.position();
+		if (!position || !origins.some(origin => squareDistance(origin, position) <= limit))
+			continue;
+		const owner = territoryAt(territory, position[0], position[1]).owner;
+		if ((owner !== 0 && owner !== player) || !regions.has(accessibility.getAccessValue(position)))
+			continue;
+		treasures.push(Object.freeze({ "id": ent.id(), "position": position, "resources": Object.freeze(ent.treasureResources()) }));
+	}
+	return treasures.sort((a, b) => a.id - b.id);
 }
 
 function enemyTarget(gameState, catalog, ent, owner, player)
@@ -337,6 +368,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 			"id": ent.id(),
 			"position": position,
 			"idle": ent.isIdle(),
+			"collector": ent.isTreasureCollector(),
 			"state": state,
 			"soldier": soldier,
 			"classes": ent.classes(),
@@ -580,6 +612,7 @@ export function buildWorld(gameState, catalog, resourceIndex, pendingConstructio
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
 		"player": player,
+		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
 		"nextPhaseCost": techCost(gameState, codes, gameState.getPhaseName(gameState.currentPhase() + 1)),
