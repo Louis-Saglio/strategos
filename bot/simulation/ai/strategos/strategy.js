@@ -76,6 +76,7 @@ export class Strategy
 	{
 		const plan = OPENING.colony;
 		return !world.docks.some(dock => dock.region === region) &&
+			!world.enemyStructures.some(structure => structure.region === region) &&
 			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.enemyClearance * plan.enemyClearance);
 	}
 

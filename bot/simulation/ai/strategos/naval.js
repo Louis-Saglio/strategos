@@ -13,6 +13,7 @@ const UNLOAD_TIMEOUT_MS = 60000;
 const UNLOAD_NUDGE_MS = 12000;
 const RETRY_MS = 30000;
 const MIN_SETTLERS = 3;
+const BERTH_RADIUS = 70;
 const CASTAWAY_MIN_AREA = 20000;
 
 export class Naval
@@ -142,11 +143,17 @@ export class Naval
 		if (!colony || !world.docks.length || world.time - this.settled < RETRY_MS ||
 		    world.settlers.some(settler => settler.region === colony.region))
 			return null;
-		const ship = world.ships.find(candidate => !candidate.cargo.length);
+		const dock = world.docks[0].position;
+		const ship = world.ships.filter(candidate => !candidate.cargo.length && candidate.capacity > 0)
+			.map(candidate => ({ "ship": candidate, "distance": squareDistance(candidate.position, dock) }))
+			.sort((a, b) => a.distance - b.distance || a.ship.id - b.ship.id)
+			.map(entry => entry.ship)[0];
 		const outpost = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
 		const able = world.workers.filter(worker => worker.soldier && worker.region === world.homeRegion && worker.buildable.some(outpost));
 		if (!ship || able.length < MIN_SETTLERS)
 			return null;
+		if (squareDistance(ship.position, dock) > BERTH_RADIUS * BERTH_RADIUS)
+			return ship.idle ? [this.order(ship.id, { "type": "walk", "x": dock[0], "z": dock[1] }, priorities)] : [];
 		let landing = null;
 		let nearest = Infinity;
 		for (const shore of world.shores)
@@ -163,7 +170,6 @@ export class Naval
 		this.settled = world.time;
 		if (!landing)
 			return null;
-		const dock = world.docks[0].position;
 		const chosen = able
 			.map(worker => ({ worker, "distance": squareDistance(worker.position, dock) }))
 			.sort((a, b) => a.distance - b.distance || a.worker.id - b.worker.id)
