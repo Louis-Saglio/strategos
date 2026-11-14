@@ -15,6 +15,11 @@ const RETRY_MS = 30000;
 const MIN_SETTLERS = 3;
 const BERTH_RADIUS = 70;
 const CASTAWAY_MIN_AREA = 20000;
+const ANCHOR_RINGS = [80, 110, 140, 170, 200];
+const ANCHOR_SPACING = 30;
+const ANCHOR_CLEARANCE = 16;
+const ANCHOR_TOLERANCE = 15;
+const ANCHOR_RETRY_MS = 12000;
 
 export class Naval
 {
@@ -31,6 +36,8 @@ export class Naval
 		this.sailed = null;
 		this.quorum = 0;
 		this.settled = -Infinity;
+		this.anchorages = new Map();
+		this.stations = new Map();
 	}
 
 	requests(world, priorities)
@@ -39,17 +46,105 @@ export class Naval
 			return this.castawayRequests(world, priorities);
 		if (!world.crossing && !priorities.colony)
 			return [];
-		const requests = this.fleetRequests(world, priorities);
+		const requests = this.fleetRequests(world, priorities).concat(this.operationRequests(world, priorities));
+		return requests.concat(this.stationRequests(world, priorities, requests));
+	}
+
+	operationRequests(world, priorities)
+	{
 		if (this.mode === "idle")
 		{
 			const settling = this.settle(world, priorities);
-			return requests.concat(this.strandedRequests(world, priorities), settling || (world.crossing ? this.muster(world, priorities) : []));
+			return this.strandedRequests(world, priorities).concat(settling || (world.crossing ? this.muster(world, priorities) : []));
 		}
 		if (this.mode === "embark")
-			return requests.concat(this.embarkRequests(world, priorities));
+			return this.embarkRequests(world, priorities);
 		if (this.mode === "sail")
-			return requests.concat(this.sailRequests(world, priorities));
-		return requests.concat(this.landRequests(world, priorities));
+			return this.sailRequests(world, priorities);
+		return this.landRequests(world, priorities);
+	}
+
+	openWater(world, point, sea)
+	{
+		const reach = ANCHOR_CLEARANCE;
+		for (const [dx, dz] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]])
+		{
+			const x = point[0] + dx;
+			const z = point[1] + dz;
+			if (x < 0 || z < 0 || x >= world.mapSize || z >= world.mapSize || world.seaOf([x, z]) !== sea)
+				return false;
+		}
+		return true;
+	}
+
+	anchorage(world, dock)
+	{
+		if (!this.anchorages.has(dock.id))
+		{
+			const points = [];
+			for (const radius of ANCHOR_RINGS)
+			{
+				const count = Math.floor(2 * Math.PI * radius / ANCHOR_SPACING);
+				for (let k = 0; k < count; ++k)
+				{
+					const angle = 2 * Math.PI * k / count;
+					const point = [dock.position[0] + radius * Math.cos(angle), dock.position[1] + radius * Math.sin(angle)];
+					if (this.openWater(world, point, dock.sea))
+						points.push(Object.freeze(point));
+				}
+			}
+			this.anchorages.set(dock.id, points);
+		}
+		return this.anchorages.get(dock.id);
+	}
+
+	stationRequests(world, priorities, issued)
+	{
+		const busy = new Set(this.mode === "idle" ? [] : this.berths.values());
+		for (const request of issued)
+			for (const id of request.claims.workers || [])
+				busy.add(id);
+		const docks = new Map(world.docks.map(dock => [dock.id, dock]));
+		const afloat = new Set(world.fleet.map(ship => ship.id));
+		const taken = new Set();
+		for (const [id, station] of this.stations)
+			if (!afloat.has(id) || !docks.has(station.dock))
+				this.stations.delete(id);
+			else
+				taken.add(station.dock + ":" + station.slot);
+		const requests = [];
+		for (const ship of world.fleet)
+		{
+			if (busy.has(ship.id) || ship.cargo.length)
+				continue;
+			let station = this.stations.get(ship.id);
+			if (!station)
+			{
+				const dock = world.docks
+					.filter(candidate => candidate.sea === ship.sea)
+					.map(candidate => ({ "dock": candidate, "distance": squareDistance(candidate.position, ship.position) }))
+					.sort((a, b) => a.distance - b.distance || a.dock.id - b.dock.id)
+					.map(entry => entry.dock)[0];
+				if (!dock)
+					continue;
+				const points = this.anchorage(world, dock);
+				let slot = 0;
+				while (slot < points.length && taken.has(dock.id + ":" + slot))
+					slot += 1;
+				if (slot >= points.length)
+					continue;
+				station = { "dock": dock.id, "slot": slot, "ordered": -Infinity };
+				this.stations.set(ship.id, station);
+				taken.add(dock.id + ":" + slot);
+			}
+			const point = this.anchorage(world, docks.get(station.dock))[station.slot];
+			if (!ship.idle || world.time - station.ordered < ANCHOR_RETRY_MS ||
+			    squareDistance(ship.position, point) <= ANCHOR_TOLERANCE * ANCHOR_TOLERANCE)
+				continue;
+			station.ordered = world.time;
+			requests.push(this.order(ship.id, { "type": "walk", "x": point[0], "z": point[1] }, priorities));
+		}
+		return requests;
 	}
 
 	switchMode(world, mode, details)
@@ -97,7 +192,10 @@ export class Naval
 		if (capacity >= wanted && world.ships.length >= plan.seaSuperiority * world.enemyWarships)
 			return requests;
 		const yard = yards.find(trainer => trainer.queueLength === 0);
-		if (!yard || yards.some(trainer => trainer.queueLength > 0))
+		const building = yards.filter(trainer => trainer.queueLength > 0).length;
+		const short = Math.max(Math.ceil((wanted - capacity) / this.catalog.transportCapacity(template)),
+			Math.ceil(plan.seaSuperiority * world.enemyWarships) - world.ships.length);
+		if (!yard || building >= short)
 			return requests;
 		requests.unshift({
 			"source": "naval",

@@ -232,6 +232,23 @@ function landRegionNear(accessibility, position)
 	return region;
 }
 
+const SEA_PROBES = [8, 16, 24];
+
+function seaNear(accessibility, position)
+{
+	const sea = accessibility.getAccessValue(position, true);
+	if (sea >= 2)
+		return sea;
+	for (const reach of SEA_PROBES)
+		for (let k = 0; k < 8; ++k)
+		{
+			const found = accessibility.getAccessValue([position[0] + reach * Math.cos(k * Math.PI / 4), position[1] + reach * Math.sin(k * Math.PI / 4)], true);
+			if (found >= 2)
+				return found;
+		}
+	return 0;
+}
+
 function treasuresWithin(gameState, player, anchors, workers)
 {
 	const origins = anchors.map(anchor => anchor.position);
@@ -529,7 +546,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
 		if (ent.position() && catalog.isShoreStructure(ent.templateName()))
-			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()) }));
+			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()),
+				"sea": seaNear(accessibility, ent.position()), "queueLength": (ent.trainingQueue() || []).length }));
 		const holder = ent.isGarrisonHolder();
 		if (ent.position() && ent.decaying())
 			decaying.push(Object.freeze({
@@ -770,23 +788,30 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	for (const code of codes)
 		sites[code] = resourceIndex.live(gameState, code, anchors, batteries);
 
-	const ships = [];
+	const fleet = [];
 	for (const ent of gameState.getOwnEntitiesByClass("Ship", true).values())
 	{
-		const capacity = catalog.transportCapacity(ent.templateName());
-		const cargo = ent.garrisoned() || [];
-		if (!capacity && !cargo.length || !ent.position())
+		if (!ent.position())
 			continue;
-		ships.push(Object.freeze({
+		const orders = ent.unitAIOrderData() || [];
+		fleet.push(Object.freeze({
 			"id": ent.id(),
 			"position": ent.position(),
+			"sea": seaNear(accessibility, ent.position()),
 			"template": ent.templateName(),
-			"capacity": capacity,
-			"cargo": Object.freeze(cargo.slice()),
+			"capacity": catalog.transportCapacity(ent.templateName()),
+			"cargo": Object.freeze((ent.garrisoned() || []).slice()),
 			"state": ent.unitAIState() || "",
-			"idle": ent.isIdle()
+			"idle": ent.isIdle(),
+			"fishing": ent.hasClass("FishingBoat"),
+			"warship": ent.hasClass("Warship"),
+			"hitpoints": ent.hitpoints(),
+			"maxHitpoints": ent.maxHitpoints(),
+			"target": orders.length && orders[0] ? orders[0].target : undefined
 		}));
 	}
+	fleet.sort((a, b) => a.id - b.id);
+	const ships = fleet.filter(ship => ship.capacity > 0 || ship.cargo.length);
 	const relics = [];
 	for (const ent of gameState.updatingGlobalCollection("strategos-relics", byClass("Relic")).values())
 		if (ent.position())
@@ -833,7 +858,10 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"docks": Object.freeze(docks.sort((a, b) => (b.region === homeRegion) - (a.region === homeRegion) || a.id - b.id)),
 		"enemyWarships": enemyWarships,
 		"shores": shoreIndex.all(gameState),
-		"ships": Object.freeze(ships.sort((a, b) => a.id - b.id)),
+		"ships": Object.freeze(ships),
+		"fleet": Object.freeze(fleet),
+		"mapSize": accessibility.width * accessibility.cellSize,
+		"seaOf": position => accessibility.getAccessValue(position, true),
 		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
