@@ -131,6 +131,7 @@ export class ResourceIndex
 				"amount": amount,
 				"gatherers": ent.resourceSupplyNumGatherers() || 0,
 				"capacity": ent.maxGatherers() || 1,
+				"armed": !!ent.get("Attack"),
 				"anchorDistance": Math.sqrt(nearest)
 			}));
 			if (sites.length >= SITES_EXPOSED)
@@ -642,6 +643,31 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		}
 	}
 
+	const wild = [];
+	const armedGaia = gameState.updatingGlobalCollection("strategos-gaia-armed",
+		{ "func": ent => ent.hasClass("Unit") && !!ent.get("Attack"), "dynamicProperties": [] }, gameState.getEntities(0));
+	for (const ent of armedGaia.values())
+	{
+		const position = ent.position();
+		if (!position)
+			continue;
+		const state = ent.unitAIState() || "";
+		const orders = ent.unitAIOrderData() || [];
+		const target = orders.length && orders[0] && orders[0].target !== undefined ? gameState.getEntityById(orders[0].target) : null;
+		const attacksUs = state.includes("COMBAT") && !!target && target.owner() === player;
+		const trespasses = THREAT_CLASSES.some(cls => ent.hasClass(cls)) && territoryAt(territory, position[0], position[1]).owner === player;
+		if (!attacksUs && !trespasses)
+			continue;
+		wild.push(Object.freeze({
+			"id": ent.id(),
+			"position": position,
+			"template": ent.templateName(),
+			"hitpoints": ent.hitpoints(),
+			"state": state,
+			"target": target ? target.id() : undefined
+		}));
+	}
+
 	const enemyDamageMix = {};
 	for (const kind in enemyDamage)
 		enemyDamageMix[kind] = enemyDamage[kind] / enemyDamageTotal;
@@ -822,6 +848,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"garrisonedSoldiers": garrisonedSoldiers,
 		"researchers": Object.freeze(researchers),
 		"threats": Object.freeze(threats),
+		"wild": Object.freeze(wild),
 		"fighters": Object.freeze(fighters),
 		"breakers": Object.freeze(breakers),
 		"army": Object.freeze([...army.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),

@@ -39,7 +39,8 @@ export class Defense
 
 	requests(world, priorities)
 	{
-		this.hostiles = world.threats.concat(this.approaching(world));
+		this.foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;
+		this.hostiles = world.threats.concat(world.wild, this.approaching(world));
 		if (this.hostiles.length)
 			this.lastThreatTime = world.time;
 		if (!this.hostiles.length)
@@ -134,7 +135,7 @@ export class Defense
 	{
 		const limit = APPROACH_RADIUS * APPROACH_RADIUS;
 		const ids = new Set(this.hostiles.map(threat => threat.id));
-		return world.enemyFighters.filter(enemy => ids.has(enemy.id) ||
+		return this.foes.filter(enemy => ids.has(enemy.id) ||
 			this.hostiles.some(threat => squareDistance(threat.position, enemy.position) <= limit));
 	}
 
@@ -186,7 +187,7 @@ export class Defense
 	fight(world, priorities, free, units)
 	{
 		const limit = BATTLE_RADIUS * BATTLE_RADIUS;
-		const enemies = world.enemyFighters.filter(enemy => units.some(unit => squareDistance(unit.position, enemy.position) <= limit));
+		const enemies = this.foes.filter(enemy => units.some(unit => squareDistance(unit.position, enemy.position) <= limit));
 		const home = world.centres[0];
 		const retreat = unit => {
 			const holder = this.nearestHolder(world, unit, free, candidate => candidate.heal > 0, RETREAT_RADIUS);

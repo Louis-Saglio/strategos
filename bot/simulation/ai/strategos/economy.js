@@ -307,7 +307,7 @@ export class Economy
 		for (const site of sites)
 		{
 			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity || !(worker.profile.rates[site.kind] > 0) ||
-			    site.region >= 2 && site.region !== worker.region)
+			    site.region >= 2 && site.region !== worker.region || site.armed && !worker.soldier)
 				continue;
 			const distance = Math.sqrt(squareDistance(site.position, worker.position)) + 2 * site.anchorDistance;
 			if (distance < bestDistance)
