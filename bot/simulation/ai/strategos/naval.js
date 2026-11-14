@@ -13,6 +13,7 @@ const UNLOAD_TIMEOUT_MS = 60000;
 const UNLOAD_NUDGE_MS = 12000;
 const RETRY_MS = 30000;
 const MIN_SETTLERS = 3;
+const CASTAWAY_MIN_AREA = 20000;
 
 export class Naval
 {
@@ -33,7 +34,9 @@ export class Naval
 
 	requests(world, priorities)
 	{
-		if (!world.centres.length || !world.crossing && !priorities.colony)
+		if (!world.centres.length)
+			return this.castawayRequests(world, priorities);
+		if (!world.crossing && !priorities.colony)
 			return [];
 		const requests = this.fleetRequests(world, priorities);
 		if (this.mode === "idle")
@@ -242,6 +245,40 @@ export class Naval
 			"value": priorities.values.offense,
 			"urgency": 1
 		}));
+	}
+
+	castawayRequests(world, priorities)
+	{
+		const requests = [];
+		for (const ship of world.ships)
+		{
+			if (!ship.cargo.length)
+				continue;
+			let shore = null;
+			let nearest = Infinity;
+			for (const candidate of world.shores)
+			{
+				const distance = squareDistance(candidate.water, ship.position);
+				if (distance < nearest && world.regionArea(candidate.region) >= CASTAWAY_MIN_AREA)
+				{
+					shore = candidate;
+					nearest = distance;
+				}
+			}
+			if (!shore)
+				continue;
+			if (nearest > LANDING_RADIUS * LANDING_RADIUS && ship.idle)
+				requests.push(this.order(ship.id, { "type": "walk", "x": shore.land[0], "z": shore.land[1] }, priorities));
+			else if (ship.idle)
+				requests.push({
+					"source": "naval",
+					"action": { "type": "unload-all", "holder": ship.id },
+					"claims": { "slots": ["garrison-" + ship.id] },
+					"value": priorities.values.founding,
+					"urgency": 1
+				});
+		}
+		return requests;
 	}
 
 	strandedRequests(world, priorities)

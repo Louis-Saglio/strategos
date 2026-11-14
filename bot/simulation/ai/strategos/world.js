@@ -726,9 +726,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	for (const ent of gameState.getOwnEntitiesByClass("Ship", true).values())
 	{
 		const capacity = catalog.transportCapacity(ent.templateName());
-		if (!capacity || !ent.position())
-			continue;
 		const cargo = ent.garrisoned() || [];
+		if (!capacity && !cargo.length || !ent.position())
+			continue;
 		ships.push(Object.freeze({
 			"id": ent.id(),
 			"position": ent.position(),
