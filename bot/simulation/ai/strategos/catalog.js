@@ -57,6 +57,30 @@ export class Catalog
 		return cache.get(producer).filter(name => this.available(name));
 	}
 
+	locked(entity)
+	{
+		const producer = entity.templateName();
+		this.trainable(entity);
+		const locked = [];
+		for (const name of this.trainables.get(producer))
+		{
+			if (this.available(name) || this.gameState.isTemplateDisabled(name) || !this.isSoldier(name))
+				continue;
+			const tokens = (this.template(name).get("Identity/Requirements/Techs/_string") || "").split(/\s+/);
+			const missing = tokens.filter(tech => tech && !tech.startsWith("-") && !tech.startsWith("!") && !tech.startsWith("phase_") &&
+				!this.gameState.isResearched(tech));
+			if (missing.length)
+				locked.push({ "name": name, "missing": missing });
+		}
+		return locked;
+	}
+
+	isHero(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("Hero");
+	}
+
 	trainable(entity)
 	{
 		return this.producerList(this.trainables, entity, entity.trainableEntities);

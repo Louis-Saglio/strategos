@@ -1,8 +1,10 @@
-import { TECH_HORIZON_S, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
+import { TECH_HORIZON_S, enemyProfile, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 
 const PAYBACK_LIMIT_S = 180;
 const PHASE_QUEUE_LIMIT = 1;
 const PRODUCTION_PAYBACK_S = 90;
+const UNLOCK_EDGE = 1.2;
+const UNLOCK_STOCK = 2;
 
 export class Research
 {
@@ -28,9 +30,15 @@ export class Research
 			requests.push(phase);
 			chosen.add(phase.action.tech);
 		}
+		const unlock = this.unlockRequest(world, priorities, chosen);
+		if (unlock)
+		{
+			requests.push(unlock);
+			chosen.add(unlock.action.tech);
+		}
 		for (const researcher of world.researchers)
 		{
-			if (researcher.queueLength > 0)
+			if (researcher.queueLength > 0 || unlock && unlock.action.researcher === researcher.id)
 				continue;
 			let best = null;
 			for (const tech of researcher.techs)
@@ -58,6 +66,47 @@ export class Research
 			});
 		}
 		return requests;
+	}
+
+	unlockRequest(world, priorities, chosen)
+	{
+		if (!world.locked.length)
+			return null;
+		const enemy = enemyProfile(world, this.catalog);
+		const perSlot = name => unitStrength(world, this.catalog, name, enemy) / Math.max(1, this.catalog.population(name));
+		let current = 0;
+		for (const trainer of world.trainers)
+			for (const name of trainer.trainable)
+				if (this.catalog.isFighter(name))
+					current = Math.max(current, perSlot(name));
+		let best = null;
+		for (const researcher of world.researchers)
+		{
+			if (researcher.queueLength > 0)
+				continue;
+			for (const tech of researcher.techs)
+			{
+				if (chosen.has(tech))
+					continue;
+				let gain = 0;
+				for (const entry of world.locked)
+					if (entry.missing.length === 1 && entry.missing[0] === tech && this.catalog.isFighter(entry.name))
+						gain = Math.max(gain, perSlot(entry.name));
+				if (gain < UNLOCK_EDGE * current || best && (gain < best.gain || gain === best.gain && tech >= best.tech))
+					continue;
+				best = { tech, gain, "researcher": researcher, "cost": this.catalog.techCost(tech, researcher.template) };
+			}
+		}
+		if (!best || world.codes.some(code => world.resources[code] < UNLOCK_STOCK * best.cost[code]))
+			return null;
+		return {
+			"source": "research",
+			"action": { "type": "research", "researcher": best.researcher.id, "tech": best.tech, "payback": 0 },
+			"claims": { "resources": best.cost, "slots": [best.researcher.id] },
+			"value": priorities.values.research,
+			"urgency": 1,
+			"tier": "investment"
+		};
 	}
 
 	phaseRequest(world, priorities)

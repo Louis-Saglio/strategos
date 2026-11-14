@@ -385,6 +385,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	resourceIndex.refresh(gameState, anchors);
 
 	let queuedPopulation = 0;
+	const locked = [];
 	const trainers = [];
 	for (const ent of gameState.getOwnTrainingFacilities().values())
 	{
@@ -395,6 +396,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			if (item.unitTemplate)
 				queuedPopulation += item.count * catalog.population(item.unitTemplate);
 		const trainable = catalog.trainable(ent);
+		for (const entry of catalog.locked(ent))
+			locked.push(Object.freeze(entry));
 		if (!trainable.length)
 			continue;
 		trainers.push(Object.freeze({
@@ -647,6 +650,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 
 	const fighters = [];
 	const heroes = [];
+	const regicide = gameState.getVictoryConditions().has("regicide");
 	const army = new Map();
 	for (const ent of gameState.getOwnEntitiesByClass("Hero", true).values())
 		if (ent.position())
@@ -654,7 +658,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	for (const ent of gameState.getOwnEntitiesByClass("Soldier", true).values())
 	{
 		const position = ent.position();
-		if (!position || ent.hasClass("Hero"))
+		if (!position || ent.hasClass("Hero") && regicide)
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		fighters.push(Object.freeze({
@@ -770,6 +774,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
 		"heroes": Object.freeze(heroes),
+		"locked": Object.freeze(locked),
 		"relics": Object.freeze(relics.sort((a, b) => a.id - b.id)),
 		"crossing": crossing ? Object.freeze(crossing) : null,
 		"seas": Object.freeze(seas.slice()),

@@ -45,7 +45,7 @@ export class Strategy
 	wantsPhase(world)
 	{
 		const next = world.phase + 1;
-		if (this.phaseWanted === next)
+		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
 			return true;
 		const byPopulation = world.population >= (OPENING.phaseUpPopulation[next] || Infinity);
 		const { surplus } = exchangeOutlook(world);
@@ -124,8 +124,8 @@ export class Strategy
 		const level = this.plenty ? plan.plenty.exit : plan.plenty.enter;
 		this.plenty = world.codes.every(code => world.resources[code] >= level);
 		const target = this.plenty ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
-		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target)
-			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target }));
+		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty)
+			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target, "plentiful": this.plenty }));
 		return this.militaryPlan;
 	}
 

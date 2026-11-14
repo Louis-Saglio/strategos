@@ -2,6 +2,8 @@ import { TRAINING_BATCH, combatRole, enemyProfile, populationPressure, resourceP
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
+const HERO_RETRY_MS = 120000;
+const HERO_STOCK = 2;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
@@ -17,10 +19,34 @@ export class Economy
 	{
 		const assigned = Object.assign({}, world.gatherers);
 		const reserved = new Map();
-		return this.trainingRequests(world, priorities)
+		return this.heroRequests(world, priorities).concat(this.trainingRequests(world, priorities))
 			.concat(this.treasureRequests(world, priorities))
 			.concat(this.gatherRequests(world, priorities, assigned, reserved))
 			.concat(this.rebalanceRequests(world, priorities, assigned, reserved));
+	}
+
+	heroRequests(world, priorities)
+	{
+		if (world.heroes.length || this.heroOrdered !== undefined && world.time - this.heroOrdered < HERO_RETRY_MS)
+			return [];
+		for (const trainer of world.trainers)
+		{
+			const template = trainer.trainable.filter(name => this.catalog.isHero(name)).sort()[0];
+			if (!template || trainer.queueLength >= TRAINER_QUEUE_DEPTH)
+				continue;
+			const cost = this.catalog.cost(template);
+			if (world.codes.some(code => world.resources[code] < HERO_STOCK * (cost[code] || 0)))
+				return [];
+			this.heroOrdered = world.time;
+			return [{
+				"source": "economy",
+				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
+				"claims": { "resources": cost, "population": this.catalog.population(template), "slots": [trainer.id] },
+				"value": priorities.values.research,
+				"urgency": 1
+			}];
+		}
+		return [];
 	}
 
 	trainingRequests(world, priorities)
@@ -38,7 +64,7 @@ export class Economy
 			if (soldiersOnly && !soldiers.length)
 				continue;
 			if (!civilian && soldiers.length && !context)
-				context = this.unitContext(world);
+				context = this.unitContext(world, priorities);
 			const template = civilian || !soldiers.length ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
 			if (!template)
 				continue;
@@ -77,7 +103,7 @@ export class Economy
 		return Math.max(1, affordable > 0 ? Math.min(count, affordable) : count);
 	}
 
-	unitContext(world)
+	unitContext(world, priorities)
 	{
 		const counts = new Map();
 		const roles = new Map();
@@ -92,7 +118,7 @@ export class Economy
 		return {
 			"enemy": enemyProfile(world, this.catalog),
 			"prices": resourcePrices(world),
-			"pressure": populationPressure(world),
+			"pressure": priorities.military.plentiful ? 1 : populationPressure(world),
 			counts,
 			roles,
 			armySize
