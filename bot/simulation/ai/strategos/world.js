@@ -6,6 +6,9 @@ const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
 const FIRE_MARGIN = 10;
+const FISH_RADIUS = 160;
+const FISH_KEPT = 24;
+const FISHER_WORTH = 3;
 
 export class ResourceIndex
 {
@@ -15,6 +18,29 @@ export class ResourceIndex
 		this.codes = codes;
 		this.sites = new Map(codes.map(code => [code, []]));
 		this.cursor = 0;
+		this.fish = [];
+	}
+
+	liveFish(gameState)
+	{
+		const accessibility = gameState.sharedScript.accessibility;
+		const fish = [];
+		for (const id of this.fish)
+		{
+			const ent = gameState.getEntityById(id);
+			const amount = ent && ent.resourceSupplyAmount();
+			if (!ent || !ent.position() || !(amount > 0))
+				continue;
+			fish.push(Object.freeze({
+				"id": id,
+				"position": ent.position(),
+				"sea": accessibility.getAccessValue(ent.position(), true),
+				"amount": amount,
+				"gatherers": ent.resourceSupplyNumGatherers() || 0,
+				"capacity": ent.maxGatherers() || 1
+			}));
+		}
+		return Object.freeze(fish);
 	}
 
 	refresh(gameState, anchors)
@@ -31,6 +57,22 @@ export class ResourceIndex
 		const weighted = new Float64Array(2 * grid.width * grid.height);
 		const byRegion = new Map();
 		const limit = SITE_RADIUS * SITE_RADIUS;
+		const piers = code === "food" ? anchors.filter(anchor => anchor.shore && anchor.types.includes(code)) : [];
+		const fish = [];
+		if (piers.length)
+			for (const ent of gameState.updatingGlobalCollection("strategos-fish",
+				{ "func": candidate => candidate.hasClass("SeaCreature") && !!candidate.resourceSupplyMax(), "dynamicProperties": [] },
+				gameState.getEntities(0)).values())
+			{
+				const position = ent.position();
+				if (!position)
+					continue;
+				let nearest = Infinity;
+				for (const pier of piers)
+					nearest = Math.min(nearest, squareDistance(pier.position, position));
+				if (nearest <= FISH_RADIUS * FISH_RADIUS)
+					fish.push({ "id": ent.id(), "distance": nearest });
+			}
 		for (const ent of gameState.getResourceSupplies(code).values())
 		{
 			const owner = ent.owner();
@@ -74,6 +116,8 @@ export class ResourceIndex
 		grid.totals[code] = totals;
 		grid.weighted[code] = weighted;
 		grid.regions[code] = byRegion;
+		if (code === "food")
+			this.fish = fish.sort((a, b) => a.distance - b.distance || a.id - b.id).slice(0, FISH_KEPT).map(entry => entry.id);
 		if (!kept.length)
 			this.reachable(gameState, beyond, points, kept);
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
@@ -412,6 +456,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			"template": ent.templateName(),
 			"position": ent.position(),
 			"radius": Math.max(footprint.width, footprint.depth) / 2,
+			"shore": catalog.isShoreStructure(ent.templateName()),
 			"types": ent.resourceDropsiteTypes()
 		}));
 	}
@@ -808,6 +853,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			"state": ent.unitAIState() || "",
 			"idle": ent.isIdle(),
 			"fishing": ent.hasClass("FishingBoat"),
+			"gathering": (ent.unitAIState() || "").includes("GATHER") || (ent.unitAIState() || "").includes("RETURNRESOURCE"),
 			"warship": ent.hasClass("Warship"),
 			"hitpoints": ent.hitpoints(),
 			"maxHitpoints": ent.maxHitpoints(),
@@ -816,6 +862,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	}
 	fleet.sort((a, b) => a.id - b.id);
 	const ships = fleet.filter(ship => ship.capacity > 0 || ship.cargo.length);
+	const fishers = FISHER_WORTH * fleet.filter(ship => ship.fishing && ship.gathering).length;
+	if (gatherers.food !== undefined)
+		gatherers.food += fishers;
 	const relics = [];
 	for (const ent of gameState.updatingGlobalCollection("strategos-relics", byClass("Relic")).values())
 		if (ent.position())
@@ -897,6 +946,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"shores": shoreIndex.all(gameState),
 		"ships": Object.freeze(ships),
 		"fleet": Object.freeze(fleet),
+		"fish": resourceIndex.liveFish(gameState),
+		"fishers": fishers,
+		"labour": workers.length + fishers,
 		"mapSize": accessibility.width * accessibility.cellSize,
 		"seaOf": position => accessibility.getAccessValue(position, true),
 		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),

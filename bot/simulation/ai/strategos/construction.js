@@ -297,13 +297,13 @@ export class Construction
 		const farm = this.cheapest(world, name => this.catalog.isFarm(name));
 		if (!farm)
 			return null;
-		const desired = priorities.gatherShares.food * (world.workers.length + world.queuedPopulation);
+		const desired = priorities.gatherShares.food * (world.labour + world.queuedPopulation);
 		let wild = 0;
 		for (const site of world.sites.food)
 			if (isFinite(site.amount))
 				wild += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
 		const farms = this.count(world, name => this.catalog.isFarm(name));
-		const supply = wild + farms * this.catalog.maxGatherers(farm);
+		const supply = wild + farms * this.catalog.maxGatherers(farm) + world.fishers;
 		if (supply >= desired)
 			return null;
 		const urgency = 1 + (desired - supply) / Math.max(1, desired);
@@ -459,6 +459,8 @@ export class Construction
 				continue;
 			const request = this.settlementRequest(world, template, dock.position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion,
 				region.id, null, key);
+			if (request && priorities.short.length)
+				return this.production(Object.assign(request, { "urgency": SHORT_URGENCY }));
 			if (request)
 				return request;
 		}

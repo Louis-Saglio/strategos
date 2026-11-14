@@ -412,10 +412,16 @@ export class Catalog
 	transportCapacity(name)
 	{
 		const template = this.template(name);
-		if (!template || !template.hasClass("Ship"))
+		if (!template || !template.hasClass("Ship") || template.hasClass("FishingBoat"))
 			return 0;
 		const accepted = (template.get("GarrisonHolder/List/_string") || "").split(/\s+/);
 		return accepted.includes("Soldier") || accepted.includes("Infantry") ? +(template.get("GarrisonHolder/Max") || 0) : 0;
+	}
+
+	isFishingBoat(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("FishingBoat");
 	}
 
 	trainsTransports(name)

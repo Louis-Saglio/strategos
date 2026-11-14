@@ -206,7 +206,7 @@ export class Economy
 		const idle = world.workers.filter(worker => worker.idle);
 		if (!idle.length)
 			return requests;
-		const total = world.workers.length;
+		const total = world.labour;
 		const advantage = this.advantages(world);
 		for (const worker of idle)
 		{
@@ -260,7 +260,7 @@ export class Economy
 	{
 		const requests = [];
 		const advantage = this.advantages(world);
-		const total = world.workers.length;
+		const total = world.labour;
 		const gap = Math.max(REBALANCE_MIN_GAP, REBALANCE_GAP_SHARE * total);
 		const balance = code => assigned[code] - priorities.gatherShares[code] * total;
 		const moved = new Set();

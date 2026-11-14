@@ -3,7 +3,7 @@ import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
@@ -12,9 +12,10 @@ const OPENING = {
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
-	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10 },
+	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10,
+		"fishing": { "maxBoats": 12, "perFish": 2 } },
 	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "centreArea": 14000, "enemyClearance": 220, "max": 5, "wealthCap": 6000,
-		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4 },
+		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4, "phasePopulation": 50 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
 		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] }
 };
@@ -52,7 +53,7 @@ export class Strategy
 	labour(world)
 	{
 		const plan = OPENING.labour;
-		const total = world.workers.length;
+		const total = world.labour;
 		for (const code of this.codes)
 			this.gap[code] += plan.smoothing * (this.shares[code] * total - world.gatherers[code] - this.gap[code]);
 		const level = Math.max(plan.starvedMin, plan.starvedShare * total);
@@ -109,6 +110,12 @@ export class Strategy
 		const next = world.phase + 1;
 		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
 			return true;
+		if (world.phase === 1 && world.population >= OPENING.colony.phasePopulation && world.regions.some(region =>
+			region.id !== world.homeRegion && region.docks > 0 && !region.centres && world.regionArea(region.id) >= OPENING.colony.centreArea))
+		{
+			this.phaseWanted = next;
+			return true;
+		}
 		const housed = world.population + world.queuedPopulation >= world.populationLimit - OPENING.blockedGrowth.room &&
 			world.populationLimit < world.populationMax && !world.foundations.some(foundation => foundation.populationBonus > 0) &&
 			!world.pendingConstructions.some(pending => this.catalog.populationBonus(pending.template) > 0);

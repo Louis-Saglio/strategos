@@ -44,7 +44,7 @@ export class Naval
 		if (!world.fleet.length && !world.docks.length)
 			return [];
 		const units = this.unitIndex(world);
-		const requests = this.fleetRequests(world, priorities);
+		const requests = this.fleetRequests(world, priorities).concat(this.fishingRequests(world, priorities));
 		this.planSettlement(world, priorities);
 		this.planFerry(world, priorities);
 		this.planInvasion(world, priorities);
@@ -70,6 +70,7 @@ export class Naval
 			"home": world.homeRegion,
 			"fleet": kinds,
 			"enemyWarships": world.enemyWarships,
+			"fish": world.fish.length,
 			"docks": world.docks.map(dock => dock.region),
 			"regions": world.regions.filter(region => region.workers || region.settlers || region.anchors || region.fighters).map(region => ({
 				"id": region.id, "area": Math.round(world.regionArea(region.id) / 1000), "workers": region.workers, "idle": region.idle,
@@ -462,6 +463,63 @@ export class Naval
 			"tier": priorities.short.length && !world.ships.length ? "production" : "investment",
 			"reserve": true
 		});
+		return requests;
+	}
+
+	fishingRequests(world, priorities)
+	{
+		if (!world.fish.length)
+			return [];
+		const plan = priorities.naval.fishing;
+		const requests = [];
+		const boats = world.fleet.filter(ship => ship.fishing);
+		const slots = world.fish.reduce((sum, fish) => sum + Math.min(fish.capacity, plan.perFish), 0);
+		const fishes = name => this.catalog.isFishingBoat(name);
+		const yards = world.trainers.filter(trainer => trainer.trainable.some(fishes));
+		const building = yards.filter(trainer => trainer.queueLength > 0).length;
+		const yard = yards.find(trainer => trainer.queueLength === 0);
+		if (yard && boats.length + building < Math.min(plan.maxBoats, slots))
+		{
+			const template = yard.trainable.filter(fishes)
+				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			requests.push({
+				"source": "naval",
+				"action": { "type": "train", "trainer": yard.id, "template": template, "count": 1 },
+				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [yard.id] },
+				"value": priorities.values.fishing,
+				"urgency": 1,
+				"tier": "production"
+			});
+		}
+		const reserved = new Map();
+		for (const boat of boats)
+		{
+			if (!boat.idle || boat.gathering)
+				continue;
+			let best = null;
+			let nearest = Infinity;
+			for (const fish of world.fish)
+			{
+				if (fish.sea !== boat.sea || fish.gatherers + (reserved.get(fish.id) || 0) >= fish.capacity)
+					continue;
+				const distance = squareDistance(fish.position, boat.position);
+				if (distance < nearest)
+				{
+					best = fish;
+					nearest = distance;
+				}
+			}
+			if (!best)
+				continue;
+			reserved.set(best.id, (reserved.get(best.id) || 0) + 1);
+			requests.push({
+				"source": "naval",
+				"action": { "type": "gather", "worker": boat.id, "target": best.id, "resource": "food" },
+				"claims": { "workers": [boat.id] },
+				"value": priorities.values.assignIdleWorker,
+				"urgency": 1
+			});
+		}
 		return requests;
 	}
 
