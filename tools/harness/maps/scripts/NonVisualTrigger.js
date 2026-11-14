@@ -18,6 +18,20 @@
  *     0 for anything else; an arrow kill reads killerKind 5 or 6). Recorded
  *     by wrapping Health.prototype.KilledBy, which is called and returns
  *     exactly as before.
+ *   [HARNESS] refused {"t": <sim s>, "p": player, "template": name, "x": n, "z": n, "why": message}
+ *   [HARNESS] refused {"t": <sim s>, "p": player, "why": "limit"|"requirement"|"cost", "detail": ...}
+ *     each construction command the engine did not carry out, which the AI
+ *     is not told about: the message of the failed BuildRestrictions check
+ *     (terrain, obstruction, territory, distance) with the foundation's
+ *     template and position, or the entity limit reached (detail: the
+ *     category), the missing requirement (detail: the template) or the
+ *     cost the player could not pay (detail: the amounts; this one also
+ *     fires for a unit or technology that cannot be paid). Recorded by
+ *     wrapping BuildRestrictions.prototype.CheckPlacement,
+ *     EntityLimits.prototype.AllowedToBuild,
+ *     TechnologyManager.prototype.CanProduce and
+ *     Player.prototype.TrySubtractResources, which are called and return
+ *     exactly as before.
  *   [HARNESS] standing {"t": <sim s>, "teams": {"<key>": {"players": [ids], "assets": n, "military": n}}}
  *     every 30 s and at the time limit: per side (engine team, or "p<id>" for
  *     a player without team) the summed resource cost of every unit and
@@ -300,6 +314,56 @@ Trigger.prototype.HarnessTimeLimit = function()
 	{
 		Engine.QueryInterface(SYSTEM_ENTITY, IID_Trigger).HarnessRecordKill(this.entity, attacker, attackerOwner);
 		return harnessBaseKilledBy.call(this, attacker, attackerOwner);
+	};
+	const harnessBaseCheckPlacement = BuildRestrictions.prototype.CheckPlacement;
+	BuildRestrictions.prototype.CheckPlacement = function()
+	{
+		const result = harnessBaseCheckPlacement.call(this);
+		if (!result.success)
+		{
+			const cmpOwnership = Engine.QueryInterface(this.entity, IID_Ownership);
+			const cmpPosition = Engine.QueryInterface(this.entity, IID_Position);
+			const pos = cmpPosition && cmpPosition.IsInWorld() ? cmpPosition.GetPosition2D() : null;
+			const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+			print("[HARNESS] refused " + JSON.stringify({
+				"t": +now.toFixed(1), "p": cmpOwnership ? cmpOwnership.GetOwner() : -1,
+				"template": Engine.QueryInterface(SYSTEM_ENTITY, IID_TemplateManager).GetCurrentTemplateName(this.entity),
+				"x": pos ? Math.round(pos.x) : -1, "z": pos ? Math.round(pos.y) : -1, "why": result.message
+			}) + "\n");
+		}
+		return result;
+	};
+	const harnessRefusal = function(component, why, detail)
+	{
+		const cmpPlayer = Engine.QueryInterface(component.entity, IID_Player);
+		const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+		print("[HARNESS] refused " + JSON.stringify({
+			"t": +now.toFixed(1), "p": cmpPlayer ? cmpPlayer.GetPlayerID() : -1, "why": why, "detail": detail
+		}) + "\n");
+	};
+	const harnessBaseSubtract = Player.prototype.TrySubtractResources;
+	Player.prototype.TrySubtractResources = function(amounts)
+	{
+		const paid = harnessBaseSubtract.call(this, amounts);
+		if (!paid)
+			harnessRefusal(this, "cost", amounts);
+		return paid;
+	};
+	const harnessBaseAllowedToBuild = EntityLimits.prototype.AllowedToBuild;
+	EntityLimits.prototype.AllowedToBuild = function(category)
+	{
+		const allowed = harnessBaseAllowedToBuild.call(this, category);
+		if (!allowed)
+			harnessRefusal(this, "limit", category);
+		return allowed;
+	};
+	const harnessBaseCanProduce = TechnologyManager.prototype.CanProduce;
+	TechnologyManager.prototype.CanProduce = function(templateName)
+	{
+		const able = harnessBaseCanProduce.call(this, templateName);
+		if (!able)
+			harnessRefusal(this, "requirement", templateName);
+		return able;
 	};
 	cmpTrigger.RegisterTrigger("OnPlayerWon", "HarnessEndGame", { "enabled": true });
 	cmpTrigger.RegisterTrigger("OnPlayerDefeated", "HarnessEndGame", { "enabled": true });

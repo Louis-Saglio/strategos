@@ -181,6 +181,18 @@ kinds as in the map snapshots: 0 other, 1 worker, 2 soldier, 3 cavalry,
 4 siege, 5 structure, 6 civic centre, 7 ship; a killer of kind 5 or 6 is
 defensive fire; read by wrapping `Health.prototype.KilledBy`, which leaves
 the game identical: 64 of 64 games bit-identical with and without it) and
+`[HARNESS] refused` for every construction command the engine did not
+carry out (`{"t","p","template","x","z","why"}` with the message of the
+failed placement check — terrain, obstruction, territory, distance — or
+`{"t","p","why","detail"}` with `why` = `limit` (entity limit, `detail`
+the category), `requirement` (`detail` the template) or `cost`; the AI
+gets no such feedback from the engine; read by wrapping
+`BuildRestrictions.prototype.CheckPlacement`,
+`EntityLimits.prototype.AllowedToBuild`,
+`TechnologyManager.prototype.CanProduce` and
+`Player.prototype.TrySubtractResources`, which return exactly as before:
+139 of 246 games bit-identical to games of the previous harness, the
+others differing by the bot) and
 the per-player statistics JSON at game end. At the time limit (`-l` minutes) it prints `[HARNESS] time limit reached` and marks every active
 player as won, so the game ends cleanly (statistics, replay metadata)
 without favouring a side; `analyze.py` reports it as a timeout, or as
