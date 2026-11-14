@@ -15,6 +15,8 @@ export class Placement
 	{
 		this.grids = world.grids;
 		this.batteries = world.batteries;
+		this.regionOf = world.regionOf;
+		this.manned = new Set(world.workers.map(worker => worker.region));
 		this.player = player;
 		const home = world.centres[0];
 		this.angle = home && isFinite(home.angle) ? home.angle : DEFAULT_ANGLE;
@@ -84,6 +86,9 @@ export class Placement
 			return false;
 		const corners = this.corners(x, z, halfWidth, halfDepth);
 		if (corners.some(corner => !this.territoryOwned(corner[0], corner[1])))
+			return false;
+		const region = this.regionOf(site);
+		if (region >= 2 && this.manned.size && !this.manned.has(region))
 			return false;
 		for (const battery of this.batteries)
 		{
