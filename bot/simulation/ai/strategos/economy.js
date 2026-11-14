@@ -7,6 +7,7 @@ const HERO_STOCK = 2;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
+const HUNTER_RATE = 2;
 
 export class Economy
 {
@@ -307,7 +308,8 @@ export class Economy
 		for (const site of sites)
 		{
 			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity || !(worker.profile.rates[site.kind] > 0) ||
-			    site.region >= 2 && site.region !== worker.region || site.armed && !worker.soldier)
+			    site.region >= 2 && site.region !== worker.region || site.armed && !worker.soldier ||
+			    site.prey && worker.profile.rates[site.kind] < HUNTER_RATE)
 				continue;
 			const distance = Math.sqrt(squareDistance(site.position, worker.position)) + 2 * site.anchorDistance;
 			if (distance < bestDistance)

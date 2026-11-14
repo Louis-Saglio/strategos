@@ -123,6 +123,7 @@ export class ResourceIndex
 			for (const point of points)
 				nearest = Math.min(nearest, squareDistance(point, position));
 			const type = ent.resourceSupplyType();
+			const alive = !!ent.get("UnitAI") && ent.hitpoints() > 0;
 			sites.push(Object.freeze({
 				"id": id,
 				"kind": type.generic + "." + type.specific,
@@ -131,7 +132,8 @@ export class ResourceIndex
 				"amount": amount,
 				"gatherers": ent.resourceSupplyNumGatherers() || 0,
 				"capacity": ent.maxGatherers() || 1,
-				"armed": !!ent.get("Attack"),
+				"armed": alive && !!ent.get("Attack"),
+				"prey": alive && !ent.hasClass("Domestic"),
 				"anchorDistance": Math.sqrt(nearest)
 			}));
 			if (sites.length >= SITES_EXPOSED)
