@@ -165,15 +165,22 @@ export class Defense
 
 	respond(world, priorities, free, near, group, cover)
 	{
-		const responders = [];
-		const ordered = near.filter(entry => entry.fighter.state.includes("COMBAT")).concat(near.filter(entry => !entry.fighter.state.includes("COMBAT")));
-		for (const { fighter } of ordered)
+		const ordered = near.filter(entry => entry.fighter.state.includes("COMBAT")).concat(near.filter(entry => !entry.fighter.state.includes("COMBAT")))
+			.map(entry => entry.fighter);
+		let enough = ordered.length;
+		if (enough > 1 && balance(this.catalog, ordered, group, cover) >= RESPONSE_MARGIN)
 		{
-			if (responders.length && balance(this.catalog, responders, group, cover) >= RESPONSE_MARGIN)
-				break;
-			responders.push(fighter);
+			let short = 0;
+			while (enough - short > 1)
+			{
+				const middle = Math.floor((short + enough) / 2);
+				if (balance(this.catalog, ordered.slice(0, middle), group, cover) >= RESPONSE_MARGIN)
+					enough = middle;
+				else
+					short = middle;
+			}
 		}
-		return this.fight(world, priorities, free, responders);
+		return this.fight(world, priorities, free, ordered.slice(0, enough));
 	}
 
 	fight(world, priorities, free, units)
