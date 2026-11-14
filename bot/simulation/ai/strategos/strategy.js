@@ -3,7 +3,7 @@ import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
@@ -12,9 +12,11 @@ const OPENING = {
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
-	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6 },
-	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "enemyClearance": 220, "max": 3, "wealthCap": 6000,
-		"distanceScale": 400, "retryMs": 30000 }
+	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10 },
+	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "centreArea": 14000, "enemyClearance": 220, "max": 5, "wealthCap": 6000,
+		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4 },
+	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
+		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] }
 };
 
 const PLANS = {
@@ -42,6 +44,64 @@ export class Strategy
 		this.reported = Object.assign({}, this.shares);
 		this.started = false;
 		this.phaseWanted = 0;
+		this.gap = {};
+		for (const code of codes)
+			this.gap[code] = 0;
+	}
+
+	labour(world)
+	{
+		const plan = OPENING.labour;
+		const total = world.workers.length;
+		for (const code of this.codes)
+			this.gap[code] += plan.smoothing * (this.shares[code] * total - world.gatherers[code] - this.gap[code]);
+		const level = Math.max(plan.starvedMin, plan.starvedShare * total);
+		const starved = this.codes.filter(code => this.gap[code] >= level)
+			.sort((a, b) => this.gap[b] - this.gap[a] || this.codes.indexOf(a) - this.codes.indexOf(b));
+		const excess = this.codes.slice().sort((a, b) => this.gap[a] - this.gap[b] || this.codes.indexOf(a) - this.codes.indexOf(b));
+		const surveyed = world.centres.length && world.seas.length && world.codes.every(code => world.wealth.regions[code]);
+		const scarce = surveyed ? plan.scarceCodes.filter(code => this.codes.includes(code) &&
+			world.regionWealth(world.homeRegion, code) + world.resources[code] < plan.scarceWealth) : [];
+		return { starved, excess, "short": starved.concat(scarce.filter(code => !starved.includes(code))) };
+	}
+
+	link(world, from, to)
+	{
+		return (world.regionLinks[from] || []).find(sea => (world.regionLinks[sea] || []).includes(to));
+	}
+
+	ferry(world, labour)
+	{
+		const plan = OPENING.labour;
+		if (!world.centres.length || !labour.starved.length)
+			return null;
+		const from = world.regions.filter(region => region.anchors > 0 && region.docks > 0)
+			.sort((a, b) => b.workers - a.workers || a.id - b.id)[0];
+		if (!from)
+			return null;
+		for (const code of labour.starved)
+		{
+			let best = null;
+			for (const region of world.regions)
+			{
+				if (region.id === from.id || !region.anchors || region.enemyStructures)
+					continue;
+				const sea = this.link(world, from.id, region.id);
+				const wealth = world.regionWealth(region.id, code);
+				const room = Math.floor(wealth / plan.wealthPerWorker) - region.workers;
+				if (sea === undefined || wealth < plan.minWealth || room < plan.minParty)
+					continue;
+				if (!best || wealth > best.wealth)
+					best = { "to": region.id, "sea": sea, "wealth": wealth, "room": room };
+			}
+			if (best)
+				return Object.freeze({
+					"from": from.id, "to": best.to, "sea": best.sea, "code": code,
+					"count": Math.max(plan.minParty, Math.min(plan.maxParty, best.room, Math.round(this.gap[code]))),
+					"excess": Object.freeze(labour.excess.filter(other => other !== code))
+				});
+		}
+		return null;
 	}
 
 	wantsPhase(world)
@@ -69,18 +129,34 @@ export class Strategy
 		return byPopulation || bySurplus;
 	}
 
-	colony(world)
+	colony(world, labour, ferry)
 	{
 		const plan = OPENING.colony;
-		if (!world.centres.length || !world.seas.length || world.regionArea(world.homeRegion) > plan.maxHomeArea ||
-		    world.docks.filter(dock => dock.region !== world.homeRegion).length >= plan.max)
+		const starved = ferry ? null : labour.short[0] || null;
+		const outposts = world.regions.filter(region => region.id !== world.homeRegion && (region.docks > 0 || region.centres > 0)).length;
+		if (!world.centres.length || !world.seas.length || outposts >= plan.max ||
+		    world.regionArea(world.homeRegion) > plan.maxHomeArea && !starved)
 			return null;
-		if (this.colonySite && this.colonyOpen(world, this.colonySite.position, this.colonySite.region))
+		const settlement = !starved && world.offered.some(name => this.catalog.isSettlement(name));
+		if (this.colonySite && this.colonyOpen(world, this.colonySite.position, this.colonySite.region) &&
+		    (!starved || world.regionWealth(this.colonySite.region, starved) > 0 ||
+		     world.regions.some(region => region.id === this.colonySite.region && region.settlers > 0)))
+		{
+			const kind = settlement && world.regionArea(this.colonySite.region) >= plan.centreArea ? "centre" : "dock";
+			if (kind !== this.colonySite.kind)
+			{
+				this.colonySite = Object.freeze(Object.assign({}, this.colonySite, { "kind": kind }));
+				this.changed = true;
+			}
 			return this.colonySite;
+		}
 		if (this.colonySearched !== undefined && world.time - this.colonySearched < plan.retryMs)
 			return null;
 		this.colonySearched = world.time;
-		this.colonySite = this.findColony(world);
+		const found = this.findColony(world, starved);
+		this.colonySite = found && Object.freeze(Object.assign({}, found, {
+			"starved": starved, "kind": settlement && world.regionArea(found.region) >= plan.centreArea ? "centre" : "dock"
+		}));
 		this.changed = this.changed || !!this.colonySite;
 		return this.colonySite;
 	}
@@ -88,12 +164,11 @@ export class Strategy
 	colonyOpen(world, position, region)
 	{
 		const plan = OPENING.colony;
-		return !world.docks.some(dock => dock.region === region) &&
-			!world.enemyStructures.some(structure => structure.region === region) &&
+		return !world.regions.some(entry => entry.id === region && (entry.docks > 0 || entry.centres > 0 || entry.enemyStructures > 0)) &&
 			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.enemyClearance * plan.enemyClearance);
 	}
 
-	findColony(world)
+	findColony(world, starved)
 	{
 		const plan = OPENING.colony;
 		const grid = world.wealth;
@@ -123,13 +198,15 @@ export class Strategy
 							if (ii >= 0 && jj >= 0 && ii < grid.width && jj < grid.height)
 								total += grid.totals[code][ii + jj * grid.width];
 						}
-					wealth += Math.min(total, plan.wealthCap);
+					wealth += Math.min(total, plan.wealthCap) * (code === starved ? plan.starvedWeight : 1);
+					if (code === starved && !total)
+						wealth = -Infinity;
 				}
 				const score = wealth / (1 + Math.sqrt(squareDistance(position, home)) / plan.distanceScale);
 				if (score > 0 && (!best || score > best.score))
 					best = { "position": position, "region": region, "sea": sea, "score": score };
 			}
-		return best ? Object.freeze({ "position": Object.freeze(best.position), "region": best.region, "sea": best.sea }) : null;
+		return best ? { "position": Object.freeze(best.position), "region": best.region, "sea": best.sea } : null;
 	}
 
 	military(world)
@@ -162,6 +239,12 @@ export class Strategy
 		this.started = true;
 		if (world.demand.observed)
 			this.adaptShares(world);
+		const labour = this.labour(world);
+		const ferry = this.ferry(world, labour);
+		if ((this.ferried && this.ferried.to) !== (ferry && ferry.to) || (this.shortCode || null) !== (labour.short[0] || null))
+			this.changed = true;
+		this.ferried = ferry;
+		this.shortCode = labour.short[0] || null;
 		this.priorities = Object.freeze({
 			"phase": "opening",
 			"gatherShares": Object.freeze(Object.assign({}, this.shares)),
@@ -174,8 +257,11 @@ export class Strategy
 			"protectHero": this.plans(world).includes("regicide"),
 			"seekRelics": this.plans(world).includes("relics"),
 			"raiseWonder": this.plans(world).includes("wonder"),
-			"colony": this.colony(world),
+			"colony": this.colony(world, labour, ferry),
 			"colonyPlan": OPENING.colony,
+			"ferry": ferry,
+			"starved": Object.freeze(labour.starved),
+			"short": Object.freeze(labour.short),
 			"advancePhase": this.wantsPhase(world)
 		});
 		return this.priorities;

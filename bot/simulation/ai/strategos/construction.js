@@ -33,6 +33,8 @@ const SETTLEMENT_ENEMY_CLEARANCE = 220;
 const SETTLEMENT_WEALTH_CAP = 6000;
 const SETTLEMENT_TRIES = 6;
 const FOUNDING_MAX_DISTANCE = 200;
+const OUTPOST_MIN_BUILDERS = 3;
+const SHORT_URGENCY = 5;
 const DOCK_OFFSETS = [0.5, 0.25, 0.75];
 const DOCK_SITES_TRIED = 40;
 const MARKET_SURPLUS = 500;
@@ -87,8 +89,8 @@ export class Construction
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
-			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.dockRequest,
-			this.wonderRequest])
+			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.outpostCentreRequest,
+			this.dockRequest, this.wonderRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -430,7 +432,37 @@ export class Construction
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
-		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion);
+		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion,
+			world.homeRegion, null);
+	}
+
+	outpostCentreRequest(world, priorities)
+	{
+		const isSettlement = name => this.catalog.isSettlement(name);
+		if (world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
+		    world.foundations.some(foundation => isSettlement(foundation.template)))
+			return null;
+		const template = [...this.offered(world)].filter(isSettlement)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!template)
+			return null;
+		for (const region of world.regions)
+		{
+			if (region.id === world.homeRegion || region.centres > 0 || region.enemyStructures > 0 || region.workers < OUTPOST_MIN_BUILDERS ||
+			    world.regionArea(region.id) < priorities.colonyPlan.centreArea)
+				continue;
+			const key = template + "@" + region.id;
+			if (!this.searchable(world, key))
+				continue;
+			const dock = world.docks.find(candidate => candidate.region === region.id);
+			if (!dock)
+				continue;
+			const request = this.settlementRequest(world, template, dock.position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion,
+				region.id, null, key);
+			if (request)
+				return request;
+		}
+		return null;
 	}
 
 	dockRequest(world, priorities)
@@ -438,7 +470,7 @@ export class Construction
 		const colony = priorities.colony;
 		const sea = colony ? colony.sea : world.crossing && world.crossing.sea;
 		if (sea === undefined || sea === null || world.docks.some(dock => dock.region === world.homeRegion) ||
-		    world.population < (colony ? priorities.colonyPlan.dockPopulation : priorities.naval.dockPopulation))
+		    world.population < (priorities.short.length ? 0 : colony ? priorities.colonyPlan.dockPopulation : priorities.naval.dockPopulation))
 			return null;
 		return this.shoreRequest(world, priorities, world.homeRegion, sea, world.centres[0].position, [...this.offered(world)], null);
 	}
@@ -495,17 +527,19 @@ export class Construction
 					continue;
 				}
 				const site = { "x": x, "z": z, "angle": 0 };
+				const urgent = priorities.short.length > 0;
+				const urgency = urgent ? SHORT_URGENCY : 1;
 				const request = builders ? {
 					"source": "construction",
 					"action": { "type": "construct", "template": template, "x": x, "z": z, "angle": 0, "builders": builders },
 					"claims": { "resources": this.catalog.cost(template), "workers": builders },
 					"value": priorities.values.dock,
-					"urgency": 1,
+					"urgency": urgency,
 					"reserve": true
-				} : this.constructRequest(world, template, site, priorities.values.dock, 1);
+				} : this.constructRequest(world, template, site, priorities.values.dock, urgency);
 				if (request)
 					this.dockSite = { key, template, x, z, region, "seen": false };
-				return request;
+				return urgent ? this.production(request) : request;
 			}
 		return this.noSite(world, template);
 	}
@@ -517,16 +551,52 @@ export class Construction
 			return [];
 		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.includes("REPAIR"));
 		if (!builders.length)
-			return [];
+			return this.colonyHold(world, priorities, colony);
 		const origin = [0, 0];
 		for (const settler of builders)
 		{
 			origin[0] += settler.position[0] / builders.length;
 			origin[1] += settler.position[1] / builders.length;
 		}
-		const request = this.shoreRequest(world, priorities, colony.region, colony.sea, origin, builders[0].buildable,
-			builders.map(settler => settler.id));
+		const ids = builders.map(settler => settler.id);
+		const isSettlement = name => this.catalog.isSettlement(name);
+		const template = colony.kind === "centre" && builders[0].buildable.filter(isSettlement)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (template)
+		{
+			if (world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
+			    world.foundations.some(foundation => isSettlement(foundation.template)))
+				return [];
+			const key = template + "@" + colony.region;
+			const centre = this.searchable(world, key) && this.settlementRequest(world, template, origin, SETTLEMENT_MAX_DISTANCE,
+				priorities.values.expansion, colony.region, ids, key);
+			if (centre)
+				return [centre];
+		}
+		const request = this.shoreRequest(world, priorities, colony.region, colony.sea, origin, builders[0].buildable, ids);
 		return request ? [request] : [];
+	}
+
+	colonyHold(world, priorities, colony)
+	{
+		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
+		if (!priorities.short.length || colony.kind !== "dock" || world.settlers.some(settler => settler.region === colony.region) ||
+		    world.pendingConstructions.some(order => isDock(order.template)) || world.foundations.some(foundation => isDock(foundation.template)))
+			return [];
+		const template = world.offered.filter(isDock)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!template)
+			return [];
+		return [{
+			"source": "construction",
+			"action": { "type": "hold" },
+			"claims": { "resources": this.catalog.cost(template) },
+			"value": priorities.values.dock,
+			"urgency": SHORT_URGENCY,
+			"reserve": true,
+			"conversion": true,
+			"tier": "production"
+		}];
 	}
 
 	foundingRequest(world, priorities)
@@ -546,10 +616,10 @@ export class Construction
 			origin[0] += worker.position[0] / world.workers.length;
 			origin[1] += worker.position[1] / world.workers.length;
 		}
-		return this.settlementRequest(world, template, origin, FOUNDING_MAX_DISTANCE, priorities.values.founding);
+		return this.settlementRequest(world, template, origin, FOUNDING_MAX_DISTANCE, priorities.values.founding, undefined, null);
 	}
 
-	settlementRequest(world, template, home, reach, value)
+	settlementRequest(world, template, home, reach, value, region, builders, key)
 	{
 		const spacing = this.catalog.spacing(template);
 		const minimum = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN + world.wealth.cellSize * Math.SQRT2;
@@ -561,7 +631,7 @@ export class Construction
 			{
 				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
 				const fromHome = Math.sqrt(squareDistance(position, home));
-				if (fromHome > reach ||
+				if (fromHome > reach || region !== undefined && world.regionOf(position) !== region ||
 				    spaced.some(footprint => squareDistance(footprint.position, position) < minimum * minimum))
 					continue;
 				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => Math.sqrt(squareDistance(centre.position, position))));
@@ -595,10 +665,19 @@ export class Construction
 		{
 			const site = placement.around(candidate.position, 0, grid.cellSize, this.catalog.footprint(template), BUILDING_MARGIN,
 				this.reservedBoxes(world), zones);
-			if (site)
+			if (site && !builders)
 				return this.constructRequest(world, template, site, value, 1);
+			if (site)
+				return {
+					"source": "construction",
+					"action": { "type": "construct", "template": template, "x": site.x, "z": site.z, "angle": site.angle, "builders": builders },
+					"claims": { "resources": this.catalog.cost(template), "workers": builders },
+					"value": value,
+					"urgency": 1,
+					"reserve": true
+				};
 		}
-		return this.noSite(world, template);
+		return this.noSite(world, key || template);
 	}
 
 	wonderRequest(world, priorities, placement)

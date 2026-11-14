@@ -29,6 +29,7 @@ export class ResourceIndex
 		const grid = this.grid(gameState);
 		const totals = new Float64Array(grid.width * grid.height);
 		const weighted = new Float64Array(2 * grid.width * grid.height);
+		const byRegion = new Map();
 		const limit = SITE_RADIUS * SITE_RADIUS;
 		for (const ent of gameState.getResourceSupplies(code).values())
 		{
@@ -39,6 +40,7 @@ export class ResourceIndex
 			if (!position || ent.hasClass("SeaCreature"))
 				continue;
 			const amount = ent.resourceSupplyAmount();
+			let region = -1;
 			if (owner === 0 && isFinite(amount) && amount > 0)
 			{
 				const i = Math.min(grid.width - 1, Math.max(0, Math.floor(position[0] / grid.cellSize)));
@@ -46,12 +48,13 @@ export class ResourceIndex
 				totals[i + j * grid.width] += amount;
 				weighted[2 * (i + j * grid.width)] += amount * position[0];
 				weighted[2 * (i + j * grid.width) + 1] += amount * position[1];
+				region = accessibility.getAccessValue(position);
+				byRegion.set(region, (byRegion.get(region) || 0) + amount);
 			}
 			if (!points.length)
 				continue;
 			let best = Infinity;
 			let nearest = Infinity;
-			let region = -1;
 			for (const point of points)
 			{
 				const distance = squareDistance(point.position, position);
@@ -70,6 +73,7 @@ export class ResourceIndex
 		}
 		grid.totals[code] = totals;
 		grid.weighted[code] = weighted;
+		grid.regions[code] = byRegion;
 		if (!kept.length)
 			this.reachable(gameState, beyond, points, kept);
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
@@ -100,7 +104,7 @@ export class ResourceIndex
 			const territory = gameState.sharedScript.territoryMap;
 			const size = territory.width * territory.cellSize;
 			const cells = Math.ceil(size / WEALTH_CELL);
-			this.wealth = { "cellSize": WEALTH_CELL, "width": cells, "height": cells, "totals": {}, "weighted": {} };
+			this.wealth = { "cellSize": WEALTH_CELL, "width": cells, "height": cells, "totals": {}, "weighted": {}, "regions": {} };
 		}
 		return this.wealth;
 	}
@@ -823,6 +827,36 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 				"state": ent.unitAIState() || ""
 			}));
 	const homeRegion = centres.length ? accessibility.getAccessValue(centres[0].position) : 0;
+	const presence = new Map();
+	const regionEntry = region => {
+		if (!presence.has(region))
+			presence.set(region, { "id": region, "workers": 0, "idle": 0, "settlers": 0, "fighters": 0, "anchors": 0, "docks": 0, "centres": 0,
+				"enemyStructures": 0 });
+		return presence.get(region);
+	};
+	for (const worker of workers)
+	{
+		const entry = regionEntry(worker.region);
+		entry.workers += 1;
+		if (worker.idle)
+			entry.idle += 1;
+	}
+	for (const settler of settlers)
+		regionEntry(settler.region).settlers += 1;
+	for (const fighter of fighters)
+		regionEntry(fighter.region).fighters += 1;
+	for (const region of anchorRegions)
+		regionEntry(region).anchors += 1;
+	for (const dock of docks)
+		regionEntry(dock.region).docks += 1;
+	for (const centre of centres)
+		regionEntry(accessibility.getAccessValue(centre.position)).centres += 1;
+	for (const structure of enemyStructures)
+		regionEntry(structure.region).enemyStructures += 1;
+	const offered = new Set();
+	for (const worker of workers)
+		for (const name of worker.buildable)
+			offered.add(name);
 	const seas = accessibility.regionLinks[homeRegion] || [];
 	const objectives = enemyCentres.length ? enemyCentres :
 		enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player));
@@ -854,6 +888,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"regionLinks": accessibility.regionLinks,
 		"regionOf": position => accessibility.getAccessValue(position),
 		"regionArea": region => (accessibility.regionSize[region] || 0) * accessibility.cellSize * accessibility.cellSize,
+		"regions": Object.freeze([...presence.values()].sort((a, b) => a.id - b.id).map(entry => Object.freeze(entry))),
+		"regionWealth": (region, code) => resourceIndex.grid(gameState).regions[code] && resourceIndex.grid(gameState).regions[code].get(region) || 0,
+		"offered": Object.freeze([...offered].sort()),
 		"settlers": Object.freeze(settlers),
 		"docks": Object.freeze(docks.sort((a, b) => (b.region === homeRegion) - (a.region === homeRegion) || a.id - b.id)),
 		"enemyWarships": enemyWarships,
