@@ -204,6 +204,15 @@ export function territoryAt(territory, x, z)
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
 }
 
+export function territoryCell(territory, x, z)
+{
+	const i = Math.floor(x / territory.cellSize);
+	const j = Math.floor(z / territory.cellSize);
+	if (i < 0 || j < 0 || i >= territory.width || j >= territory.height)
+		return -1;
+	return territory.data[i + j * territory.width] & (TERRITORY_OWNER_MASK | TERRITORY_BLINKING_MASK);
+}
+
 const SHORE_PROBES = [6, 12, 18];
 
 function landRegionNear(accessibility, position)

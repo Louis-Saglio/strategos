@@ -10,6 +10,7 @@ const FIELD_MARGIN = 1;
 const HOUSE_RING_WIDTH = 120;
 const NO_SITE_REPORT_MS = 30000;
 const NO_SITE_RETRY_MS = 20000;
+const FULL_BASE_RETRY_MS = 60000;
 const CENTRE_CLEARANCE = 8;
 const SECONDS_PER_BUILDER = 25;
 const MAX_BUILDERS = 6;
@@ -47,6 +48,7 @@ export class Construction
 		this.telemetry = telemetry;
 		this.noSiteReported = new Map();
 		this.noSiteTime = new Map();
+		this.noSiteRetry = new Map();
 		this.dockSite = null;
 		this.dockRefused = new Set();
 	}
@@ -54,12 +56,13 @@ export class Construction
 	searchable(world, template)
 	{
 		const failed = this.noSiteTime.get(template);
-		return failed === undefined || world.time - failed >= NO_SITE_RETRY_MS;
+		return failed === undefined || world.time - failed >= (this.noSiteRetry.get(template) || NO_SITE_RETRY_MS);
 	}
 
-	noSite(world, template)
+	noSite(world, template, retry)
 	{
 		this.noSiteTime.set(template, world.time);
+		this.noSiteRetry.set(template, retry || NO_SITE_RETRY_MS);
 		const last = this.noSiteReported.get(template);
 		if (last === undefined || world.time - last >= NO_SITE_REPORT_MS)
 		{
@@ -226,7 +229,7 @@ export class Construction
 			return null;
 		const site = this.ringSite(world, placement, template);
 		if (!site)
-			return this.noSite(world, template);
+			return this.noSite(world, template, FULL_BASE_RETRY_MS);
 		return this.production(this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need));
 	}
 
@@ -347,16 +350,21 @@ export class Construction
 					return site;
 			}
 		}
-		for (const [margin, zones] of [[BUILDING_MARGIN, belts], [TIGHT_MARGIN, belts], [TIGHT_MARGIN, []], [0, []]])
-			for (const centre of world.centres)
-			{
-				const minRadius = centre.radius + TIGHT_MARGIN + this.halfSize(template);
-				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, margin, reserved, zones, FINE_STEP);
-				if (site)
-					return site;
-			}
-		this.crampedAt = world.time;
-		return null;
+		const options = [{ "margin": BUILDING_MARGIN, "zones": belts }, { "margin": TIGHT_MARGIN, "zones": belts },
+			{ "margin": TIGHT_MARGIN, "zones": [] }, { "margin": 0, "zones": [] }];
+		let best = null;
+		for (const centre of world.centres)
+		{
+			const minRadius = centre.radius + TIGHT_MARGIN + this.halfSize(template);
+			const site = placement.ranked(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, options, reserved, FINE_STEP);
+			if (site && (!best || site.rank < best.rank))
+				best = site;
+			if (best && best.rank === 0)
+				break;
+		}
+		if (!best)
+			this.crampedAt = world.time;
+		return best;
 	}
 
 	nearCentreRequest(world, placement, template, value)
@@ -365,7 +373,7 @@ export class Construction
 			return null;
 		const site = this.ringSite(world, placement, template);
 		if (!site)
-			return this.noSite(world, template);
+			return this.noSite(world, template, FULL_BASE_RETRY_MS);
 		return this.constructRequest(world, template, site, value, 1);
 	}
 

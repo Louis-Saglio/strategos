@@ -1,4 +1,4 @@
-import { territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryCell } from "simulation/ai/strategos/world.js";
 
 const RING_STEP = 4;
 const ARC_STEP = 4;
@@ -7,6 +7,7 @@ const MAX_FINE_CANDIDATES = 12000;
 const DEFAULT_ANGLE = Math.PI;
 const CELL_SLACK = Math.SQRT1_2;
 const FIRE_MARGIN = 10;
+const NEUTRAL_BLINKING = 0x40;
 
 export class Placement
 {
@@ -23,8 +24,8 @@ export class Placement
 
 	territoryOwned(x, z)
 	{
-		const cell = territoryAt(this.grids.territory, x, z);
-		return cell.owner === this.player && cell.connected || this.neutralAllowed && cell.owner === 0;
+		const cell = territoryCell(this.grids.territory, x, z);
+		return cell === this.player || this.neutralAllowed && (cell === 0 || cell === NEUTRAL_BLINKING);
 	}
 
 	allowNeutral(allowed)
@@ -79,8 +80,10 @@ export class Placement
 		const halfWidth = footprint.width / 2;
 		const halfDepth = footprint.depth / 2;
 		const [x, z] = site;
+		if (!this.territoryOwned(x, z))
+			return false;
 		const corners = this.corners(x, z, halfWidth, halfDepth);
-		if (!this.territoryOwned(x, z) || corners.some(corner => !this.territoryOwned(corner[0], corner[1])))
+		if (corners.some(corner => !this.territoryOwned(corner[0], corner[1])))
 			return false;
 		for (const battery of this.batteries)
 		{
@@ -116,6 +119,35 @@ export class Placement
 				return false;
 		}
 		return this.clear(x, z, halfWidth + margin, halfDepth + margin);
+	}
+
+	ranked(anchor, minRadius, maxRadius, footprint, options, reserved, step)
+	{
+		const loosest = options[options.length - 1];
+		let best = null;
+		let tried = 0;
+		for (let radius = minRadius; radius <= maxRadius; radius += step)
+		{
+			const steps = Math.max(8, Math.ceil(2 * Math.PI * radius / step));
+			for (let k = 0; k < steps; ++k)
+			{
+				if (++tried > MAX_FINE_CANDIDATES)
+					return best;
+				const angle = 2 * Math.PI * k / steps;
+				const site = this.point(anchor[0], anchor[1], radius * Math.cos(angle), radius * Math.sin(angle));
+				if (!this.fits(site, footprint, loosest.margin, reserved, loosest.zones))
+					continue;
+				let rank = options.length - 1;
+				for (let index = 0; index < rank; ++index)
+					if (this.fits(site, footprint, options[index].margin, reserved, options[index].zones))
+						rank = index;
+				if (!best || rank < best.rank)
+					best = { "x": site[0], "z": site[1], "angle": this.angle, "radius": radius, "rank": rank };
+				if (rank === 0)
+					return best;
+			}
+		}
+		return best;
 	}
 
 	around(anchor, minRadius, maxRadius, footprint, margin, reserved, keepAway, step)
