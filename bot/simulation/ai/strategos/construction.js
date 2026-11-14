@@ -262,7 +262,17 @@ export class Construction
 			if (site)
 				return this.production(this.constructRequest(world, farm, site, priorities.values.farm, urgency));
 		}
-		return this.production(this.farmsteadRequest(world, priorities, placement, farm, urgency));
+		const farmstead = this.farmsteadRequest(world, priorities, placement, farm, urgency);
+		if (farmstead)
+			return this.production(farmstead);
+		for (const anchor of world.anchors.filter(candidate => candidate.types.includes("food")))
+		{
+			const minRadius = anchor.radius + FIELD_MARGIN + half;
+			const site = placement.around(anchor.position, minRadius, FARMSTEAD_SEARCH.to, footprint, FIELD_MARGIN, reserved, []);
+			if (site)
+				return this.production(this.constructRequest(world, farm, site, priorities.values.farm, urgency));
+		}
+		return null;
 	}
 
 	farmsteadRequest(world, priorities, placement, farm, urgency)
@@ -311,16 +321,18 @@ export class Construction
 
 	ringSite(world, placement, template)
 	{
-		const centre = world.centres[0];
-		const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
 		const reserved = this.reservedBoxes(world);
 		const footprint = this.catalog.footprint(template);
 		const belts = this.farmBelts(world);
-		for (const zones of [this.resourceZones(world, null).concat(belts), belts, []])
+		for (const centre of world.centres)
 		{
-			const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
-			if (site)
-				return site;
+			const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
+			for (const zones of [this.resourceZones(world, null).concat(belts), belts, []])
+			{
+				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
+				if (site)
+					return site;
+			}
 		}
 		return null;
 	}
