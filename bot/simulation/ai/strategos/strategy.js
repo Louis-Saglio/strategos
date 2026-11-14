@@ -6,7 +6,7 @@ const OPENING = {
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
-		"plenty": { "enter": 8000, "exit": 3000 } },
+		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
@@ -137,8 +137,16 @@ export class Strategy
 		const level = this.plenty ? plan.plenty.exit : plan.plenty.enter;
 		this.plenty = world.codes.every(code => world.resources[code] >= level);
 		const target = this.plenty ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
-		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty)
-			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target, "plentiful": this.plenty }));
+		const hostiles = world.threats.length + world.wild.length;
+		if (hostiles >= plan.raid.hostiles && hostiles >= plan.raid.share * (world.fighters.length + world.garrisonedSoldiers))
+			this.raidedAt = world.time;
+		const raided = this.raidedAt !== undefined && world.time - this.raidedAt < plan.raid.memoryMs;
+		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty ||
+		    this.militaryPlan.raided !== raided)
+		{
+			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target, "plentiful": this.plenty, "raided": raided }));
+			this.changed = true;
+		}
 		return this.militaryPlan;
 	}
 

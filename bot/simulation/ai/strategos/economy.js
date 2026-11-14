@@ -53,7 +53,7 @@ export class Economy
 	{
 		const requests = [];
 		const civilians = world.workers.filter(worker => !worker.soldier).length;
-		const soldiersOnly = civilians >= priorities.military.civilianTarget;
+		const soldiersOnly = civilians >= priorities.military.civilianTarget || priorities.military.raided;
 		let context = null;
 		for (const trainer of world.trainers)
 		{
