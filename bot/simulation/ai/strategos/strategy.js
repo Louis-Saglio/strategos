@@ -9,6 +9,7 @@ const OPENING = {
 		"plenty": { "enter": 8000, "exit": 3000 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
+	"blockedGrowth": { "room": 1, "afterMs": 60000 },
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6 },
@@ -47,7 +48,17 @@ export class Strategy
 		const next = world.phase + 1;
 		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
 			return true;
-		const byPopulation = world.population >= (OPENING.phaseUpPopulation[next] || Infinity);
+		const housed = world.population + world.queuedPopulation >= world.populationLimit - OPENING.blockedGrowth.room &&
+			world.populationLimit < world.populationMax;
+		if (!housed)
+			this.blockedSince = undefined;
+		else if (this.blockedSince === undefined)
+			this.blockedSince = world.time;
+		const byBlockedGrowth = housed && world.time - this.blockedSince >= OPENING.blockedGrowth.afterMs && !!world.nextPhaseTech &&
+			world.codes.every(code => world.resources[code] >= world.nextPhaseCost[code]);
+		if (byBlockedGrowth)
+			this.phaseWanted = next;
+		const byPopulation = byBlockedGrowth || world.population >= (OPENING.phaseUpPopulation[next] || Infinity);
 		const { surplus } = exchangeOutlook(world);
 		const bySurplus = next >= OPENING.surplusPhaseFrom && !!world.nextPhaseTech &&
 			world.codes.every(code => surplus[code] >= world.nextPhaseCost[code]);

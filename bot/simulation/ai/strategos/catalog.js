@@ -38,8 +38,16 @@ export class Catalog
 	{
 		this.refreshTurnCaches();
 		if (!this.availability.has(name))
-			this.availability.set(name, !this.gameState.isTemplateDisabled(name) && this.template(name).available(this.gameState));
+			this.availability.set(name, !this.gameState.isTemplateDisabled(name) && this.template(name).available(this.gameState) &&
+				!this.limitReached(name));
 		return this.availability.get(name);
+	}
+
+	limitReached(name)
+	{
+		const template = this.template(name);
+		const category = template.buildCategory() || template.trainingCategory();
+		return !!category && this.gameState.isEntityLimitReached(category);
 	}
 
 	template(name)

@@ -3,6 +3,7 @@ import { territoryAt } from "simulation/ai/strategos/world.js";
 const RING_STEP = 4;
 const ARC_STEP = 4;
 const MAX_CANDIDATES = 2000;
+const MAX_FINE_CANDIDATES = 12000;
 const DEFAULT_ANGLE = Math.PI;
 const CELL_SLACK = Math.SQRT1_2;
 
@@ -107,11 +108,12 @@ export class Placement
 		return this.clear(x, z, halfWidth + margin, halfDepth + margin);
 	}
 
-	around(anchor, minRadius, maxRadius, footprint, margin, reserved, keepAway)
+	around(anchor, minRadius, maxRadius, footprint, margin, reserved, keepAway, step)
 	{
 		let tried = 0;
-		const stride = Math.max(RING_STEP, Math.min(footprint.width, footprint.depth) / 2);
-		const arc = Math.max(ARC_STEP, Math.min(footprint.width, footprint.depth) / 2);
+		const stride = step || Math.max(RING_STEP, Math.min(footprint.width, footprint.depth) / 2);
+		const arc = step || Math.max(ARC_STEP, Math.min(footprint.width, footprint.depth) / 2);
+		const limit = step ? MAX_FINE_CANDIDATES : MAX_CANDIDATES;
 		for (let radius = minRadius; radius <= maxRadius; radius += stride)
 		{
 			const steps = Math.max(8, Math.ceil(2 * Math.PI * radius / arc));
@@ -121,7 +123,7 @@ export class Placement
 				const site = this.point(anchor[0], anchor[1], radius * Math.cos(angle), radius * Math.sin(angle));
 				if (this.fits(site, footprint, margin, reserved, keepAway))
 					return { "x": site[0], "z": site[1], "angle": this.angle, "radius": radius, "tried": tried + 1 };
-				if (++tried >= MAX_CANDIDATES)
+				if (++tried >= limit)
 					return null;
 			}
 		}

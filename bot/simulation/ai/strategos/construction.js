@@ -3,6 +3,9 @@ import { exchangeOutlook, techBenefit } from "simulation/ai/strategos/valuation.
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
+const TIGHT_MARGIN = 1;
+const FINE_STEP = 3;
+const CRAMPED_MEMORY_MS = 60000;
 const FIELD_MARGIN = 1;
 const HOUSE_RING_WIDTH = 120;
 const NO_SITE_REPORT_MS = 30000;
@@ -334,6 +337,15 @@ export class Construction
 					return site;
 			}
 		}
+		for (const [margin, zones] of [[BUILDING_MARGIN, belts], [TIGHT_MARGIN, belts], [TIGHT_MARGIN, []], [0, []]])
+			for (const centre of world.centres)
+			{
+				const minRadius = centre.radius + TIGHT_MARGIN + this.halfSize(template);
+				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, margin, reserved, zones, FINE_STEP);
+				if (site)
+					return site;
+			}
+		this.crampedAt = world.time;
 		return null;
 	}
 
@@ -352,7 +364,9 @@ export class Construction
 		const expansion = priorities.expansion;
 		const isSettlement = name => this.catalog.isSettlement(name);
 		const settlements = this.count(world, isSettlement);
-		const wanted = Math.min(expansion.max, 1 + Math.floor(Math.max(0, world.population - expansion.firstPopulation) / expansion.populationPerSettlement));
+		const cramped = this.crampedAt !== undefined && world.time - this.crampedAt < CRAMPED_MEMORY_MS;
+		const wanted = Math.min(expansion.max, Math.max(cramped ? settlements + 1 : 0,
+			1 + Math.floor(Math.max(0, world.population - expansion.firstPopulation) / expansion.populationPerSettlement)));
 		if (settlements >= wanted || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
 		    world.foundations.some(foundation => isSettlement(foundation.template)))
 			return null;
