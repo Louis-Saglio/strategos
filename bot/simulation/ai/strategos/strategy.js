@@ -5,7 +5,8 @@ const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "offense": 30, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
-	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80 },
+	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
+		"plenty": { "enter": 8000, "exit": 3000 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
@@ -117,6 +118,17 @@ export class Strategy
 		return best ? Object.freeze({ "position": Object.freeze(best.position), "region": best.region, "sea": best.sea }) : null;
 	}
 
+	military(world)
+	{
+		const plan = OPENING.military;
+		const level = this.plenty ? plan.plenty.exit : plan.plenty.enter;
+		this.plenty = world.codes.every(code => world.resources[code] >= level);
+		const target = this.plenty ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
+		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target)
+			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target }));
+		return this.militaryPlan;
+	}
+
 	plans(world)
 	{
 		return Object.keys(PLANS).filter(name => PLANS[name](world));
@@ -133,7 +145,7 @@ export class Strategy
 			"gatherShares": Object.freeze(Object.assign({}, this.shares)),
 			"values": OPENING.values,
 			"housing": OPENING.housing,
-			"military": OPENING.military,
+			"military": this.military(world),
 			"offense": OPENING.offense,
 			"expansion": OPENING.expansion,
 			"naval": OPENING.naval,
@@ -150,7 +162,7 @@ export class Strategy
 	{
 		const weights = {};
 		let total = 0;
-		const planned = productionFlow(world, this.catalog, OPENING.military.civilianTarget);
+		const planned = productionFlow(world, this.catalog, this.military(world).civilianTarget);
 		for (const code of this.codes)
 		{
 			const flow = Math.max(world.demand.spendRate[code], planned[code]) * DEMAND_HORIZON_S;
