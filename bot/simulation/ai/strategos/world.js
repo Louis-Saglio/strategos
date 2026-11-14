@@ -745,8 +745,19 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		hauls[code] = hauled[code] ? hauls[code] / hauled[code] : 0;
 
 	const sites = {};
+	const batteries = enemyStructures.slice();
+	const armedGaiaStructures = gameState.updatingGlobalCollection("strategos-gaia-batteries",
+		{ "func": ent => ent.hasClass("Structure") && !!ent.get("BuildingAI"), "dynamicProperties": [] }, gameState.getEntities(0));
+	for (const ent of armedGaiaStructures.values())
+	{
+		const range = ent.position() && ent.attackRange("Ranged");
+		const fire = range && defensiveFire(gameState, ent);
+		if (fire && fire.arrows)
+			batteries.push(Object.freeze({ "position": ent.position(), "fire": fire, "range": range.max }));
+	}
+
 	for (const code of codes)
-		sites[code] = resourceIndex.live(gameState, code, anchors, enemyStructures);
+		sites[code] = resourceIndex.live(gameState, code, anchors, batteries);
 
 	const ships = [];
 	for (const ent of gameState.getOwnEntitiesByClass("Ship", true).values())
@@ -847,6 +858,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"footprints": Object.freeze(footprints),
 		"garrisonedSoldiers": garrisonedSoldiers,
 		"researchers": Object.freeze(researchers),
+		"batteries": Object.freeze(batteries.filter(structure => structure.fire.arrows > 0)),
 		"threats": Object.freeze(threats),
 		"wild": Object.freeze(wild),
 		"fighters": Object.freeze(fighters),

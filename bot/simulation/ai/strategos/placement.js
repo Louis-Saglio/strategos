@@ -6,12 +6,14 @@ const MAX_CANDIDATES = 2000;
 const MAX_FINE_CANDIDATES = 12000;
 const DEFAULT_ANGLE = Math.PI;
 const CELL_SLACK = Math.SQRT1_2;
+const FIRE_MARGIN = 10;
 
 export class Placement
 {
 	constructor(world, player)
 	{
 		this.grids = world.grids;
+		this.batteries = world.batteries;
 		this.player = player;
 		const home = world.centres[0];
 		this.angle = home && isFinite(home.angle) ? home.angle : DEFAULT_ANGLE;
@@ -80,6 +82,14 @@ export class Placement
 		const corners = this.corners(x, z, halfWidth, halfDepth);
 		if (!this.territoryOwned(x, z) || corners.some(corner => !this.territoryOwned(corner[0], corner[1])))
 			return false;
+		for (const battery of this.batteries)
+		{
+			const dx = battery.position[0] - x;
+			const dz = battery.position[1] - z;
+			const reach = battery.range + FIRE_MARGIN + Math.max(halfWidth, halfDepth);
+			if (dx * dx + dz * dz < reach * reach)
+				return false;
+		}
 		for (const box of reserved)
 		{
 			const dx = box.x - x;
