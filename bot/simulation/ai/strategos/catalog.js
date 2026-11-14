@@ -418,6 +418,15 @@ export class Catalog
 		return accepted.includes("Soldier") || accepted.includes("Infantry") ? +(template.get("GarrisonHolder/Max") || 0) : 0;
 	}
 
+	isBombardShip(name)
+	{
+		const template = this.template(name);
+		if (!template || !template.hasClass("Ship"))
+			return false;
+		const preferred = (template.get("Attack/Ranged/PreferredClasses/_string") || "").split(/\s+/);
+		return preferred.includes("Structure") && this.combat(name).ranged;
+	}
+
 	isFishingBoat(name)
 	{
 		const template = this.template(name);

@@ -9,6 +9,7 @@ const FIRE_MARGIN = 10;
 const FISH_RADIUS = 160;
 const FISH_KEPT = 24;
 const FISHER_WORTH = 3;
+const STRAGGLERS_KEPT = 24;
 
 export class ResourceIndex
 {
@@ -19,6 +20,7 @@ export class ResourceIndex
 		this.sites = new Map(codes.map(code => [code, []]));
 		this.cursor = 0;
 		this.fish = [];
+		this.schools = Object.freeze([]);
 	}
 
 	liveFish(gameState)
@@ -59,7 +61,9 @@ export class ResourceIndex
 		const limit = SITE_RADIUS * SITE_RADIUS;
 		const piers = code === "food" ? anchors.filter(anchor => anchor.shore && anchor.types.includes(code)) : [];
 		const fish = [];
-		if (piers.length)
+		if (code === "food")
+		{
+			const schools = [];
 			for (const ent of gameState.updatingGlobalCollection("strategos-fish",
 				{ "func": candidate => candidate.hasClass("SeaCreature") && !!candidate.resourceSupplyMax(), "dynamicProperties": [] },
 				gameState.getEntities(0)).values())
@@ -67,12 +71,15 @@ export class ResourceIndex
 				const position = ent.position();
 				if (!position)
 					continue;
+				schools.push(position);
 				let nearest = Infinity;
 				for (const pier of piers)
 					nearest = Math.min(nearest, squareDistance(pier.position, position));
 				if (nearest <= FISH_RADIUS * FISH_RADIUS)
 					fish.push({ "id": ent.id(), "distance": nearest });
 			}
+			this.schools = Object.freeze(schools);
+		}
 		for (const ent of gameState.getResourceSupplies(code).values())
 		{
 			const owner = ent.owner();
@@ -192,12 +199,26 @@ export class ResourceIndex
 }
 
 const SHORE_SPACING = 12;
+const YARD_BLOCKED_MS = 150000;
 
 export class ShoreIndex
 {
 	constructor()
 	{
 		this.points = null;
+		this.busy = new Map();
+		this.blocked = new Set();
+	}
+
+	watch(id, queueLength, time)
+	{
+		if (!queueLength)
+			this.busy.delete(id);
+		else if (!this.busy.has(id))
+			this.busy.set(id, time);
+		else if (time - this.busy.get(id) >= YARD_BLOCKED_MS)
+			this.blocked.add(id);
+		return this.blocked.has(id);
 	}
 
 	all(gameState)
@@ -332,7 +353,7 @@ function enemyTarget(gameState, catalog, ent, owner, player)
 		"id": ent.id(),
 		"owner": owner,
 		"position": ent.position(),
-		"region": gameState.sharedScript.accessibility.getAccessValue(ent.position()),
+		"region": landRegionNear(gameState.sharedScript.accessibility, ent.position()),
 		"regen": captureRegen(gameState, ent),
 		"points": capturePointsToTake(ent, player),
 		"fire": defensiveFire(gameState, ent),
@@ -596,7 +617,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
 		if (ent.position() && catalog.isShoreStructure(ent.templateName()))
 			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()),
-				"sea": seaNear(accessibility, ent.position()), "queueLength": (ent.trainingQueue() || []).length }));
+				"sea": seaNear(accessibility, ent.position()),
+				"blocked": shoreIndex.watch(ent.id(), (ent.trainingQueue() || []).length, gameState.getTimeElapsed()) }));
 		const holder = ent.isGarrisonHolder();
 		if (ent.position() && ent.decaying())
 			decaying.push(Object.freeze({
@@ -661,6 +683,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	const enemyCentres = [];
 	const enemyCritical = [];
 	let enemyWarships = 0;
+	const stragglers = [];
+	const enemyShips = [];
 	const enemyStructures = [];
 	let enemySoldiers = 0;
 	const enemyFighters = [];
@@ -689,6 +713,16 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		{
 			if (ent.hasClass("Warship") && ent.position())
 				enemyWarships += 1;
+			if (ent.hasClass("Ship") && ent.position())
+				enemyShips.push(Object.freeze({
+					"id": ent.id(),
+					"position": ent.position(),
+					"sea": seaNear(accessibility, ent.position()),
+					"warship": ent.hasClass("Warship"),
+					"hitpoints": ent.hitpoints()
+				}));
+			else if (ent.position() && stragglers.length < STRAGGLERS_KEPT)
+				stragglers.push(ent);
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
@@ -853,6 +887,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			"state": ent.unitAIState() || "",
 			"idle": ent.isIdle(),
 			"fishing": ent.hasClass("FishingBoat"),
+			"bombard": catalog.isBombardShip(ent.templateName()),
 			"gathering": (ent.unitAIState() || "").includes("GATHER") || (ent.unitAIState() || "").includes("RETURNRESOURCE"),
 			"warship": ent.hasClass("Warship"),
 			"hitpoints": ent.hitpoints(),
@@ -907,8 +942,13 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		for (const name of worker.buildable)
 			offered.add(name);
 	const seas = accessibility.regionLinks[homeRegion] || [];
-	const objectives = enemyCentres.length ? enemyCentres :
-		enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player));
+	const objectives = enemyCentres.length ? enemyCentres : enemyCritical.length || enemyStructures.length ?
+		enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player)) :
+		stragglers.map(ent => Object.freeze({
+			"id": ent.id(), "owner": ent.owner(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()),
+			"unit": true, "centre": false, "value": 0, "points": 0, "regen": 0, "range": 0,
+			"fire": Object.freeze({ "arrows": 0, "repeat": 1, "damage": Object.freeze({}) })
+		}));
 	let crossing = null;
 	if (centres.length && objectives.length && !objectives.some(target => target.region === homeRegion))
 	{
@@ -943,14 +983,28 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"settlers": Object.freeze(settlers),
 		"docks": Object.freeze(docks.sort((a, b) => (b.region === homeRegion) - (a.region === homeRegion) || a.id - b.id)),
 		"enemyWarships": enemyWarships,
+		"enemyShips": Object.freeze(enemyShips.sort((a, b) => a.id - b.id)),
 		"shores": shoreIndex.all(gameState),
 		"ships": Object.freeze(ships),
 		"fleet": Object.freeze(fleet),
 		"fish": resourceIndex.liveFish(gameState),
+		"schools": resourceIndex.schools,
+		"fishRadius": FISH_RADIUS,
 		"fishers": fishers,
 		"labour": workers.length + fishers,
 		"mapSize": accessibility.width * accessibility.cellSize,
 		"seaOf": position => accessibility.getAccessValue(position, true),
+		"openWater": (point, sea, reach) => {
+			const size = accessibility.width * accessibility.cellSize;
+			for (const [dx, dz] of [[0, 0], [reach, 0], [-reach, 0], [0, reach], [0, -reach]])
+			{
+				const x = point[0] + dx;
+				const z = point[1] + dz;
+				if (x < 0 || z < 0 || x >= size || z >= size || accessibility.getAccessValue([x, z], true) !== sea)
+					return false;
+			}
+			return true;
+		},
 		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),
 		"phase": gameState.currentPhase(),
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,

@@ -10,9 +10,13 @@ const OPENING = {
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
-	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
+	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 },
+		"beachhead": { "superiority": 1, "reserve": 10 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
-	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10,
+	"naval": { "dockPopulation": 40, "fishDock": { "population": 20, "schools": 4, "reach": 300 }, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10, "yardFishers": 18, "yardSpacing": 110, "yardCrowd": 70, "reinforcement": 10, "massShare": 0.5, "edge": 1.3, "huntSuperiority": 1.2, "fleetMax": 24, "fightersPerShip": 8,
+		"raid": { "minShips": 4, "reach": 50, "clearance": 12, "retargetMs": 20000, "minPrey": 3, "hull": 0.35, "preyPerValue": 0.01 },
+		"fishClearance": { "battery": 15, "structure": 70, "soldier": 65, "berth": 12, "flight": 90 },
+		"bombard": { "ships": 6, "margin": 6, "clearance": 10, "bearings": 18, "searoom": 12, "tried": 40, "retargetMs": 30000, "arrive": 20 },
 		"fishing": { "maxBoats": 12, "perFish": 2 } },
 	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "centreArea": 14000, "enemyClearance": 220, "max": 5, "wealthCap": 6000,
 		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4, "phasePopulation": 50 },
@@ -76,8 +80,9 @@ export class Strategy
 		const plan = OPENING.labour;
 		if (!world.centres.length || !labour.starved.length)
 			return null;
-		const from = world.regions.filter(region => region.anchors > 0 && region.docks > 0)
-			.sort((a, b) => b.workers - a.workers || a.id - b.id)[0];
+		const ports = world.regions.filter(region => region.anchors > 0 && region.docks > 0);
+		const from = ports.filter(region => region.idle >= plan.minParty).sort((a, b) => b.idle - a.idle || a.id - b.id)[0] ||
+			ports.sort((a, b) => b.workers - a.workers || a.id - b.id)[0];
 		if (!from)
 			return null;
 		for (const code of labour.starved)

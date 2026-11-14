@@ -37,6 +37,12 @@ const OUTPOST_MIN_BUILDERS = 3;
 const SHORT_URGENCY = 5;
 const DOCK_OFFSETS = [0.5, 0.25, 0.75];
 const DOCK_SITES_TRIED = 40;
+const DOCK_OFFING = 30;
+const DOCK_MATCH = 25;
+const DOCK_SEA_ROOM = 18;
+const DOCK_BLOCKED_CLEARANCE = 80;
+const DOCK_SCHOOLS_COUNTED = 8;
+const DOCK_SCHOOL_BONUS = 20;
 const MARKET_SURPLUS = 500;
 const STALLED_MS = 150000;
 const UNSTARTED_GRACE_MS = 30000;
@@ -436,6 +442,12 @@ export class Construction
 			world.homeRegion, null);
 	}
 
+	obtainable(world, template)
+	{
+		const cost = this.catalog.cost(template);
+		return world.barter.open || world.codes.every(code => cost[code] <= world.resources[code] || world.gatherers[code] > 0);
+	}
+
 	outpostCentreRequest(world, priorities)
 	{
 		const isSettlement = name => this.catalog.isSettlement(name);
@@ -444,7 +456,7 @@ export class Construction
 			return null;
 		const template = [...this.offered(world)].filter(isSettlement)
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template)
+		if (!template || !this.obtainable(world, template))
 			return null;
 		for (const region of world.regions)
 		{
@@ -467,17 +479,44 @@ export class Construction
 		return null;
 	}
 
-	dockRequest(world, priorities)
+	fishingSea(world, priorities)
 	{
-		const colony = priorities.colony;
-		const sea = colony ? colony.sea : world.crossing && world.crossing.sea;
-		if (sea === undefined || sea === null || world.docks.some(dock => dock.region === world.homeRegion) ||
-		    world.population < (priorities.short.length ? 0 : colony ? priorities.colonyPlan.dockPopulation : priorities.naval.dockPopulation))
-			return null;
-		return this.shoreRequest(world, priorities, world.homeRegion, sea, world.centres[0].position, [...this.offered(world)], null);
+		const plan = priorities.naval.fishDock;
+		const home = world.centres[0].position;
+		const counts = new Map();
+		for (const school of world.schools)
+		{
+			if (squareDistance(school, home) > plan.reach * plan.reach)
+				continue;
+			const sea = world.seaOf(school);
+			if (world.seas.includes(sea))
+				counts.set(sea, (counts.get(sea) || 0) + 1);
+		}
+		const best = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
+		return best && best[1] >= plan.schools ? best[0] : undefined;
 	}
 
-	shoreRequest(world, priorities, region, sea, origin, buildable, builders)
+	dockRequest(world, priorities)
+	{
+		const ports = world.docks.filter(dock => dock.region === world.homeRegion && !dock.blocked);
+		const yard = ports.length === 1 && !!world.crossing && world.fishers >= priorities.naval.yardFishers;
+		if (ports.length && !yard)
+			return null;
+		const colony = priorities.colony;
+		const fishing = colony || world.crossing ? this.fishingSea(world, priorities) : undefined;
+		const sea = colony ? colony.sea : world.crossing ? world.crossing.sea : fishing;
+		const population = Math.min(
+			priorities.short.length ? 0 : Infinity,
+			colony ? priorities.colonyPlan.dockPopulation : Infinity,
+			world.crossing ? priorities.naval.dockPopulation : Infinity,
+			fishing !== undefined ? priorities.naval.fishDock.population : Infinity);
+		if (sea === undefined || sea === null || world.population < population)
+			return null;
+		return this.shoreRequest(world, priorities, world.homeRegion, yard ? world.crossing.sea : sea, world.centres[0].position,
+			[...this.offered(world)], null, yard ? priorities.naval.yardSpacing : 0);
+	}
+
+	shoreRequest(world, priorities, region, sea, origin, buildable, builders, spacing)
 	{
 		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
 		const pending = world.pendingConstructions.some(order => isDock(order.template));
@@ -486,7 +525,7 @@ export class Construction
 		if (tried)
 		{
 			tried.seen = tried.seen || pending;
-			if (rising || world.docks.some(dock => dock.region === tried.region))
+			if (rising || world.docks.some(dock => squareDistance(dock.position, [tried.x, tried.z]) <= DOCK_MATCH * DOCK_MATCH))
 				this.dockSite = null;
 			else if (tried.seen && !pending)
 			{
@@ -509,8 +548,20 @@ export class Construction
 			if (shore.region !== region || shore.sea !== sea)
 				continue;
 			const owner = territoryAt(world.grids.territory, shore.land[0], shore.land[1]).owner;
-			if (owner === 0 || owner === this.player)
-				shores.push({ shore, index, "distance": squareDistance(shore.land, origin) });
+			if (owner !== 0 && owner !== this.player)
+				continue;
+			const out = [shore.water[0] - shore.land[0], shore.water[1] - shore.land[1]];
+			const length = Math.sqrt(out[0] * out[0] + out[1] * out[1]) || 1;
+			const offing = [shore.water[0] + out[0] / length * DOCK_OFFING, shore.water[1] + out[1] / length * DOCK_OFFING];
+			if (!world.openWater(offing, sea, DOCK_SEA_ROOM) ||
+			    world.docks.some(dock => squareDistance(dock.position, shore.land) <
+				Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0) * Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0)))
+				continue;
+			const reach = world.fishRadius * world.fishRadius;
+			const schools = spacing ? 0 :
+				Math.min(DOCK_SCHOOLS_COUNTED, world.schools.filter(school => squareDistance(school, shore.water) <= reach).length);
+			const distance = Math.max(0, Math.sqrt(squareDistance(shore.land, origin)) - DOCK_SCHOOL_BONUS * schools);
+			shores.push({ shore, index, "distance": distance });
 		}
 		shores.sort((a, b) => a.distance - b.distance || a.index - b.index);
 		for (const { shore, index } of shores.slice(0, DOCK_SITES_TRIED))
@@ -564,7 +615,7 @@ export class Construction
 		const isSettlement = name => this.catalog.isSettlement(name);
 		const template = colony.kind === "centre" && builders[0].buildable.filter(isSettlement)
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (template)
+		if (template && this.obtainable(world, template))
 		{
 			if (world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
 			    world.foundations.some(foundation => isSettlement(foundation.template)))

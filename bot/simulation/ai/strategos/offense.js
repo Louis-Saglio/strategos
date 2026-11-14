@@ -21,6 +21,8 @@ const TARGET_WEIGHTS = { "centre": 3, "defensive": 2, "other": 1 };
 const HOLD_MARGIN = 2;
 const HOLD_RADIUS = 80;
 const MOVING_STATES = ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"];
+const STORM_MIN_ARMY = 30;
+const STORM_SUPERIORITY = 2;
 const TARGET_CLASSES = { "attack": ["Unit", "Structure"], "avoid": ["Palisade", "Wall"] };
 const UNIT_CLASSES = { "attack": ["Unit"], "avoid": ["Palisade", "Wall"] };
 
@@ -49,9 +51,75 @@ export class Offense
 		const home = world.centres[0];
 		if (!home)
 			return [];
+		if (!world.enemyStructures.length && world.enemyTargets.length && world.enemyTargets[0].unit)
+			return this.mopUpRequests(world, priorities);
 		const holding = this.holdRequests(world, priorities);
 		const held = new Set(holding.filter(request => request.action.type === "garrison").map(request => request.action.unit));
 		return holding.concat(this.armyRequests(world, priorities, home, held), this.breakerRequests(world, priorities, home));
+	}
+
+	mopUpRequests(world, priorities)
+	{
+		const requests = [];
+		for (const fighter of world.fighters)
+		{
+			if (MOVING_STATES.some(state => fighter.state.includes(state)))
+				continue;
+			let best = null;
+			let nearest = Infinity;
+			for (const target of world.enemyTargets)
+			{
+				const distance = squareDistance(target.position, fighter.position);
+				if (target.region === fighter.region && distance < nearest)
+				{
+					best = target;
+					nearest = distance;
+				}
+			}
+			if (best)
+				requests.push(this.order(fighter, { "type": "attack-walk", "x": best.position[0], "z": best.position[1],
+					"targetClasses": UNIT_CLASSES }, priorities));
+		}
+		if (requests.length && !this.mopping)
+		{
+			this.mopping = true;
+			this.telemetry.line("ATTACK", world.time, { "mode": "mopup", "units": requests.length, "left": world.enemyTargets.length });
+		}
+		return requests;
+	}
+
+	beachhead(world, priorities, group, region, reserve)
+	{
+		const plan = priorities.offense.beachhead;
+		const defenders = world.enemyFighters.filter(enemy => world.regionOf(enemy.position) === region).length;
+		const holding = group.length < plan.superiority * defenders && reserve.length >= plan.reserve;
+		if (holding !== (this.held === region))
+		{
+			this.held = holding ? region : null;
+			this.telemetry.line("ATTACK", world.time, { "mode": holding ? "beachhead" : "advance", "army": group.length, "defenders": defenders,
+				"reserve": reserve.length });
+		}
+		return holding;
+	}
+
+	stormRequests(world, priorities, group, region)
+	{
+		const centre = this.armyCentre(group);
+		const target = world.enemyStructures.filter(structure => structure.region === region)
+			.map(structure => ({ structure, "distance": squareDistance(structure.position, centre) }))
+			.sort((a, b) => (a.structure.fire.arrows > 0 ? 1 : 0) - (b.structure.fire.arrows > 0 ? 1 : 0) || a.distance - b.distance ||
+				a.structure.id - b.structure.id)
+			.map(entry => entry.structure)[0];
+		if (!target)
+			return [];
+		if (this.stormed !== target.id)
+		{
+			this.stormed = target.id;
+			this.telemetry.line("ATTACK", world.time, { "mode": "storm", "target": target.id, "centre": target.centre, "army": group.length,
+				"enemySoldiers": world.enemySoldiers });
+		}
+		return group.map(member => member.target === target.id ? this.order(member, { "type": "hold" }, priorities) :
+			this.order(member, { "type": "attack", "target": target.id }, priorities));
 	}
 
 	holdRequests(world, priorities)
@@ -251,13 +319,19 @@ export class Offense
 		let available = null;
 		let target = null;
 		let base = null;
+		let storm = null;
 		for (const region of regions)
 		{
 			const group = groups.get(region);
 			if (group.length < offense.minArmy || region === world.homeRegion && group.length < offense.superiority * world.enemySoldiers)
 				continue;
+			if (region !== world.homeRegion && this.beachhead(world, priorities, group, region, groups.get(world.homeRegion) || []))
+				continue;
 			const origin = region === world.homeRegion ? home.position : this.armyCentre(group);
 			const found = this.chooseTarget(world, priorities, group, origin, region);
+			if (!found && !storm && region !== world.homeRegion && !world.breakers.length && group.length >= STORM_MIN_ARMY &&
+			    group.length >= STORM_SUPERIORITY * world.enemySoldiers)
+				storm = { group, region };
 			if (!found)
 				continue;
 			available = group;
@@ -267,7 +341,7 @@ export class Offense
 			break;
 		}
 		if (!target)
-			return [];
+			return storm ? this.stormRequests(world, priorities, storm.group, storm.region) : [];
 		this.base = base;
 		this.overseas = this.region !== world.homeRegion;
 		this.target = target;
