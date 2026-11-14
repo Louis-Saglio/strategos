@@ -36,6 +36,9 @@ const FOUNDING_MAX_DISTANCE = 200;
 const DOCK_OFFSETS = [0.5, 0.25, 0.75];
 const DOCK_SITES_TRIED = 40;
 const MARKET_SURPLUS = 500;
+const STALLED_MS = 150000;
+const UNSTARTED_GRACE_MS = 30000;
+const ABANDONED_MEMORY_MS = 600000;
 const WONDER_STOCK = 2;
 const WONDER_BUILDERS = 20;
 
@@ -51,6 +54,8 @@ export class Construction
 		this.noSiteRetry = new Map();
 		this.dockSite = null;
 		this.dockRefused = new Set();
+		this.stalled = new Map();
+		this.abandoned = [];
 	}
 
 	searchable(world, template)
@@ -89,7 +94,36 @@ export class Construction
 			if (request)
 				requests.push(request);
 		}
-		return requests.concat(this.colonyRequests(world, priorities), this.repairRequests(world, priorities));
+		return requests.concat(this.colonyRequests(world, priorities), this.repairRequests(world, priorities), this.abandonRequests(world, priorities));
+	}
+
+	abandonRequests(world, priorities)
+	{
+		const requests = [];
+		const watched = new Map();
+		for (const foundation of world.foundations)
+		{
+			const known = this.stalled.get(foundation.id);
+			const entry = known && foundation.progress <= known.progress ? known : { "progress": foundation.progress, "since": world.time };
+			watched.set(foundation.id, entry);
+			if (world.time - entry.since < STALLED_MS)
+				continue;
+			const footprint = this.catalog.footprint(foundation.template);
+			this.abandoned.push({ "x": foundation.position[0], "z": foundation.position[1], "halfWidth": footprint.width / 2,
+				"halfDepth": footprint.depth / 2, "until": world.time + ABANDONED_MEMORY_MS });
+			this.telemetry.line("BUILD", world.time, { "abandoned": foundation.template, "x": Math.round(foundation.position[0]),
+				"z": Math.round(foundation.position[1]) });
+			requests.push({
+				"source": "construction",
+				"action": { "type": "delete", "target": foundation.id },
+				"claims": {},
+				"value": priorities.values.build,
+				"urgency": 1
+			});
+		}
+		this.stalled = watched;
+		this.abandoned = this.abandoned.filter(box => box.until > world.time);
+		return requests;
 	}
 
 	offered(world)
@@ -179,7 +213,7 @@ export class Construction
 		return world.pendingConstructions.map(pending => {
 			const footprint = this.catalog.footprint(pending.template);
 			return { "x": pending.x, "z": pending.z, "halfWidth": footprint.width / 2, "halfDepth": footprint.depth / 2 };
-		});
+		}).concat(this.abandoned);
 	}
 
 	resourceZones(world, spared)
@@ -207,7 +241,11 @@ export class Construction
 	{
 		let incoming = 0;
 		for (const foundation of world.foundations)
-			incoming += foundation.populationBonus;
+		{
+			const watch = this.stalled.get(foundation.id);
+			if (!watch || foundation.progress > 0 || world.time - watch.since < UNSTARTED_GRACE_MS)
+				incoming += foundation.populationBonus;
+		}
 		for (const pending of world.pendingConstructions)
 			incoming += this.catalog.populationBonus(pending.template);
 		return {
