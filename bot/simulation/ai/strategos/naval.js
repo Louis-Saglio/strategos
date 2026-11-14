@@ -422,12 +422,16 @@ export class Naval
 				used.push(ship);
 				room += ship.capacity;
 			}
-			const covered = !this.shorePoints(world, objective.region, objective.sea, objective.position, 1, sheltered).length;
+			const front = priorities.forward && priorities.forward.region === objective.region && priorities.forward.sea === objective.sea ?
+				priorities.forward : null;
+			const covered = !front && !this.shorePoints(world, objective.region, objective.sea, objective.position, 1, sheltered).length;
 			const remote = covered ? this.remoteShore(world, objective.region, objective.sea) : null;
-			const to = remote ? { "region": objective.region, "position": remote.land } :
+			const to = front ? { "region": objective.region, "position": front.position } :
+				remote ? { "region": objective.region, "position": remote.land } :
 				{ "region": objective.region, "position": objective.position, "accept": sheltered };
 			if (!this.launch(world, "invade", used, party, { "region": region, "sea": objective.sea, "position": origin }, to,
-				EMBARK_MIN_SHARE * party.length, { "from": region, "landed": landed, "enemySoldiers": world.enemySoldiers, "covered": covered }))
+				EMBARK_MIN_SHARE * party.length, { "from": region, "landed": landed, "enemySoldiers": world.enemySoldiers, "covered": covered,
+					"forward": !!front }))
 				this.telemetry.line("NAVAL", world.time, { "noLanding": objective.region });
 			return;
 		}

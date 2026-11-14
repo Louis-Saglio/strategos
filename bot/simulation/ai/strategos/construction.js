@@ -102,7 +102,8 @@ export class Construction
 			if (request)
 				requests.push(request);
 		}
-		return requests.concat(this.colonyRequests(world, priorities), this.repairRequests(world, priorities), this.abandonRequests(world, priorities));
+		return requests.concat(this.colonyRequests(world, priorities), this.forwardRequests(world, priorities),
+			this.repairRequests(world, priorities), this.abandonRequests(world, priorities));
 	}
 
 	abandonRequests(world, priorities)
@@ -628,6 +629,53 @@ export class Construction
 		}
 		const request = this.shoreRequest(world, priorities, colony.region, colony.sea, origin, builders[0].buildable, ids);
 		return request ? [request] : [];
+	}
+
+	forwardRequests(world, priorities)
+	{
+		const front = priorities.forward;
+		const isSettlement = name => this.catalog.isSettlement(name);
+		if (!front || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
+		    world.foundations.some(foundation => isSettlement(foundation.template)))
+			return [];
+		const landed = world.settlers.filter(settler => settler.region === front.region && !settler.state.includes("REPAIR"));
+		if (!landed.length)
+			return [];
+		if (landed.length < priorities.forwardPlan.settlers)
+			return [];
+		const origin = front.position;
+		const builders = landed
+			.map(settler => ({ settler, "distance": squareDistance(settler.position, origin) }))
+			.sort((a, b) => a.distance - b.distance || a.settler.id - b.settler.id)
+			.slice(0, priorities.forwardPlan.builders)
+			.map(entry => entry.settler);
+		const template = builders[0].buildable.filter(isSettlement)
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		const key = template + "@" + front.region;
+		if (!template || !this.obtainable(world, template) || !this.searchable(world, key))
+			return [];
+		const placement = new Placement(world, this.player);
+		placement.allowNeutral(true);
+		placement.man(front.region);
+		const site = placement.around(origin, 0, priorities.forwardPlan.reach, this.catalog.footprint(template), BUILDING_MARGIN,
+			this.reservedBoxes(world), []);
+		const spacing = this.catalog.spacing(template);
+		const apart = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN;
+		if (!site || world.enemyCentres.concat(world.centres).some(centre =>
+			squareDistance(centre.position, [site.x, site.z]) < apart * apart))
+		{
+			this.noSite(world, key);
+			return [];
+		}
+		const ids = builders.map(settler => settler.id);
+		return [this.production({
+			"source": "construction",
+			"action": { "type": "construct", "template": template, "x": site.x, "z": site.z, "angle": site.angle, "builders": ids },
+			"claims": { "resources": this.catalog.cost(template), "workers": ids },
+			"value": priorities.values.expansion,
+			"urgency": SHORT_URGENCY,
+			"reserve": true
+		})];
 	}
 
 	colonyHold(world, priorities, colony)

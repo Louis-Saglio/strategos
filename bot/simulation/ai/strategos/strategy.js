@@ -1,5 +1,5 @@
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
+import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -20,6 +20,7 @@ const OPENING = {
 		"fishing": { "maxBoats": 12, "perFish": 2 } },
 	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "centreArea": 14000, "enemyClearance": 220, "max": 5, "wealthCap": 6000,
 		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4, "phasePopulation": 50 },
+	"forward": { "settlers": 15, "builders": 20, "reach": 120, "clearance": 250, "shore": 120, "retryMs": 60000 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
 		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] }
 };
@@ -173,6 +174,42 @@ export class Strategy
 		return this.colonySite;
 	}
 
+	forward(world)
+	{
+		const plan = OPENING.forward;
+		const crossing = world.crossing;
+		if (!crossing || !world.offered.some(name => this.catalog.isSettlement(name)) ||
+		    world.regions.some(region => region.id === crossing.region && region.centres > 0))
+			return null;
+		const clear = position => territoryAt(world.grids.territory, position[0], position[1]).owner === 0 &&
+			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.clearance * plan.clearance);
+		if (this.front && this.front.region === crossing.region && clear(this.front.position))
+			return this.front;
+		if (this.frontSearched !== undefined && world.time - this.frontSearched < plan.retryMs)
+			return null;
+		this.frontSearched = world.time;
+		const grid = world.wealth;
+		let best = null;
+		for (let j = 0; j < grid.height; ++j)
+			for (let i = 0; i < grid.width; ++i)
+			{
+				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
+				if (world.regionOf(position) !== crossing.region || !world.codes.some(code => grid.totals[code] && grid.totals[code][i + j * grid.width] > 0) ||
+				    !clear(position))
+					continue;
+				const landing = Math.min(...world.shores.filter(shore => shore.region === crossing.region && shore.sea === crossing.sea)
+					.map(shore => squareDistance(shore.land, position)));
+				if (landing > plan.shore * plan.shore)
+					continue;
+				const distance = squareDistance(position, crossing.position);
+				if (!best || distance < best.distance)
+					best = { "position": position, "distance": distance };
+			}
+		this.front = best && Object.freeze({ "region": crossing.region, "sea": crossing.sea, "position": Object.freeze(best.position) });
+		this.changed = this.changed || !!this.front;
+		return this.front;
+	}
+
 	colonyOpen(world, position, region)
 	{
 		const plan = OPENING.colony;
@@ -272,6 +309,8 @@ export class Strategy
 			"colony": this.colony(world, labour, ferry),
 			"colonyPlan": OPENING.colony,
 			"ferry": ferry,
+			"forward": this.forward(world),
+			"forwardPlan": OPENING.forward,
 			"starved": Object.freeze(labour.starved),
 			"short": Object.freeze(labour.short),
 			"advancePhase": this.wantsPhase(world)

@@ -35,6 +35,11 @@ export class Placement
 		this.neutralAllowed = allowed;
 	}
 
+	man(region)
+	{
+		this.manned.add(region);
+	}
+
 	point(x, z, along, across)
 	{
 		return [x + along * this.u[0] + across * this.v[0], z + along * this.u[1] + across * this.v[1]];
