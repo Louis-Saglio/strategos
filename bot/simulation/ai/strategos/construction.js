@@ -503,7 +503,7 @@ export class Construction
 		if (ports.length && !yard)
 			return null;
 		const colony = priorities.colony;
-		const fishing = colony || world.crossing ? this.fishingSea(world, priorities) : undefined;
+		const fishing = this.fishingSea(world, priorities);
 		const sea = colony ? colony.sea : world.crossing ? world.crossing.sea : fishing;
 		const population = Math.min(
 			priorities.short.length ? 0 : Infinity,
