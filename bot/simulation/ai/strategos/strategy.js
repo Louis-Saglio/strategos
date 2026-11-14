@@ -50,7 +50,8 @@ export class Strategy
 		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
 			return true;
 		const housed = world.population + world.queuedPopulation >= world.populationLimit - OPENING.blockedGrowth.room &&
-			world.populationLimit < world.populationMax;
+			world.populationLimit < world.populationMax && !world.foundations.some(foundation => foundation.populationBonus > 0) &&
+			!world.pendingConstructions.some(pending => this.catalog.populationBonus(pending.template) > 0);
 		if (!housed)
 			this.blockedSince = undefined;
 		else if (this.blockedSince === undefined)
