@@ -35,6 +35,8 @@ const FOUNDING_MAX_DISTANCE = 200;
 const DOCK_OFFSETS = [0.5, 0.25, 0.75];
 const DOCK_SITES_TRIED = 40;
 const MARKET_SURPLUS = 500;
+const WONDER_STOCK = 2;
+const WONDER_BUILDERS = 20;
 
 export class Construction
 {
@@ -77,7 +79,8 @@ export class Construction
 		const requests = [];
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
-			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.dockRequest])
+			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.dockRequest,
+			this.wonderRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -132,7 +135,14 @@ export class Construction
 	{
 		if (!world.centres.length && this.catalog.isSettlement(template))
 			return world.workers.length;
-		return Math.max(1, Math.min(MAX_BUILDERS, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
+		const limit = this.catalog.isWonder(template) ? WONDER_BUILDERS : MAX_BUILDERS;
+		return Math.max(1, Math.min(limit, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
+	}
+
+	foundingParty(world, template)
+	{
+		const wanted = this.wantedBuilders(world, template);
+		return world.centres.length ? Math.min(MAX_BUILDERS, wanted) : wanted;
 	}
 
 	halfSize(template)
@@ -143,7 +153,7 @@ export class Construction
 
 	constructRequest(world, template, site, value, urgency)
 	{
-		const builders = this.pickBuilders(world, template, [site.x, site.z], this.wantedBuilders(world, template));
+		const builders = this.pickBuilders(world, template, [site.x, site.z], this.foundingParty(world, template));
 		if (!builders.length)
 			return null;
 		return {
@@ -545,6 +555,22 @@ export class Construction
 		return this.noSite(world, template);
 	}
 
+	wonderRequest(world, priorities, placement)
+	{
+		if (!priorities.raiseWonder)
+			return null;
+		const isWonder = name => this.catalog.isWonder(name);
+		if (this.count(world, isWonder) > 0)
+			return null;
+		const template = this.cheapest(world, isWonder);
+		if (!template)
+			return null;
+		const cost = this.catalog.cost(template);
+		if (world.codes.some(code => world.resources[code] < WONDER_STOCK * cost[code]))
+			return null;
+		return this.nearCentreRequest(world, placement, template, priorities.values.wonder);
+	}
+
 	siegeWorkshopRequest(world, priorities, placement)
 	{
 		if (world.fighters.length < priorities.offense.minArmy ||
@@ -696,10 +722,11 @@ export class Construction
 	{
 		const region = world.regionOf(position);
 		return world.workers
-			.filter(worker => worker.buildable.includes(template) && !worker.state.includes("REPAIR") &&
+			.filter(worker => (taken ? worker.buildable.length > 0 : worker.buildable.includes(template)) &&
+				!worker.state.includes("REPAIR") && !worker.state.includes("COMBAT") &&
 				!(taken && taken.has(worker.id)) && (region < 2 || worker.region === region))
-			.map(worker => ({ "id": worker.id, "distance": squareDistance(worker.position, position) }))
-			.sort((a, b) => a.distance - b.distance || a.id - b.id)
+			.map(worker => ({ "id": worker.id, "armed": worker.soldier ? 1 : 0, "distance": squareDistance(worker.position, position) }))
+			.sort((a, b) => a.armed - b.armed || a.distance - b.distance || a.id - b.id)
 			.slice(0, count)
 			.map(worker => worker.id);
 	}

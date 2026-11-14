@@ -83,6 +83,12 @@ export class Catalog
 		return locked;
 	}
 
+	isWonder(name)
+	{
+		const template = this.template(name);
+		return !!template && template.hasClass("Wonder");
+	}
+
 	isHero(name)
 	{
 		const template = this.template(name);

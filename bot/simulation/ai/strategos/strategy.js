@@ -3,7 +3,7 @@ import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "offense": 30, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 } },
@@ -19,7 +19,8 @@ const OPENING = {
 
 const PLANS = {
 	"regicide": world => world.victory.includes("regicide"),
-	"relics": world => world.victory.includes("capture_the_relic")
+	"relics": world => world.victory.includes("capture_the_relic"),
+	"wonder": world => world.victory.includes("wonder")
 };
 
 const DEMAND_HORIZON_S = 60;
@@ -163,6 +164,7 @@ export class Strategy
 			"naval": OPENING.naval,
 			"protectHero": this.plans(world).includes("regicide"),
 			"seekRelics": this.plans(world).includes("relics"),
+			"raiseWonder": this.plans(world).includes("wonder"),
 			"colony": this.colony(world),
 			"colonyPlan": OPENING.colony,
 			"advancePhase": this.wantsPhase(world)
