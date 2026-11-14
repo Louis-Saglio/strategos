@@ -97,7 +97,8 @@ export class Naval
 			"short": priorities.short,
 			"colony": priorities.colony && { "region": priorities.colony.region, "kind": priorities.colony.kind },
 			"ferry": priorities.ferry && { "to": priorities.ferry.to, "code": priorities.ferry.code, "count": priorities.ferry.count },
-			"convoys": this.convoys.map(convoy => convoy.kind + ":" + convoy.state)
+			"convoys": this.convoys.map(convoy => convoy.kind + ":" + convoy.state),
+			"invasion": this.invasion
 		});
 	}
 
@@ -323,8 +324,10 @@ export class Naval
 
 	planInvasion(world, priorities)
 	{
-		if (this.convoys.some(convoy => convoy.kind === "invade") || world.threats.length >= HOME_CALM_THREATS ||
-		    world.ships.length < world.enemyWarships || !world.enemyTargets.length)
+		this.invasion = { "why": this.convoys.some(convoy => convoy.kind === "invade") ? "under way" :
+			world.threats.length >= HOME_CALM_THREATS ? "threats" : world.ships.length < world.enemyWarships ? "sea" :
+			!world.enemyTargets.length ? "no target" : "no army" };
+		if (this.invasion.why !== "no army")
 			return;
 		const offense = priorities.offense;
 		const plan = priorities.naval;
@@ -352,25 +355,51 @@ export class Naval
 				centre[1] += fighter.position[1] / group.length;
 			}
 			const objective = this.objectiveFrom(world, region, region === world.homeRegion ? world.centres[0].position : centre);
+			const note = (why, details) => {
+				if (this.invasion.why === "no army" || region === world.homeRegion)
+					this.invasion = Object.assign({ "why": why, "from": region, "group": group.length }, details || {});
+			};
 			if (!objective)
+			{
+				note("no objective");
 				continue;
+			}
 			const landed = present.has(objective.region) ? present.get(objective.region).fighters : 0;
 			const least = landed >= offense.minArmy ? plan.reinforcement : offense.minArmy;
-			if (group.length < least || group.length + landed < plan.superiority * world.enemySoldiers)
+			const state = { "landed": landed, "enemy": world.enemySoldiers };
+			if (group.length < least)
+			{
+				note("small", state);
 				continue;
+			}
+			if (group.length + landed < plan.superiority * world.enemySoldiers)
+			{
+				note("inferior", state);
+				continue;
+			}
 			if (landed < offense.minArmy && group.length < plan.edge * world.enemySoldiers &&
 			    group.length < plan.massShare * world.populationMax)
+			{
+				note("no edge", state);
 				continue;
+			}
 			const dock = world.docks.find(candidate => candidate.region === region && candidate.sea === objective.sea);
 			const beach = dock ? null : this.shoreNear(world, region, objective.sea, centre);
 			if (!dock && !beach)
+			{
+				note("no quay", state);
 				continue;
+			}
 			const origin = dock ? dock.position : beach.water;
 			const ships = this.freeTransports(world, objective.sea, origin).slice(priorities.colony || priorities.ferry ? 1 : 0);
 			const capacity = ships.reduce((sum, ship) => sum + ship.capacity, 0);
 			if (capacity < Math.min(least, group.length) || landed < offense.minArmy &&
 			    capacity < plan.carried * Math.min(group.length, plan.maxCapacity))
+			{
+				note("no ships", Object.assign(state, { "capacity": capacity, "ships": ships.length }));
 				continue;
+			}
+			note("launch", state);
 			if (!this.due(world, "invade"))
 				return;
 			const sheltered = shore => !world.enemyStructures.some(structure => {
