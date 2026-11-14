@@ -493,7 +493,9 @@ export class Naval
 			this.move(world, convoy, "done", { "reason": "berth" });
 			return [];
 		}
-		const requests = ships.map(ship => away.includes(ship) && ship.idle ?
+		const summoned = convoy.summoned || new Set();
+		convoy.summoned = new Set(ships.map(ship => ship.id));
+		const requests = ships.map(ship => away.includes(ship) && (ship.idle || !summoned.has(ship.id)) ?
 			this.order(ship.id, { "type": "walk", "x": convoy.quay.get(ship.id).land[0], "z": convoy.quay.get(ship.id).land[1] }, priorities) :
 			this.order(ship.id, { "type": "hold" }, priorities));
 		for (const [id, ship] of convoy.berths)
