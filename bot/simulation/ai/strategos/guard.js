@@ -1,4 +1,5 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
+import { balance } from "simulation/ai/strategos/tactics.js";
 
 const POST_CLEARANCE = 12;
 const POST_TOLERANCE = 12;
@@ -78,14 +79,20 @@ const RELIC_HOME_THREATS = 3;
 const RELIC_COVER_MARGIN = 8;
 const RELIC_POST_CLEARANCE = 14;
 const RELIC_POST_TOLERANCE = 10;
+const RELIC_GUARD_RADIUS = 60;
+const RELIC_ENEMY_CLEARANCE = 300;
+const RELIC_BALANCE_ENGAGE = 1.3;
+const RELIC_BALANCE_ABORT = 0.8;
 
 export class Relics
 {
-	constructor(telemetry)
+	constructor(catalog, telemetry)
 	{
+		this.catalog = catalog;
 		this.telemetry = telemetry;
 		this.squad = new Set();
 		this.target = null;
+		this.contested = false;
 	}
 
 	requests(world, priorities)
@@ -108,7 +115,9 @@ export class Relics
 				{ "type": "walk", "x": post[0], "z": post[1] } : { "type": "hold" }, priorities));
 		}
 		const wanted = world.relics
-			.filter(relic => relic.owner !== world.player && relic.region === world.homeRegion && !this.covered(world, relic))
+			.filter(relic => relic.owner !== world.player && relic.region === world.homeRegion && !this.covered(world, relic) &&
+				!world.enemyCentres.some(centre => squareDistance(centre.position, relic.position) <= squareDistance(home.position, relic.position) &&
+					squareDistance(centre.position, relic.position) < RELIC_ENEMY_CLEARANCE * RELIC_ENEMY_CLEARANCE))
 			.map(relic => ({ relic, "distance": squareDistance(relic.position, home.position) }))
 			.sort((a, b) => a.distance - b.distance || a.relic.id - b.relic.id)
 			.map(entry => entry.relic)[0];
@@ -131,6 +140,15 @@ export class Relics
 			.slice(0, Math.max(0, RELIC_SQUAD - members.length))
 			.map(entry => entry.fighter);
 		const squad = members.concat(spare);
+		const guards = world.enemyFighters.concat(world.wild)
+			.filter(enemy => squareDistance(enemy.position, wanted.position) <= RELIC_GUARD_RADIUS * RELIC_GUARD_RADIUS);
+		const ratio = guards.length ? balance(this.catalog, squad, guards, []) : Infinity;
+		this.contested = this.contested ? ratio < RELIC_BALANCE_ENGAGE : ratio < RELIC_BALANCE_ABORT;
+		if (this.contested)
+		{
+			this.squad = new Set();
+			return requests;
+		}
 		this.squad = new Set(squad.map(fighter => fighter.id));
 		for (const fighter of squad)
 			requests.push(this.order(fighter.id, fighter.target === wanted.id ?

@@ -34,7 +34,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.shoreIndex = new ShoreIndex();
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
-	this.subsystems = [new Guard(), new Relics(this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
+	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
 		new Research(this.catalog), new Trade()];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
