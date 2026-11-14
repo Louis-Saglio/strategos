@@ -908,7 +908,8 @@ export class Naval
 		const clearance = priorities.naval.fishClearance;
 		const requests = [];
 		const boats = world.fleet.filter(ship => ship.fishing);
-		const hostile = position => world.enemyFighters.some(enemy =>
+		const foes = world.enemyFighters.concat(world.enemyShips.filter(enemy => enemy.warship));
+		const hostile = position => foes.some(enemy =>
 			squareDistance(enemy.position, position) <= clearance.soldier * clearance.soldier);
 		const waters = world.fish.filter(fish =>
 			!world.batteries.some(structure => squareDistance(structure.position, fish.position) <=
@@ -941,7 +942,7 @@ export class Naval
 			{
 				let foe = null;
 				let closest = Infinity;
-				for (const enemy of world.enemyFighters)
+				for (const enemy of foes)
 				{
 					const distance = squareDistance(enemy.position, boat.position);
 					if (distance < closest)
