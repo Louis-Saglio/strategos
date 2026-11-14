@@ -80,7 +80,7 @@ export class Construction
 			if (request)
 				requests.push(request);
 		}
-		return requests.concat(this.repairRequests(world, priorities));
+		return requests.concat(this.colonyRequests(world, priorities), this.repairRequests(world, priorities));
 	}
 
 	offered(world)
@@ -365,14 +365,24 @@ export class Construction
 
 	dockRequest(world, priorities)
 	{
+		const colony = priorities.colony;
+		const sea = colony ? colony.sea : world.crossing && world.crossing.sea;
+		if (sea === undefined || sea === null || world.docks.some(dock => dock.region === world.homeRegion) ||
+		    world.population < (colony ? priorities.colonyPlan.dockPopulation : priorities.naval.dockPopulation))
+			return null;
+		return this.shoreRequest(world, priorities, world.homeRegion, sea, world.centres[0].position, [...this.offered(world)], null);
+	}
+
+	shoreRequest(world, priorities, region, sea, origin, buildable, builders)
+	{
 		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
+		const pending = world.pendingConstructions.some(order => isDock(order.template));
+		const rising = world.foundations.some(foundation => isDock(foundation.template));
 		const tried = this.dockSite;
 		if (tried)
 		{
-			const pending = world.pendingConstructions.some(order => isDock(order.template));
-			const standing = world.docks.length > 0 || world.foundations.some(foundation => isDock(foundation.template));
 			tried.seen = tried.seen || pending;
-			if (standing)
+			if (rising || world.docks.some(dock => dock.region === tried.region))
 				this.dockSite = null;
 			else if (tried.seen && !pending)
 			{
@@ -381,23 +391,22 @@ export class Construction
 				this.dockSite = null;
 			}
 		}
-		if (!world.crossing || world.population < priorities.naval.dockPopulation || this.count(world, isDock) > 0)
+		if (pending || rising)
 			return null;
-		const template = [...this.offered(world)].filter(isDock)
+		const template = buildable.filter(isDock)
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
-		const home = world.centres[0].position;
 		const grid = world.grids.passability;
 		const shores = [];
 		for (let index = 0; index < world.shores.length; ++index)
 		{
 			const shore = world.shores[index];
-			if (shore.region !== world.homeRegion || shore.sea !== world.crossing.sea)
+			if (shore.region !== region || shore.sea !== sea)
 				continue;
 			const owner = territoryAt(world.grids.territory, shore.land[0], shore.land[1]).owner;
 			if (owner === 0 || owner === this.player)
-				shores.push({ shore, index, "distance": squareDistance(shore.land, home) });
+				shores.push({ shore, index, "distance": squareDistance(shore.land, origin) });
 		}
 		shores.sort((a, b) => a.distance - b.distance || a.index - b.index);
 		for (const { shore, index } of shores.slice(0, DOCK_SITES_TRIED))
@@ -415,12 +424,39 @@ export class Construction
 					this.dockRefused.add(key);
 					continue;
 				}
-				const request = this.constructRequest(world, template, { "x": x, "z": z, "angle": 0 }, priorities.values.dock, 1);
+				const site = { "x": x, "z": z, "angle": 0 };
+				const request = builders ? {
+					"source": "construction",
+					"action": { "type": "construct", "template": template, "x": x, "z": z, "angle": 0, "builders": builders },
+					"claims": { "resources": this.catalog.cost(template), "workers": builders },
+					"value": priorities.values.dock,
+					"urgency": 1,
+					"reserve": true
+				} : this.constructRequest(world, template, site, priorities.values.dock, 1);
 				if (request)
-					this.dockSite = { key, template, x, z, "seen": false };
+					this.dockSite = { key, template, x, z, region, "seen": false };
 				return request;
 			}
 		return this.noSite(world, template);
+	}
+
+	colonyRequests(world, priorities)
+	{
+		const colony = priorities.colony;
+		if (!colony || world.docks.some(dock => dock.region === colony.region))
+			return [];
+		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.includes("REPAIR"));
+		if (!builders.length)
+			return [];
+		const origin = [0, 0];
+		for (const settler of builders)
+		{
+			origin[0] += settler.position[0] / builders.length;
+			origin[1] += settler.position[1] / builders.length;
+		}
+		const request = this.shoreRequest(world, priorities, colony.region, colony.sea, origin, builders[0].buildable,
+			builders.map(settler => settler.id));
+		return request ? [request] : [];
 	}
 
 	foundingRequest(world, priorities)
@@ -644,9 +680,10 @@ export class Construction
 
 	pickBuilders(world, template, position, count, taken)
 	{
+		const region = world.regionOf(position);
 		return world.workers
 			.filter(worker => worker.buildable.includes(template) && !worker.state.includes("REPAIR") &&
-				!(taken && taken.has(worker.id)))
+				!(taken && taken.has(worker.id)) && (region < 2 || worker.region === region))
 			.map(worker => ({ "id": worker.id, "distance": squareDistance(worker.position, position) }))
 			.sort((a, b) => a.distance - b.distance || a.id - b.id)
 			.slice(0, count)

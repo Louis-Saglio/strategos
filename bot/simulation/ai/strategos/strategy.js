@@ -1,4 +1,5 @@
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
+import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -9,7 +10,9 @@ const OPENING = {
 	"surplusPhaseFrom": 3,
 	"offense": { "minArmy": 25, "superiority": 1.5, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
-	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8 }
+	"naval": { "dockPopulation": 40, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6 },
+	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "enemyClearance": 220, "max": 3, "wealthCap": 6000,
+		"distanceScale": 400, "retryMs": 30000 }
 };
 
 const PLANS = {
@@ -52,6 +55,68 @@ export class Strategy
 		return byPopulation || bySurplus;
 	}
 
+	colony(world)
+	{
+		const plan = OPENING.colony;
+		if (!world.centres.length || !world.seas.length || world.regionArea(world.homeRegion) > plan.maxHomeArea ||
+		    world.docks.filter(dock => dock.region !== world.homeRegion).length >= plan.max)
+			return null;
+		if (this.colonySite && this.colonyOpen(world, this.colonySite.position, this.colonySite.region))
+			return this.colonySite;
+		if (this.colonySearched !== undefined && world.time - this.colonySearched < plan.retryMs)
+			return null;
+		this.colonySearched = world.time;
+		this.colonySite = this.findColony(world);
+		this.changed = this.changed || !!this.colonySite;
+		return this.colonySite;
+	}
+
+	colonyOpen(world, position, region)
+	{
+		const plan = OPENING.colony;
+		return !world.docks.some(dock => dock.region === region) &&
+			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.enemyClearance * plan.enemyClearance);
+	}
+
+	findColony(world)
+	{
+		const plan = OPENING.colony;
+		const grid = world.wealth;
+		if (!world.codes.every(code => grid.totals[code]))
+			return null;
+		const home = world.centres[0].position;
+		let best = null;
+		for (let j = 0; j < grid.height; ++j)
+			for (let i = 0; i < grid.width; ++i)
+			{
+				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
+				const region = world.regionOf(position);
+				if (region < 2 || region === world.homeRegion || world.regionArea(region) < plan.minArea)
+					continue;
+				const sea = world.seas.find(candidate => (world.regionLinks[candidate] || []).includes(region));
+				if (sea === undefined || !this.colonyOpen(world, position, region))
+					continue;
+				let wealth = 0;
+				for (const code of world.codes)
+				{
+					let total = 0;
+					for (let dj = -1; dj <= 1; ++dj)
+						for (let di = -1; di <= 1; ++di)
+						{
+							const ii = i + di;
+							const jj = j + dj;
+							if (ii >= 0 && jj >= 0 && ii < grid.width && jj < grid.height)
+								total += grid.totals[code][ii + jj * grid.width];
+						}
+					wealth += Math.min(total, plan.wealthCap);
+				}
+				const score = wealth / (1 + Math.sqrt(squareDistance(position, home)) / plan.distanceScale);
+				if (score > 0 && (!best || score > best.score))
+					best = { "position": position, "region": region, "sea": sea, "score": score };
+			}
+		return best ? Object.freeze({ "position": Object.freeze(best.position), "region": best.region, "sea": best.sea }) : null;
+	}
+
 	plans(world)
 	{
 		return Object.keys(PLANS).filter(name => PLANS[name](world));
@@ -74,6 +139,8 @@ export class Strategy
 			"naval": OPENING.naval,
 			"protectHero": this.plans(world).includes("regicide"),
 			"seekRelics": this.plans(world).includes("relics"),
+			"colony": this.colony(world),
+			"colonyPlan": OPENING.colony,
 			"advancePhase": this.wantsPhase(world)
 		});
 		return this.priorities;

@@ -5,6 +5,7 @@ const TREASURE_RADIUS = 120;
 const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
+const FIRE_MARGIN = 10;
 
 export class ResourceIndex
 {
@@ -20,7 +21,9 @@ export class ResourceIndex
 	{
 		const code = this.codes[this.cursor % this.codes.length];
 		this.cursor += 1;
-		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
+		const accessibility = gameState.sharedScript.accessibility;
+		const points = anchors.filter(anchor => anchor.types.includes(code))
+			.map(anchor => ({ "position": anchor.position, "region": landRegionNear(accessibility, anchor.position) }));
 		const kept = [];
 		const beyond = [];
 		const grid = this.grid(gameState);
@@ -47,12 +50,23 @@ export class ResourceIndex
 			if (!points.length)
 				continue;
 			let best = Infinity;
+			let nearest = Infinity;
+			let region = -1;
 			for (const point of points)
-				best = Math.min(best, squareDistance(point, position));
+			{
+				const distance = squareDistance(point.position, position);
+				nearest = Math.min(nearest, distance);
+				if (distance > limit || distance >= best)
+					continue;
+				if (region < 0)
+					region = accessibility.getAccessValue(position);
+				if (region < 2 || point.region < 2 || region === point.region)
+					best = distance;
+			}
 			if (best <= limit)
 				kept.push({ "id": ent.id(), "distance": best });
 			else
-				beyond.push({ "id": ent.id(), "distance": best, "position": position });
+				beyond.push({ "id": ent.id(), "distance": nearest, "position": position });
 		}
 		grid.totals[code] = totals;
 		grid.weighted[code] = weighted;
@@ -66,7 +80,7 @@ export class ResourceIndex
 	{
 		const accessibility = gameState.sharedScript.accessibility;
 		const territory = gameState.sharedScript.territoryMap;
-		const regions = new Set(points.map(point => accessibility.getAccessValue(point)));
+		const regions = new Set(points.map(point => point.region));
 		beyond.sort((a, b) => a.distance - b.distance || a.id - b.id);
 		for (const supply of beyond)
 		{
@@ -91,8 +105,9 @@ export class ResourceIndex
 		return this.wealth;
 	}
 
-	live(gameState, code, anchors)
+	live(gameState, code, anchors, enemyStructures)
 	{
+		const batteries = enemyStructures.filter(structure => structure.fire.arrows);
 		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
 		const sites = [];
 		for (const id of this.sites.get(code))
@@ -102,6 +117,8 @@ export class ResourceIndex
 			if (!ent || !ent.position() || !(amount > 0))
 				continue;
 			const position = ent.position();
+			if (batteries.some(structure => squareDistance(structure.position, position) <= (structure.range + FIRE_MARGIN) * (structure.range + FIRE_MARGIN)))
+				continue;
 			let nearest = Infinity;
 			for (const point of points)
 				nearest = Math.min(nearest, squareDistance(point, position));
@@ -110,6 +127,7 @@ export class ResourceIndex
 				"id": id,
 				"kind": type.generic + "." + type.specific,
 				"position": position,
+				"region": gameState.sharedScript.accessibility.getAccessValue(position),
 				"amount": amount,
 				"gatherers": ent.resourceSupplyNumGatherers() || 0,
 				"capacity": ent.maxGatherers() || 1,
@@ -183,6 +201,23 @@ export function territoryAt(territory, x, z)
 		return { "owner": -1, "connected": false };
 	const cell = territory.data[i + j * territory.width];
 	return { "owner": cell & TERRITORY_OWNER_MASK, "connected": (cell & TERRITORY_BLINKING_MASK) === 0 };
+}
+
+const SHORE_PROBES = [6, 12, 18];
+
+function landRegionNear(accessibility, position)
+{
+	const region = accessibility.getAccessValue(position);
+	if (region >= 2)
+		return region;
+	for (const reach of SHORE_PROBES)
+		for (let k = 0; k < 8; ++k)
+		{
+			const found = accessibility.getAccessValue([position[0] + reach * Math.cos(k * Math.PI / 4), position[1] + reach * Math.sin(k * Math.PI / 4)]);
+			if (found >= 2)
+				return found;
+		}
+	return region;
 }
 
 function treasuresWithin(gameState, player, anchors, workers)
@@ -372,8 +407,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	}
 
 	const workers = [];
+	const settlers = [];
 	const breakers = [];
-	const anchorRegions = new Set(anchors.map(anchor => accessibility.getAccessValue(anchor.position)));
+	const anchorRegions = new Set(anchors.map(anchor => landRegionNear(accessibility, anchor.position)));
 	for (const ent of gameState.getOwnUnits().values())
 	{
 		const position = ent.position();
@@ -387,9 +423,20 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 				"target": orders.length && orders[0] ? orders[0].target : undefined
 			}));
 		}
-		if (!position || !ent.isGatherer() || ent.hasClass("Ship") ||
-		    anchorRegions.size && !anchorRegions.has(accessibility.getAccessValue(position)))
+		if (!position || !ent.isGatherer() || ent.hasClass("Ship"))
 			continue;
+		const region = accessibility.getAccessValue(position);
+		if (anchorRegions.size && !anchorRegions.has(region))
+		{
+			settlers.push(Object.freeze({
+				"id": ent.id(),
+				"position": position,
+				"region": region,
+				"state": ent.unitAIState() || "",
+				"buildable": Object.freeze(catalog.buildable(ent))
+			}));
+			continue;
+		}
 		const orders = ent.unitAIOrderData() || [];
 		const state = ent.unitAIState() || "";
 		const soldier = ent.hasClass("Soldier");
@@ -417,6 +464,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		workers.push(Object.freeze({
 			"id": ent.id(),
 			"position": position,
+			"region": region,
 			"idle": ent.isIdle(),
 			"collector": ent.isTreasureCollector(),
 			"state": state,
@@ -466,7 +514,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
 		if (ent.position() && catalog.isShoreStructure(ent.templateName()))
-			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position() }));
+			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()) }));
 		const holder = ent.isGarrisonHolder();
 		if (ent.position() && ent.decaying())
 			decaying.push(Object.freeze({
@@ -530,6 +578,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	const threats = [];
 	const enemyCentres = [];
 	const enemyCritical = [];
+	let enemyWarships = 0;
 	const enemyStructures = [];
 	let enemySoldiers = 0;
 	const enemyFighters = [];
@@ -556,6 +605,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		}
 		for (const ent of gameState.getEnemyUnits(enemy).values())
 		{
+			if (ent.hasClass("Warship") && ent.position())
+				enemyWarships += 1;
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
@@ -665,7 +716,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 
 	const sites = {};
 	for (const code of codes)
-		sites[code] = resourceIndex.live(gameState, code, anchors);
+		sites[code] = resourceIndex.live(gameState, code, anchors, enemyStructures);
 
 	const ships = [];
 	for (const ent of gameState.getOwnEntitiesByClass("Ship", true).values())
@@ -721,7 +772,13 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		"heroes": Object.freeze(heroes),
 		"relics": Object.freeze(relics.sort((a, b) => a.id - b.id)),
 		"crossing": crossing ? Object.freeze(crossing) : null,
-		"docks": Object.freeze(docks),
+		"seas": Object.freeze(seas.slice()),
+		"regionLinks": accessibility.regionLinks,
+		"regionOf": position => accessibility.getAccessValue(position),
+		"regionArea": region => (accessibility.regionSize[region] || 0) * accessibility.cellSize * accessibility.cellSize,
+		"settlers": Object.freeze(settlers),
+		"docks": Object.freeze(docks.sort((a, b) => (b.region === homeRegion) - (a.region === homeRegion) || a.id - b.id)),
+		"enemyWarships": enemyWarships,
 		"shores": shoreIndex.all(gameState),
 		"ships": Object.freeze(ships.sort((a, b) => a.id - b.id)),
 		"treasures": Object.freeze(treasuresWithin(gameState, player, anchors, workers)),

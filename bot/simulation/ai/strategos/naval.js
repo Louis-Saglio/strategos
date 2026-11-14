@@ -1,3 +1,4 @@
+import { resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const HOME_CALM_THREATS = 3;
@@ -11,6 +12,7 @@ const SAIL_SETTLE_MS = 6000;
 const UNLOAD_TIMEOUT_MS = 60000;
 const UNLOAD_NUDGE_MS = 12000;
 const RETRY_MS = 30000;
+const MIN_SETTLERS = 3;
 
 export class Naval
 {
@@ -25,15 +27,20 @@ export class Naval
 		this.landing = null;
 		this.nudged = 0;
 		this.sailed = null;
+		this.quorum = 0;
+		this.settled = -Infinity;
 	}
 
 	requests(world, priorities)
 	{
-		if (!world.centres.length || !world.crossing)
+		if (!world.centres.length || !world.crossing && !priorities.colony)
 			return [];
 		const requests = this.fleetRequests(world, priorities);
 		if (this.mode === "idle")
-			return requests.concat(this.strandedRequests(world, priorities), this.muster(world, priorities));
+		{
+			const settling = this.settle(world, priorities);
+			return requests.concat(this.strandedRequests(world, priorities), settling || (world.crossing ? this.muster(world, priorities) : []));
+		}
 		if (this.mode === "embark")
 			return requests.concat(this.embarkRequests(world, priorities));
 		if (this.mode === "sail")
@@ -57,25 +64,46 @@ export class Naval
 	{
 		const plan = priorities.naval;
 		const capacity = world.ships.reduce((sum, ship) => sum + ship.capacity, 0);
-		const wanted = Math.min(plan.maxCapacity,
-			Math.max(priorities.offense.minArmy, plan.maxCapacity * world.population / Math.max(1, world.populationMax)));
-		if (capacity >= wanted)
-			return [];
 		const carries = name => this.catalog.transportCapacity(name) > 0;
 		const yards = world.trainers.filter(trainer => trainer.trainable.some(carries));
+		if (!yards.length)
+			return [];
+		const prices = resourcePrices(world);
+		const priced = name => {
+			const cost = this.catalog.cost(name);
+			return world.codes.reduce((sum, code) => sum + prices[code] * (cost[code] || 0), 0);
+		};
+		const worth = name => this.catalog.transportCapacity(name) / Math.max(1, priced(name));
+		const template = yards[0].trainable.filter(carries).sort((a, b) => worth(b) - worth(a) || (a < b ? -1 : 1))[0];
+		const requests = [];
+		const missing = Math.max(
+			Math.ceil((plan.maxCapacity - capacity) / this.catalog.transportCapacity(template)),
+			Math.ceil(plan.seaSuperiority * world.enemyWarships) - world.ships.length);
+		if (world.crossing && world.populationMax - world.population - world.queuedPopulation <= missing)
+			for (let berth = 0; berth < missing; ++berth)
+				requests.push({
+					"source": "naval",
+					"action": { "type": "hold" },
+					"claims": { "population": this.catalog.population(template) },
+					"value": priorities.values.transport,
+					"urgency": 1
+				});
+		const wanted = Math.min(plan.maxCapacity,
+			Math.max(priorities.offense.minArmy, plan.maxCapacity * world.population / Math.max(1, world.populationMax)));
+		if (capacity >= wanted && world.ships.length >= plan.seaSuperiority * world.enemyWarships)
+			return requests;
 		const yard = yards.find(trainer => trainer.queueLength === 0);
 		if (!yard || yards.some(trainer => trainer.queueLength > 0))
-			return [];
-		const worth = name => this.catalog.transportCapacity(name) / Math.max(1, this.catalog.costSum(name));
-		const template = yard.trainable.filter(carries).sort((a, b) => worth(b) - worth(a) || (a < b ? -1 : 1))[0];
-		return [{
+			return requests;
+		requests.unshift({
 			"source": "naval",
 			"action": { "type": "train", "trainer": yard.id, "template": template, "count": 1 },
 			"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [yard.id] },
 			"value": priorities.values.transport,
 			"urgency": 1,
 			"reserve": true
-		}];
+		});
+		return requests;
 	}
 
 	chooseLanding(world)
@@ -105,6 +133,47 @@ export class Naval
 		return best;
 	}
 
+	settle(world, priorities)
+	{
+		const colony = priorities.colony;
+		if (!colony || !world.docks.length || world.time - this.settled < RETRY_MS ||
+		    world.settlers.some(settler => settler.region === colony.region))
+			return null;
+		const ship = world.ships.find(candidate => !candidate.cargo.length);
+		const outpost = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
+		const able = world.workers.filter(worker => worker.soldier && worker.region === world.homeRegion && worker.buildable.some(outpost));
+		if (!ship || able.length < MIN_SETTLERS)
+			return null;
+		let landing = null;
+		let nearest = Infinity;
+		for (const shore of world.shores)
+		{
+			if (shore.region !== colony.region || shore.sea !== colony.sea)
+				continue;
+			const distance = squareDistance(shore.land, colony.position);
+			if (distance < nearest)
+			{
+				landing = shore;
+				nearest = distance;
+			}
+		}
+		this.settled = world.time;
+		if (!landing)
+			return null;
+		const dock = world.docks[0].position;
+		const chosen = able
+			.map(worker => ({ worker, "distance": squareDistance(worker.position, dock) }))
+			.sort((a, b) => a.distance - b.distance || a.worker.id - b.worker.id)
+			.slice(0, Math.min(ship.capacity, priorities.naval.settlers))
+			.map(entry => entry.worker);
+		this.party = new Set(chosen.map(worker => worker.id));
+		this.berths = new Map(chosen.map(worker => [worker.id, ship.id]));
+		this.landing = landing;
+		this.quorum = MIN_SETTLERS;
+		this.switchMode(world, "embark", { "settle": colony.region, "landing": landing.land.map(Math.round) });
+		return this.embarkRequests(world, priorities);
+	}
+
 	muster(world, priorities)
 	{
 		const offense = priorities.offense;
@@ -115,6 +184,7 @@ export class Naval
 		const available = this.homeFighters(world);
 		const plan = priorities.naval;
 		if (available.length < offense.minArmy || available.length < plan.superiority * world.enemySoldiers ||
+		    world.ships.length < world.enemyWarships ||
 		    capacity < plan.carried * Math.min(available.length, plan.maxCapacity))
 			return [];
 		const landing = this.chooseLanding(world);
@@ -137,6 +207,7 @@ export class Naval
 			for (let slot = 0; slot < ship.capacity && index < chosen.length; ++slot)
 				this.berths.set(chosen[index++].id, ship.id);
 		this.landing = landing;
+		this.quorum = EMBARK_MIN_SHARE * offense.minArmy;
 		this.switchMode(world, "embark", { "ships": ships.length, "landing": landing.land.map(Math.round), "enemySoldiers": world.enemySoldiers });
 		return this.embarkRequests(world, priorities);
 	}
@@ -192,7 +263,7 @@ export class Naval
 		const afloat = new Set(world.ships.map(ship => ship.id));
 		const late = world.time - this.since >= EMBARK_TIMEOUT_MS;
 		if (this.party.size && aboard.size >= EMBARK_QUORUM * this.party.size ||
-		    late && aboard.size >= EMBARK_MIN_SHARE * priorities.offense.minArmy)
+		    late && aboard.size >= this.quorum)
 		{
 			this.party = aboard;
 			this.sailed = null;
