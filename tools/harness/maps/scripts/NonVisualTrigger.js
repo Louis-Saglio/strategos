@@ -8,6 +8,10 @@
  * stdout protocol (one line each, parsed by tools/analyze.py and
  * tools/mapview.py):
  *   [HARNESS] start {"mapSize": <metres>, "limitMin": N, "players": [{"id","civ","team"}...]}
+ *   [HARNESS] terrain {"step": <metres>, "rows": ["0122...", ...]}
+ *     once at the start: the ground against the water level on a square grid
+ *     (rows[j][i] at x = (i + 0.5) * step, z = (j + 0.5) * step): 0 water
+ *     deeper than 2 m, 1 shallower water, 2 dry land. Read-only.
  *   [HARNESS] map {"t": <sim s>, "<player id>": [[id,kind,state,x,z], ...], ...}
  *   [HARNESS] eco {"t": <sim s>, "<player id>": {"gathered": {<resource>: n}, "pop": n}, ...}
  *     every minute: cumulative resources gathered (StatisticsTracker basic
@@ -58,6 +62,7 @@
 
 const HARNESS_LIMIT_MINUTES = 60;
 const HARNESS_MAP_INTERVAL_MS = 30000;
+const HARNESS_TERRAIN_STEP = 8;
 const HARNESS_ECO_INTERVAL_MS = 60000;
 const HARNESS_KILLS_INTERVAL_MS = 30000;
 const HARNESS_STANDING_INTERVAL_MS = 30000;
@@ -109,6 +114,25 @@ Trigger.prototype.HarnessStart = function()
 		"limitMin": HARNESS_LIMIT_MINUTES,
 		"players": players
 	}) + "\n");
+	const cmpWaterManager = Engine.QueryInterface(SYSTEM_ENTITY, IID_WaterManager);
+	if (!cmpTerrain || !cmpWaterManager)
+		return;
+	const step = HARNESS_TERRAIN_STEP;
+	const cells = Math.floor(cmpTerrain.GetMapSize() / step);
+	const rows = [];
+	for (let j = 0; j < cells; ++j)
+	{
+		let row = "";
+		for (let i = 0; i < cells; ++i)
+		{
+			const x = (i + 0.5) * step;
+			const z = (j + 0.5) * step;
+			const depth = cmpWaterManager.GetWaterLevel(x, z) - cmpTerrain.GetGroundLevel(x, z);
+			row += depth > 2 ? "0" : depth > 0 ? "1" : "2";
+		}
+		rows.push(row);
+	}
+	print("[HARNESS] terrain " + JSON.stringify({ "step": step, "rows": rows }) + "\n");
 };
 
 Trigger.prototype.HarnessKind = function(ent)

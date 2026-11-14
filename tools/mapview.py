@@ -6,6 +6,7 @@ map size once and one JSON line per snapshot (every 30 s of sim time by
 default):
 
     [HARNESS] start {"mapSize": <metres>, ...}
+    [HARNESS] terrain {"step": <metres>, "rows": ["0122...", ...]}   (0 deep water, 1 shallow, 2 land)
     [HARNESS] map {"t": <sec>, "<player id>": [[id,kind,state,x,z], ...], ...}
 
 kind: 1 worker, 2 soldier, 3 cavalry, 4 siege, 5 structure, 6 civic centre, 7 ship
@@ -34,6 +35,24 @@ from PIL import Image, ImageDraw, ImageFont
 
 TAG = "[HARNESS] map "
 START = "[HARNESS] start "
+TERRAIN_TAG = "[HARNESS] terrain "
+TERRAIN = None  # the terrain line's dict, when the log has one
+TERRAIN_COLORS = {"0": (18, 34, 58), "1": (30, 58, 84), "2": (40, 44, 34)}
+_BACKGROUNDS = {}
+
+
+def background(px):
+    """The terrain as a px-square image (z upwards), or a plain one."""
+    if px not in _BACKGROUNDS:
+        if TERRAIN:
+            rows = TERRAIN["rows"]
+            n = len(rows)
+            small = Image.new("RGB", (n, n))
+            small.putdata([TERRAIN_COLORS.get(c, BG) for row in reversed(rows) for c in row])
+            _BACKGROUNDS[px] = small.resize((px, px), Image.NEAREST)
+        else:
+            _BACKGROUNDS[px] = Image.new("RGB", (px, px), BG)
+    return _BACKGROUNDS[px].copy()
 MAP_M = 768.0  # metres across; replaced by the start line's mapSize
 KIND_LABEL = {1: "worker", 2: "soldier", 3: "cavalry", 4: "siege", 5: "building", 6: "cc", 7: "ship"}
 PALETTE = [(80, 150, 240), (235, 90, 80), (90, 200, 110), (235, 200, 70), (180, 110, 230), (80, 210, 210),
@@ -51,7 +70,7 @@ GRID = (40, 44, 40)
 
 
 def load(path):
-    global MAP_M
+    global MAP_M, TERRAIN
     snaps = []
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -59,6 +78,13 @@ def load(path):
             if j >= 0:
                 try:
                     MAP_M = float(json.loads(line[j + len(START):].strip()).get("mapSize") or MAP_M)
+                except json.JSONDecodeError:
+                    pass
+                continue
+            k = line.find(TERRAIN_TAG)
+            if k >= 0:
+                try:
+                    TERRAIN = json.loads(line[k + len(TERRAIN_TAG):].strip())
                 except json.JSONDecodeError:
                     pass
                 continue
@@ -74,9 +100,9 @@ def load(path):
 
 
 def panel(rec, px, title=None):
-    im = Image.new("RGB", (px, px), BG)
+    im = background(px)
     dr = ImageDraw.Draw(im)
-    for g in range(1, 4):
+    for g in range(1, 4) if not TERRAIN else ():
         v = px * g // 4
         dr.line([(v, 0), (v, px)], fill=GRID)
         dr.line([(0, v), (px, v)], fill=GRID)
@@ -130,9 +156,9 @@ def sheet(snaps, out, cols, px, max_n):
 
 def tracks(snaps, out, px):
     """Military movement over the whole match: per-unit polylines."""
-    im = Image.new("RGB", (px, px), BG)
+    im = background(px)
     dr = ImageDraw.Draw(im)
-    for g in range(1, 4):
+    for g in range(1, 4) if not TERRAIN else ():
         v = px * g // 4
         dr.line([(v, 0), (v, px)], fill=GRID)
         dr.line([(0, v), (px, v)], fill=GRID)

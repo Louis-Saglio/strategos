@@ -340,7 +340,10 @@ tools/mapview.py OUTDIR/TAG/stdout.log [-o mapview.png] [--tracks tracks.png] [-
 ```
 
 Renders the `[HARNESS] map` snapshots (one colour per player, z upwards
-like a top-down viz frame): exact, no GPU, scales to whole batches.
+like a top-down viz frame) over the `[HARNESS] terrain` line of the same
+log (deep water, shallow water, land on an 8 m grid, printed once at the
+start): exact, no GPU, scales to whole batches. A log from before the
+terrain line draws on a plain background.
 
 ## Bot code
 
