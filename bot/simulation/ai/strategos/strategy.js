@@ -3,7 +3,7 @@ import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "caravan": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
@@ -14,6 +14,7 @@ const OPENING = {
 		"beachhead": { "superiority": 1, "reserve": 10 } },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
+	"trade": { "minRate": 0.3, "richRate": 0.5, "minDistance": 400, "max": 10, "populationPerTrader": 20, "scarceWealth": 3000, "scarceCodes": ["stone", "metal"] },
 	"naval": { "dockPopulation": 40, "fishDock": { "population": 20, "schools": 4, "reach": 300 }, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10, "yardFishers": 18, "yardSpacing": 110, "yardCrowd": 70, "reinforcement": 10, "massShare": 0.5, "edge": 1.3, "huntSuperiority": 1.2, "fleetMax": 24, "fightersPerShip": 8,
 		"raid": { "minShips": 4, "reach": 50, "clearance": 12, "retargetMs": 20000, "minPrey": 3, "hull": 0.35, "preyPerValue": 0.01 },
 		"fishClearance": { "battery": 15, "structure": 70, "soldier": 65, "berth": 12, "flight": 90 },
@@ -278,6 +279,22 @@ export class Strategy
 		return this.militaryPlan;
 	}
 
+	scarce(world)
+	{
+		const plan = OPENING.trade;
+		const codes = world.centres.length && world.codes.every(code => world.wealth.regions[code]) ?
+			plan.scarceCodes.filter(code => this.codes.includes(code) &&
+				world.regionWealth(world.homeRegion, code) + world.resources[code] < plan.scarceWealth) : [];
+		const key = codes.join(",");
+		if (key !== this.scarceKey)
+		{
+			this.scarceKey = key;
+			this.scarceCodes = Object.freeze(codes);
+			this.changed = true;
+		}
+		return this.scarceCodes;
+	}
+
 	plans(world)
 	{
 		return Object.keys(PLANS).filter(name => PLANS[name](world));
@@ -304,6 +321,8 @@ export class Strategy
 			"offense": OPENING.offense,
 			"expansion": OPENING.expansion,
 			"medics": OPENING.medics,
+			"trade": OPENING.trade,
+			"scarce": this.scarce(world),
 			"naval": OPENING.naval,
 			"protectHero": this.plans(world).includes("regicide"),
 			"seekRelics": this.plans(world).includes("relics"),

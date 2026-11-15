@@ -234,7 +234,7 @@ const REGEN_WINDOW_S = 60;
 const REGEN_WEIGHT = 0.5;
 const PROMOTION_WEIGHT = 0.1;
 const RANK_GAIN = 0.35;
-const FIRE_SHARE = 0.5;
+const FIRE_LOSS_SCALE = 500;
 const SHELTER_HEAL_GAIN = 0.05;
 const BUILDER_RATE = 0.6;
 const TRAINER_SECOND_VALUE = 0.8;
@@ -277,6 +277,11 @@ function grantedAuraBenefit(world, catalog, tech)
 				benefit += group.count * aura.coverage * effectBenefit(world, catalog, aura);
 		}
 	return benefit;
+}
+
+export function heroWorth(world, catalog, name)
+{
+	return catalog.costSum(name) + catalog.auras(name).reduce((sum, aura) => sum + auraBenefit(world, catalog, aura, true), 0);
 }
 
 export function auraBenefit(world, catalog, name, mobile)
@@ -367,12 +372,20 @@ export function assetBenefit(world, catalog, info)
 	let benefit = 0;
 	for (const group of world.roster)
 	{
-		if (!group.military && !group.healer)
+		if (!group.military && !group.healer && !group.trader)
 			continue;
 		const applied = applying(catalog, info, group);
 		if (!applied.length)
 			continue;
 		let gain = 0;
+		if (group.trader)
+		{
+			for (const modification of applied)
+				if (modification.value === "Trader/GainMultiplier")
+					gain += (modification.multiply || 1) - 1;
+			benefit += group.value * gain;
+			continue;
+		}
 		if (group.healer)
 		{
 			const template = catalog.template(group.template);
@@ -410,16 +423,46 @@ function shieldGain(catalog, group, applied, mix)
 		const path = modification.value;
 		if (DURABILITY_PATHS.includes(path))
 			gain += relative(modification, +template.get(path) || 0);
-		else if (FIRE_PATHS.includes(path))
-			gain += FIRE_SHARE * relative(modification, +template.get(path) || 0);
-		else if (path === "Attack/Ranged/MaxRange" && profile.ranged)
-			gain += FIRE_SHARE * relative(modification, profile.range);
-		else if (path === "Attack/Ranged/MinRange" && profile.ranged)
-			gain += POINT_BLANK_GAIN;
 		else if (path === "GarrisonHolder/BuffHeal" && template.get("GarrisonHolder"))
 			gain += SHELTER_HEAL_GAIN;
 	}
 	return gain;
+}
+
+function fireGain(catalog, group, applied)
+{
+	const template = catalog.template(group.template);
+	const profile = catalog.combat(group.template);
+	if (!template.get("BuildingAI") || !profile.ranged)
+		return 0;
+	let gain = 0;
+	for (const modification of applied)
+	{
+		const path = modification.value;
+		if (FIRE_PATHS.includes(path))
+			gain += relative(modification, +template.get(path) || 0);
+		else if (path === "Attack/Ranged/MaxRange")
+			gain += relative(modification, profile.range);
+		else if (path === "Attack/Ranged/MinRange")
+			gain += POINT_BLANK_GAIN;
+	}
+	return gain;
+}
+
+function fireBenefit(world, catalog, info)
+{
+	const rate = world.losses.civilian + world.losses.structure;
+	if (!(rate > 0))
+		return 0;
+	const need = Math.min(1, rate * TECH_HORIZON_S / FIRE_LOSS_SCALE);
+	let benefit = 0;
+	for (const group of world.estate)
+	{
+		const applied = applying(catalog, info, group);
+		if (applied.length)
+			benefit += group.value * fireGain(catalog, group, applied) * need;
+	}
+	return benefit;
 }
 
 export function protectionBenefit(world, catalog, info)
@@ -444,7 +487,7 @@ export function protectionBenefit(world, catalog, info)
 		if (gain > -1)
 			benefit += world.losses[kind] * TECH_HORIZON_S * gain / (1 + gain);
 	}
-	return benefit;
+	return benefit + fireBenefit(world, catalog, info);
 }
 
 export function fishingGain(world, catalog, info)

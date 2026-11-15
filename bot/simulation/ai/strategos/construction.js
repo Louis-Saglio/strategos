@@ -1,5 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { TECH_HORIZON_S, auraBenefit, effectBenefit, enemyProfile, exchangeOutlook, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
+import { TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -52,6 +52,10 @@ const REPAIR_MAX_BUILDERS = 3;
 const REPAIR_MIN_MISSING = 0.1;
 const REPAIR_SAFE_RADIUS = 90;
 const WONDER_STOCK = 2;
+const TRADE_POST_CLEARANCE = 150;
+const POPULATION_PRICE = 100;
+const HERO_EDGE = 2;
+const WORKER_RATE = 0.5;
 const ELITE_EDGE = 1.2;
 const ELITE_STOCK = 2;
 const TERRITORY_PATH = "TerritoryInfluence/Radius";
@@ -104,7 +108,7 @@ export class Construction
 		const placement = new Placement(world, this.player);
 		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.worksRequest,
 			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.outpostCentreRequest,
-			this.dockRequest, this.wonderRequest, this.eliteRequest])
+			this.dockRequest, this.wonderRequest, this.eliteRequest, this.tradePostRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -898,9 +902,18 @@ export class Construction
 		const prices = resourcePrices(world);
 		const priced = cost => world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0);
 		const cramped = this.crampedAt !== undefined && world.time - this.crampedAt < CRAMPED_MEMORY_MS;
+		const pressure = populationPressure(world);
+		const house = this.bestHouse(world);
+		const housePrice = house ? priced(this.catalog.cost(house)) / this.catalog.populationBonus(house) : 0;
+		const heroic = world.heroes.length > 0 || world.trainers.some(trainer => trainer.trainable.some(unit => this.catalog.isHero(unit)));
 		for (const name of this.offered(world))
 		{
-			if (!this.catalog.isPlaceableOnLand(name) || this.count(world, other => other === name) > 0)
+			if (!this.catalog.isPlaceableOnLand(name) || name === house)
+				continue;
+			const owned = this.count(world, other => other === name);
+			const repeatable = isFinite(this.catalog.limitRoom(name)) && this.catalog.limitRoom(name) > 0 &&
+				owned === (world.structureCounts[name] || 0);
+			if (owned > 0 && !repeatable)
 				continue;
 			const template = this.catalog.template(name);
 			const auras = this.catalog.auras(name);
@@ -924,7 +937,17 @@ export class Construction
 			}
 			const trickle = this.catalog.trickle(name);
 			for (const code of world.codes)
-				benefit += trickle[code] * TECH_HORIZON_S;
+				benefit += trickle[code] * (TECH_HORIZON_S + POPULATION_PRICE * pressure / WORKER_RATE);
+			if (!owned && this.catalog.populationBonus(name) > 0 && housePrice > 0)
+				benefit += Math.min(this.catalog.populationBonus(name), Math.max(0, world.populationMax - world.populationLimit)) * housePrice;
+			if (!heroic)
+			{
+				const heroes = this.catalog.trainsFrom(name).filter(unit => this.catalog.isHero(unit));
+				let worth = 0;
+				for (const unit of heroes)
+					worth = Math.max(worth, heroWorth(world, this.catalog, unit) - HERO_EDGE * priced(this.catalog.cost(unit)));
+				benefit += worth;
+			}
 			const ratio = benefit / Math.max(1, priced(this.catalog.cost(name)));
 			if (ratio > 1 && (!best || ratio > best.ratio || (ratio === best.ratio && name < best.name)))
 				best = { name, ratio };
@@ -937,6 +960,40 @@ export class Construction
 			this.telemetry.line("BUILD", world.time, { "works": best.name, "ratio": Math.round(best.ratio * 100) / 100 });
 		}
 		return this.nearCentreRequest(world, placement, best.name, priorities.values.laboratory);
+	}
+
+	tradePostRequest(world, priorities, placement)
+	{
+		const plan = priorities.trade;
+		if (!priorities.scarce.length || !world.markets.some(market => market.own) || world.centres.length < 2)
+			return null;
+		const isMarket = name => this.catalog.isBarterMarket(name);
+		if (world.pendingConstructions.some(pending => isMarket(pending.template)) ||
+		    world.foundations.some(foundation => isMarket(foundation.template)))
+			return null;
+		let far = null;
+		let reach = 0;
+		for (const centre of world.centres)
+		{
+			if (world.regionOf(centre.position) !== world.homeRegion)
+				continue;
+			const nearest = Math.min(...world.markets.map(market => Math.sqrt(squareDistance(market.position, centre.position))));
+			const longest = Math.max(...world.markets.map(market => Math.sqrt(squareDistance(market.position, centre.position))));
+			if (nearest >= TRADE_POST_CLEARANCE && longest > reach)
+			{
+				far = centre;
+				reach = longest;
+			}
+		}
+		const template = this.cheapest(world, isMarket);
+		if (!far || reach < plan.minDistance || !template || !this.searchable(world, template))
+			return null;
+		const minRadius = far.radius + CENTRE_CLEARANCE + this.halfSize(template);
+		const site = placement.around(far.position, minRadius, minRadius + HOUSE_RING_WIDTH, this.catalog.footprint(template), BUILDING_MARGIN,
+			this.reservedBoxes(world), this.farmBelts(world));
+		if (!site)
+			return this.noSite(world, template, FULL_BASE_RETRY_MS);
+		return this.constructRequest(world, template, site, priorities.values.market, 1);
 	}
 
 	eliteRequest(world, priorities, placement)

@@ -201,7 +201,6 @@ export class ResourceIndex
 const LOSS_MEMORY_S = 120;
 const LOSS_KINDS = ["civilian", "soldier", "structure"];
 const LOSS_ATTACK_WINDOW = 50;
-const CASUALTY_MEMORY = 900;
 
 export class LossIndex
 {
@@ -218,13 +217,6 @@ export class LossIndex
 		this.lastTime = undefined;
 		this.turn = 0;
 		this.struck = new Map();
-		this.fallen = [];
-	}
-
-	casualties()
-	{
-		this.fallen = this.fallen.filter(entry => this.turn - entry.turn <= CASUALTY_MEMORY);
-		return Object.freeze(this.fallen.map(entry => entry.position));
 	}
 
 	kind(ent)
@@ -260,8 +252,6 @@ export class LossIndex
 			const kind = this.kind(ent);
 			if (kind)
 				this.pending[kind] += catalog.costSum(ent.templateName());
-			if (kind === "civilian" && ent.position())
-				this.fallen.push({ "position": ent.position(), "turn": this.turn });
 		}
 		for (const evt of taken)
 		{
@@ -606,6 +596,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const breakers = [];
 	const roster = new Map();
 	const healers = [];
+	const traders = [];
 	const anchorRegions = new Set(anchors.map(anchor => landRegionNear(accessibility, anchor.position)));
 	for (const ent of gameState.getOwnUnits().values())
 	{
@@ -614,10 +605,18 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		if (!roster.has(unitName))
 			roster.set(unitName, { "template": unitName, "classes": ent.classes(), "count": 0, "value": 0, "soldier": ent.hasClass("Soldier"),
 				"military": ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship"), "structure": false,
-				"healer": catalog.isHealer(unitName) });
+				"healer": catalog.isHealer(unitName), "trader": catalog.isTrader(unitName) });
 		const listed = roster.get(unitName);
 		listed.count += 1;
 		listed.value += catalog.costSum(unitName);
+		if (position && listed.trader)
+			traders.push(Object.freeze({
+				"id": ent.id(),
+				"position": position,
+				"region": accessibility.getAccessValue(position),
+				"state": ent.unitAIState() || "",
+				"idle": ent.isIdle()
+			}));
 		if (position && listed.healer)
 			healers.push(Object.freeze({
 				"id": ent.id(),
@@ -713,6 +712,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 
 	const structureCounts = {};
 	const damaged = [];
+	const markets = [];
 	const docks = [];
 	const holders = [];
 	const decaying = [];
@@ -798,6 +798,14 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 
 	const territory = gameState.sharedScript.territoryMap;
 	const player = gameState.getPlayerID();
+	const partners = new Set(gameState.getMutualAllies());
+	for (const ent of gameState.updatingGlobalCollection("strategos-markets",
+		{ "func": candidate => (candidate.get("Market/TradeType") || "").split(/\s+/).includes("land"), "dynamicProperties": [] },
+		gameState.getEntities()).values())
+		if (ent.position() && ent.foundationProgress() === undefined && (ent.owner() === player || partners.has(ent.owner())))
+			markets.push(Object.freeze({ "id": ent.id(), "position": ent.position(),
+				"region": landRegionNear(accessibility, ent.position()), "own": ent.owner() === player }));
+	markets.sort((a, b) => a.id - b.id);
 	const threats = [];
 	const enemyCentres = [];
 	const enemyCritical = [];
@@ -1096,8 +1104,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"roster": Object.freeze([...roster.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"estate": Object.freeze(estate),
 		"healers": Object.freeze(healers),
+		"traders": Object.freeze(traders),
+		"markets": Object.freeze(markets),
 		"losses": lossIndex.flush(gameState.getTimeElapsed()),
-		"casualties": lossIndex.casualties(),
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
 		"heroes": Object.freeze(heroes),

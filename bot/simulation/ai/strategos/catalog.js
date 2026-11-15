@@ -55,6 +55,16 @@ export class Catalog
 		return !!category && this.gameState.isEntityLimitReached(category);
 	}
 
+	limitRoom(name)
+	{
+		const template = this.template(name);
+		const category = template.buildCategory() || template.trainingCategory();
+		const limit = category ? this.gameState.getEntityLimits()[category] : undefined;
+		if (limit === undefined)
+			return Infinity;
+		return Math.max(0, limit - (this.gameState.getEntityCounts()[category] || 0));
+	}
+
 	template(name)
 	{
 		if (!this.templates.has(name))
@@ -92,6 +102,12 @@ export class Catalog
 	{
 		const template = this.template(name);
 		return !!template && template.hasClass("Wonder");
+	}
+
+	isTrader(name)
+	{
+		const template = this.template(name);
+		return !!template && !!template.get("Trader") && !template.hasClass("Ship");
 	}
 
 	isHealer(name)

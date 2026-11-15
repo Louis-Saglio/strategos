@@ -29,7 +29,9 @@ export class Executor
 			"stance": action => this.stance(action),
 			"attack-walk": action => this.attackWalk(action),
 			"research": action => this.research(action),
-			"barter": action => this.barter(action)
+			"barter": action => this.barter(action),
+			"trading-goods": action => this.tradingGoods(action),
+			"trade-route": action => this.tradeRoute(action)
 		};
 	}
 
@@ -127,6 +129,22 @@ export class Executor
 		Engine.PostCommand(this.player, { "type": "barter", "sell": action.sell, "buy": action.buy, "amount": action.amount });
 		if (this.telemetry.due("TRADE", this.time, BARTER_REPORT_MS))
 			this.telemetry.line("TRADE", this.time, { "sell": action.sell, "buy": action.buy, "rate": Math.round(action.rate * 100) / 100 });
+		return true;
+	}
+
+	tradingGoods(action)
+	{
+		Engine.PostCommand(this.player, { "type": "set-trading-goods", "tradingGoods": action.goods });
+		return true;
+	}
+
+	tradeRoute(action)
+	{
+		if (!this.gameState.getEntityById(action.unit) || !this.gameState.getEntityById(action.target) ||
+		    !this.gameState.getEntityById(action.source))
+			return false;
+		Engine.PostCommand(this.player, { "type": "setup-trade-route", "entities": [action.unit], "target": action.target,
+			"source": action.source, "route": undefined, "queued": false, "pushFront": false });
 		return true;
 	}
 

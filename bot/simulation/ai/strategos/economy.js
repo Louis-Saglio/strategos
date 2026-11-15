@@ -1,9 +1,10 @@
-import { TRAINING_BATCH, auraBenefit, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
+import { TRAINING_BATCH, heroWorth, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
 const HERO_STOCK = 2;
+const HERO_EDGE = 2;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
@@ -32,24 +33,25 @@ export class Economy
 			return [];
 		for (const trainer of world.trainers)
 		{
-			const worth = name => this.catalog.costSum(name) +
-				this.catalog.auras(name).reduce((sum, aura) => sum + auraBenefit(world, this.catalog, aura, true), 0);
-			const template = trainer.trainable.filter(name => this.catalog.isHero(name))
-				.map(name => ({ name, "worth": worth(name) }))
-				.sort((a, b) => b.worth - a.worth || (a.name < b.name ? -1 : 1))
-				.map(entry => entry.name)[0];
-			if (!template || trainer.queueLength >= TRAINER_QUEUE_DEPTH)
+			const best = trainer.trainable.filter(name => this.catalog.isHero(name))
+				.map(name => ({ name, "worth": heroWorth(world, this.catalog, name) }))
+				.sort((a, b) => b.worth - a.worth || (a.name < b.name ? -1 : 1))[0];
+			if (!best || trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
-			const cost = this.catalog.cost(template);
-			if (world.codes.some(code => world.resources[code] < HERO_STOCK * (cost[code] || 0)))
+			const cost = this.catalog.cost(best.name);
+			const prices = resourcePrices(world);
+			const stocked = world.codes.every(code => world.resources[code] >= HERO_STOCK * (cost[code] || 0));
+			if (!stocked && best.worth < HERO_EDGE * world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0))
 				return [];
-			this.heroOrdered = world.time;
+			if (world.codes.every(code => world.resources[code] >= (cost[code] || 0)))
+				this.heroOrdered = world.time;
 			return [{
 				"source": "economy",
-				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
-				"claims": { "resources": cost, "population": this.catalog.population(template), "slots": [trainer.id] },
+				"action": { "type": "train", "trainer": trainer.id, "template": best.name, "count": 1 },
+				"claims": { "resources": cost, "population": this.catalog.population(best.name), "slots": [trainer.id] },
 				"value": priorities.values.research,
-				"urgency": 1
+				"urgency": 1,
+				"reserve": true
 			}];
 		}
 		return [];
