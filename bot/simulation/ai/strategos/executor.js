@@ -31,7 +31,8 @@ export class Executor
 			"research": action => this.research(action),
 			"barter": action => this.barter(action),
 			"trading-goods": action => this.tradingGoods(action),
-			"trade-route": action => this.tradeRoute(action)
+			"trade-route": action => this.tradeRoute(action),
+			"upgrade": action => this.upgrade(action)
 		};
 	}
 
@@ -129,6 +130,14 @@ export class Executor
 		Engine.PostCommand(this.player, { "type": "barter", "sell": action.sell, "buy": action.buy, "amount": action.amount });
 		if (this.telemetry.due("TRADE", this.time, BARTER_REPORT_MS))
 			this.telemetry.line("TRADE", this.time, { "sell": action.sell, "buy": action.buy, "rate": Math.round(action.rate * 100) / 100 });
+		return true;
+	}
+
+	upgrade(action)
+	{
+		if (!this.gameState.getEntityById(action.entity))
+			return false;
+		Engine.PostCommand(this.player, { "type": "upgrade", "entities": [action.entity], "template": action.template });
 		return true;
 	}
 

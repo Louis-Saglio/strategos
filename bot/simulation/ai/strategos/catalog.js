@@ -21,6 +21,7 @@ export class Catalog
 		this.technologies = new Map();
 		this.auraInfos = new Map();
 		this.auraLists = new Map();
+		this.upgradeLists = new Map();
 		this.combats = new Map();
 		this.hitRates = new Map();
 		this.breakers = new Map();
@@ -449,6 +450,32 @@ export class Catalog
 		return rates;
 	}
 
+	upgrades(name)
+	{
+		if (!this.upgradeLists.has(name))
+		{
+			const template = this.template(name);
+			const raw = template && template.get("Upgrade") || {};
+			const options = [];
+			for (const key in raw)
+			{
+				const target = (raw[key].Entity || "").replace("{civ}", this.civ);
+				if (!target || !this.template(target))
+					continue;
+				const cost = {};
+				for (const code of this.codes)
+					cost[code] = +(raw[key].Cost && raw[key].Cost[code] || 0);
+				const techs = ((raw[key].Requirements && raw[key].Requirements.Techs && raw[key].Requirements.Techs._string) || "")
+					.split(/\s+/).filter(tech => tech);
+				options.push(Object.freeze({ "template": target, "cost": Object.freeze(cost), "techs": Object.freeze(techs) }));
+			}
+			this.upgradeLists.set(name, Object.freeze(options));
+		}
+		const category = other => this.template(other).buildCategory() || this.template(other).trainingCategory();
+		return this.upgradeLists.get(name).filter(option => option.techs.every(tech => this.gameState.isResearched(tech)) &&
+			(category(option.template) === category(name) || this.limitRoom(option.template) > 0));
+	}
+
 	trains(name, accept)
 	{
 		const trainable = this.template(name).trainableEntities(this.civ) || [];
@@ -525,6 +552,14 @@ export class Catalog
 	trainsTransports(name)
 	{
 		return this.trains(name, unit => this.transportCapacity(unit) > 0);
+	}
+
+	isPlaceableSpaced(name)
+	{
+		const template = this.template(name);
+		const placement = template.buildPlacementType() || "land";
+		const distance = template.buildDistance();
+		return placement === "land" && !!template.hasBuildTerritory("own") && (!distance || !!distance.FromClass && !distance.MaxDistance);
 	}
 
 	isPlaceableOnLand(name)

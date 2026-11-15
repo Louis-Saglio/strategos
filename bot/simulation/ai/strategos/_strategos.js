@@ -12,6 +12,7 @@ import { Offense } from "simulation/ai/strategos/offense.js";
 import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
+import { Upgrades } from "simulation/ai/strategos/upgrades.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
 import { LossIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
@@ -37,7 +38,8 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.lossIndex = new LossIndex(this.player);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
 	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
-		new Research(this.catalog), new Trade(this.catalog, this.telemetry), new Medics(this.catalog, this.telemetry)];
+		new Research(this.catalog), new Trade(this.catalog, this.telemetry), new Medics(this.catalog, this.telemetry),
+		new Upgrades(this.catalog, this.telemetry)];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
 	this.telemetry.line("STRATEGOS", gameState.getTimeElapsed(), {

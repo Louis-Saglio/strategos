@@ -1093,6 +1093,18 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		}
 	}
 
+	const upgradable = [];
+	for (const ent of gameState.updatingCollection("strategos-upgradable",
+		{ "func": candidate => !!candidate.get("Upgrade"), "dynamicProperties": [] }, gameState.getOwnEntities()).values())
+	{
+		if (ent.foundationProgress() !== undefined || !ent.position())
+			continue;
+		const options = catalog.upgrades(ent.templateName());
+		if (options.length)
+			upgradable.push(Object.freeze({ "id": ent.id(), "template": ent.templateName(), "unit": ent.hasClass("Unit"), "options": options }));
+	}
+	upgradable.sort((a, b) => a.id - b.id);
+
 	const estate = Object.keys(structureCounts).sort().map(name => Object.freeze({
 		"template": name, "classes": catalog.template(name).classes(), "count": structureCounts[name],
 		"value": structureCounts[name] * catalog.costSum(name), "soldier": false, "military": false, "structure": true
@@ -1104,6 +1116,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"roster": Object.freeze([...roster.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"estate": Object.freeze(estate),
 		"healers": Object.freeze(healers),
+		"upgradable": Object.freeze(upgradable),
 		"traders": Object.freeze(traders),
 		"markets": Object.freeze(markets),
 		"losses": lossIndex.flush(gameState.getTimeElapsed()),

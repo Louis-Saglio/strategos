@@ -56,6 +56,7 @@ const TRADE_POST_CLEARANCE = 150;
 const POPULATION_PRICE = 100;
 const HERO_EDGE = 2;
 const WORKER_RATE = 0.5;
+const SPACING_MARGIN = 8;
 const ELITE_EDGE = 1.2;
 const ELITE_STOCK = 2;
 const TERRITORY_PATH = "TerritoryInfluence/Radius";
@@ -438,11 +439,14 @@ export class Construction
 	{
 		const reserved = this.reservedBoxes(world);
 		const footprint = this.catalog.footprint(template);
-		const belts = this.farmBelts(world);
+		const spacing = this.catalog.spacing(template);
+		const apart = spacing ? world.footprints.filter(other => other.classes.includes(spacing.fromClass))
+			.map(other => ({ "position": other.position, "radius": spacing.min + SPACING_MARGIN })) : [];
+		const belts = this.farmBelts(world).concat(apart);
 		for (const centre of world.centres)
 		{
 			const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
-			for (const zones of [this.resourceZones(world, null).concat(belts), belts, []])
+			for (const zones of [this.resourceZones(world, null).concat(belts), belts, apart])
 			{
 				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
 				if (site)
@@ -450,7 +454,7 @@ export class Construction
 			}
 		}
 		const options = [{ "margin": BUILDING_MARGIN, "zones": belts }, { "margin": TIGHT_MARGIN, "zones": belts },
-			{ "margin": TIGHT_MARGIN, "zones": [] }, { "margin": 0, "zones": [] }];
+			{ "margin": TIGHT_MARGIN, "zones": apart }, { "margin": 0, "zones": apart }];
 		let best = null;
 		for (const centre of world.centres)
 		{
@@ -908,7 +912,7 @@ export class Construction
 		const heroic = world.heroes.length > 0 || world.trainers.some(trainer => trainer.trainable.some(unit => this.catalog.isHero(unit)));
 		for (const name of this.offered(world))
 		{
-			if (!this.catalog.isPlaceableOnLand(name) || name === house)
+			if (!this.catalog.isPlaceableSpaced(name) || name === house || this.catalog.isSettlement(name))
 				continue;
 			const owned = this.count(world, other => other === name);
 			const repeatable = isFinite(this.catalog.limitRoom(name)) && this.catalog.limitRoom(name) > 0 &&
@@ -938,6 +942,15 @@ export class Construction
 			const trickle = this.catalog.trickle(name);
 			for (const code of world.codes)
 				benefit += trickle[code] * (TECH_HORIZON_S + POPULATION_PRICE * pressure / WORKER_RATE);
+			let potential = 0;
+			for (const option of this.catalog.upgrades(name))
+			{
+				const better = this.catalog.trickle(option.template);
+				const gain = world.codes.reduce((sum, code) => sum + Math.max(0, better[code] - trickle[code]), 0) *
+					(TECH_HORIZON_S + POPULATION_PRICE * pressure / WORKER_RATE);
+				potential = Math.max(potential, gain - priced(option.cost));
+			}
+			benefit += potential;
 			if (!owned && this.catalog.populationBonus(name) > 0 && housePrice > 0)
 				benefit += Math.min(this.catalog.populationBonus(name), Math.max(0, world.populationMax - world.populationLimit)) * housePrice;
 			if (!heroic)
@@ -1014,7 +1027,7 @@ export class Construction
 		let best = null;
 		for (const name of this.offered(world))
 		{
-			if (!this.catalog.isPlaceableOnLand(name) || this.count(world, candidate => candidate === name) > 0)
+			if (!this.catalog.isPlaceableSpaced(name) || this.catalog.isSettlement(name) || this.count(world, candidate => candidate === name) > 0)
 				continue;
 			const units = this.catalog.trainsFrom(name).filter(unit => !known.has(unit));
 			const stronger = units.some(unit => this.catalog.isFighter(unit) && perSlot(unit) >= ELITE_EDGE * current);

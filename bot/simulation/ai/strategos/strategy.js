@@ -3,7 +3,7 @@ import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
-	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "caravan": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
+	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "caravan": 11, "upgrade": 12, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
