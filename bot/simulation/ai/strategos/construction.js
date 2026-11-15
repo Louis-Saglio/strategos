@@ -47,6 +47,10 @@ const MARKET_SURPLUS = 500;
 const STALLED_MS = 150000;
 const UNSTARTED_GRACE_MS = 30000;
 const ABANDONED_MEMORY_MS = 600000;
+const REPAIR_TIME_RATIO = 2;
+const REPAIR_MAX_BUILDERS = 3;
+const REPAIR_MIN_MISSING = 0.1;
+const REPAIR_SAFE_RADIUS = 90;
 const WONDER_STOCK = 2;
 const WONDER_BUILDERS = 20;
 
@@ -103,7 +107,47 @@ export class Construction
 				requests.push(request);
 		}
 		return requests.concat(this.colonyRequests(world, priorities), this.forwardRequests(world, priorities),
-			this.repairRequests(world, priorities), this.abandonRequests(world, priorities));
+			this.repairRequests(world, priorities), this.mendRequests(world, priorities), this.abandonRequests(world, priorities));
+	}
+
+	mendRequests(world, priorities)
+	{
+		if (!world.damaged.length)
+			return [];
+		const requests = [];
+		const assigned = new Map();
+		for (const worker of world.workers)
+			if (worker.state.includes("REPAIR") && worker.target !== undefined)
+				assigned.set(worker.target, (assigned.get(worker.target) || 0) + 1);
+		const hostiles = world.threats.concat(world.wild);
+		const safe = REPAIR_SAFE_RADIUS * REPAIR_SAFE_RADIUS;
+		const taken = new Set();
+		const forward = new Set(world.decaying.map(structure => structure.id));
+		const ordered = world.damaged
+			.filter(structure => !forward.has(structure.id) && (structure.missing >= REPAIR_MIN_MISSING || assigned.has(structure.id)))
+			.sort((a, b) => b.missing * b.value - a.missing * a.value || a.id - b.id);
+		for (const structure of ordered)
+		{
+			if (hostiles.some(hostile => squareDistance(hostile.position, structure.position) <= safe))
+				continue;
+			const seconds = structure.missing * REPAIR_TIME_RATIO * this.catalog.buildTime(structure.template);
+			const wanted = Math.max(1, Math.min(REPAIR_MAX_BUILDERS, Math.ceil(seconds / SECONDS_PER_BUILDER)));
+			const missing = wanted - (assigned.get(structure.id) || 0);
+			if (missing <= 0)
+				continue;
+			for (const id of this.pickBuilders(world, structure.template, structure.position, missing, taken))
+			{
+				taken.add(id);
+				requests.push({
+					"source": "construction",
+					"action": { "type": "repair", "worker": id, "target": structure.id },
+					"claims": { "workers": [id] },
+					"value": priorities.values.build,
+					"urgency": Math.min(1, structure.missing + 0.5)
+				});
+			}
+		}
+		return requests;
 	}
 
 	abandonRequests(world, priorities)

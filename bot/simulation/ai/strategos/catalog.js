@@ -89,6 +89,12 @@ export class Catalog
 		return !!template && template.hasClass("Wonder");
 	}
 
+	isHealer(name)
+	{
+		const template = this.template(name);
+		return !!template && !!template.get("Heal");
+	}
+
 	isHero(name)
 	{
 		const template = this.template(name);

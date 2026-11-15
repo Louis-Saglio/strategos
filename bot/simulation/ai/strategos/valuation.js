@@ -1,3 +1,5 @@
+import { squareDistance } from "simulation/ai/strategos/world.js";
+
 export const TECH_HORIZON_S = 180;
 const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
@@ -236,8 +238,11 @@ const FIRE_SHARE = 0.5;
 const SHELTER_HEAL_GAIN = 0.05;
 const BUILDER_RATE = 0.6;
 const TRAINER_SECOND_VALUE = 0.8;
+const HEAL_RANGE_WEIGHT = 0.3;
 const FISH_KIND = "food.fish";
 const FORGONE_GATHERERS = 5;
+const FORGONE_RATE = 1;
+const FORGONE_FISH_REACH = 300;
 const COST_PREFIX = "Cost/Resources/";
 const TRICKLE_PREFIX = "ResourceTrickle/Rates/";
 const PLAYER_CLASS = "Player";
@@ -302,12 +307,25 @@ export function assetBenefit(world, catalog, tech)
 	let benefit = 0;
 	for (const group of world.roster)
 	{
-		if (!group.military)
+		if (!group.military && !group.healer)
 			continue;
 		const applied = applying(catalog, info, group);
 		if (!applied.length)
 			continue;
 		let gain = 0;
+		if (group.healer)
+		{
+			const template = catalog.template(group.template);
+			for (const modification of applied)
+				if (modification.value === "Heal/Interval")
+					gain += 1 / Math.max(0.1, modification.multiply || 1) - 1;
+				else if (modification.value === "Heal/Health")
+					gain += relative(modification, +template.get("Heal/Health") || 0);
+				else if (modification.value === "Heal/Range")
+					gain += HEAL_RANGE_WEIGHT * relative(modification, +template.get("Heal/Range") || 0);
+			benefit += group.value * gain;
+			continue;
+		}
 		if (!group.soldier)
 		{
 			const combat = applied.filter(isCombat);
@@ -517,9 +535,10 @@ function forgoneGain(world, catalog, info)
 		for (const site of world.sites[code] || [])
 			if (site.kind === kind && isFinite(site.amount))
 				places += Math.max(0, site.capacity - site.gatherers);
-		if (kind === FISH_KIND)
-			for (const school of world.fish)
-				places += Math.max(0, school.capacity - school.gatherers);
+		if (kind === FISH_KIND && world.centres.length)
+			for (const school of world.schools)
+				if (squareDistance(school, world.centres[0].position) <= FORGONE_FISH_REACH * FORGONE_FISH_REACH)
+					places += 1;
 		if (!places)
 			continue;
 		let rate = 0;
@@ -529,7 +548,7 @@ function forgoneGain(world, catalog, info)
 		for (const ship of world.fleet)
 			if (ship.profile && catalog.modificationApplies(info, modification, ship.classes))
 				rate = Math.max(rate, ship.profile.rates[kind] || 0);
-		gain += Math.min(places, FORGONE_GATHERERS) * rate * (modification.multiply - 1);
+		gain += Math.min(places, FORGONE_GATHERERS) * (rate || FORGONE_RATE) * (modification.multiply - 1);
 	}
 	return gain;
 }

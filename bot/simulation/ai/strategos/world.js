@@ -595,6 +595,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const settlers = [];
 	const breakers = [];
 	const roster = new Map();
+	const healers = [];
 	const anchorRegions = new Set(anchors.map(anchor => landRegionNear(accessibility, anchor.position)));
 	for (const ent of gameState.getOwnUnits().values())
 	{
@@ -602,10 +603,18 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		const unitName = ent.templateName();
 		if (!roster.has(unitName))
 			roster.set(unitName, { "template": unitName, "classes": ent.classes(), "count": 0, "value": 0, "soldier": ent.hasClass("Soldier"),
-				"military": ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship"), "structure": false });
+				"military": ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship"), "structure": false,
+				"healer": catalog.isHealer(unitName) });
 		const listed = roster.get(unitName);
 		listed.count += 1;
 		listed.value += catalog.costSum(unitName);
+		if (position && listed.healer)
+			healers.push(Object.freeze({
+				"id": ent.id(),
+				"position": position,
+				"region": accessibility.getAccessValue(position),
+				"state": ent.unitAIState() || ""
+			}));
 		if (position && catalog.isBreaker(ent.templateName()))
 		{
 			const orders = ent.unitAIOrderData() || [];
@@ -693,6 +702,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	}
 
 	const structureCounts = {};
+	const damaged = [];
 	const docks = [];
 	const holders = [];
 	const decaying = [];
@@ -706,6 +716,14 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		if (ent.foundationProgress() !== undefined)
 			continue;
 		structureCounts[ent.templateName()] = (structureCounts[ent.templateName()] || 0) + 1;
+		if (ent.position() && ent.needsRepair())
+			damaged.push(Object.freeze({
+				"id": ent.id(),
+				"template": ent.templateName(),
+				"position": ent.position(),
+				"missing": 1 - ent.healthLevel(),
+				"value": catalog.costSum(ent.templateName())
+			}));
 		if (ent.position() && catalog.isShoreStructure(ent.templateName()))
 			docks.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "region": landRegionNear(accessibility, ent.position()),
 				"sea": seaNear(accessibility, ent.position()),
@@ -1067,6 +1085,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"player": player,
 		"roster": Object.freeze([...roster.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"estate": Object.freeze(estate),
+		"healers": Object.freeze(healers),
 		"losses": lossIndex.flush(gameState.getTimeElapsed()),
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
@@ -1137,6 +1156,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"enemyStructures": Object.freeze(enemyStructures),
 		"decaying": Object.freeze(decaying),
 		"structureCounts": Object.freeze(structureCounts),
+		"damaged": Object.freeze(damaged),
 		"holders": Object.freeze(holders),
 		"footprints": Object.freeze(footprints),
 		"garrisonedSoldiers": garrisonedSoldiers,
