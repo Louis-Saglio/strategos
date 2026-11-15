@@ -46,6 +46,13 @@
  *     other active side's for HARNESS_RESIGN_HOLD_MS is defeated, as a
  *     player resigning a lost game (0 = never; the standing lines are kept).
  *   [HARNESS] time limit reached {"t": <sim s>}
+ *   [HARNESS] census {"<player id>": {"commands": {<type>: n}, "train": {<template>: units},
+ *       "construct": {<template>: n}, "research": {<tech>: n}, "detail": {<type>:<name>: n}}, ...}
+ *     once at game end: every command each player issued (AI commands
+ *     included, which the replay does not record), counted by type from the
+ *     OnPlayerCommand trigger event, with the templates of train / construct
+ *     / research commands and the names of formation / stance commands.
+ *     Commands the engine later refuses are counted too. Read-only.
  *   per-player statistics JSON blocks (as the public script), at game end.
  *
  * Map snapshot codes: kind 1 worker, 2 soldier, 3 cavalry, 4 siege,
@@ -86,11 +93,29 @@ Trigger.prototype.HarnessEndGame = function()
 		return;
 	this.harnessOnce = false;
 	this.HarnessKills();
+	print("[HARNESS] census " + JSON.stringify(this.harnessCensus) + "\n");
 	for (const player of Engine.GetEntitiesWithInterface(IID_StatisticsTracker))
 	{
 		const cmpStatisticsTracker = Engine.QueryInterface(player, IID_StatisticsTracker);
 		if (cmpStatisticsTracker)
 			print(cmpStatisticsTracker.GetStatisticsJSON() + "\n");
+	}
+};
+
+Trigger.prototype.HarnessCommand = function(data)
+{
+	const cmd = data.cmd;
+	if (!cmd || !cmd.type)
+		return;
+	const entry = this.harnessCensus[data.player] = this.harnessCensus[data.player] ||
+		{ "commands": {}, "train": {}, "construct": {}, "research": {}, "detail": {} };
+	entry.commands[cmd.type] = (entry.commands[cmd.type] || 0) + 1;
+	if (cmd.type === "train" || cmd.type === "construct" || cmd.type === "research")
+		entry[cmd.type][cmd.template] = (entry[cmd.type][cmd.template] || 0) + (cmd.type === "train" ? cmd.count || 1 : 1);
+	else if (cmd.type === "formation" || cmd.type === "stance")
+	{
+		const key = cmd.type + ":" + (cmd.formation || cmd.name);
+		entry.detail[key] = (entry.detail[key] || 0) + 1;
 	}
 };
 
@@ -333,6 +358,7 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.harnessKindCache = new Map();
 	cmpTrigger.harnessKills = [];
 	cmpTrigger.harnessBehind = {};
+	cmpTrigger.harnessCensus = {};
 	const harnessBaseKilledBy = Health.prototype.KilledBy;
 	Health.prototype.KilledBy = function(attacker, attackerOwner)
 	{
@@ -389,6 +415,7 @@ Trigger.prototype.HarnessTimeLimit = function()
 			harnessRefusal(this, "requirement", templateName);
 		return able;
 	};
+	cmpTrigger.RegisterTrigger("OnPlayerCommand", "HarnessCommand", { "enabled": true });
 	cmpTrigger.RegisterTrigger("OnPlayerWon", "HarnessEndGame", { "enabled": true });
 	cmpTrigger.RegisterTrigger("OnPlayerDefeated", "HarnessEndGame", { "enabled": true });
 	cmpTrigger.DoAfterDelay(0, "HarnessStart", {});

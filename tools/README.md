@@ -5,9 +5,10 @@ Development tooling for Strategos. Not part of the bot.
 | Tool | What it does |
 |---|---|
 | `run.sh` (`run.py`) | run batches of headless matches on every available host |
-| `harness/` | the `strategos-harness` mod mounted in every match: game settings, statistics, map snapshots, standings, resignation, time limit |
+| `harness/` | the `strategos-harness` mod mounted in every match: game settings, statistics, map snapshots, standings, command census, resignation, time limit |
 | `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
 | `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
+| `census.py` | what each AI used in a batch against what its civ offers: command types, technologies, structures, units |
 | `compare.py` | paired comparison of two batches run on the same matches |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
@@ -211,6 +212,15 @@ a side whose assets stay below RATIO x the strongest other side's for
 then ends as the other side's win. This is the only way the harness acts
 on a game before the limit.
 
+At game end it prints `[HARNESS] census {"<player id>": {"commands":
+{<type>: n}, "train": {<template>: units}, "construct": {<template>: n},
+"research": {<tech>: n}, "detail": {"formation:<name>"|"stance:<name>":
+n}}}`: every command each player issued, AI commands included (the replay
+does not record those), counted from the `OnPlayerCommand` trigger event.
+A command the engine then refuses is counted too. Read-only: 233 of 246
+games bit-identical to games of the previous harness, the 13 others
+differing by the bot. `census.py` reads it.
+
 `autostart/harness_settings.js` applies `-harness-settings=JSON` (the
 `-S` settings) on top of the public autostart command line. The engine
 loads every file of `autostart/` in name order, so it wraps the public
@@ -292,6 +302,22 @@ several minutes.
 `compare.py`: pairs two batches by tag; identical-game count, outcome
 transitions of WHO's side, and for each metric the means, the mean
 paired delta and the paired t-test p-value.
+
+### census.py — what an AI uses of what its civ offers
+
+```sh
+tools/census.py [--ai NAME] [--all] [--civ] BATCHDIR...
+```
+
+From the `[HARNESS] census` lines of the batches and the game data
+(`gamedata/zad.py`): the command types of every AI family side by side
+(in games using them), then per technology, structure and unit the games
+where the AI (`--ai`, default `strategos`) ordered it over the games where
+its civ could, with the other families' counts as a reference. Without
+`--all` only what was ordered in fewer than 5 % of the possible games is
+listed — the technologies never researched, the buildings never built,
+the units never trained, the orders never given; `--civ` adds the per-civ
+split.
 
 ## Seeing a match
 
