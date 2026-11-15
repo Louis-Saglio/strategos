@@ -35,6 +35,8 @@ export class Research
 		{
 			requests.push(unlock);
 			chosen.add(unlock.action.tech);
+			if (this.catalog.technology(unlock.action.tech).sibling)
+				chosen.add(this.catalog.technology(unlock.action.tech).sibling);
 		}
 		for (const researcher of world.researchers)
 		{
@@ -56,6 +58,8 @@ export class Research
 			if (!best)
 				continue;
 			chosen.add(best.tech);
+			if (this.catalog.technology(best.tech).sibling)
+				chosen.add(this.catalog.technology(best.tech).sibling);
 			requests.push({
 				"source": "research",
 				"action": { "type": "research", "researcher": researcher.id, "tech": best.tech, "payback": Math.round(best.payback) },

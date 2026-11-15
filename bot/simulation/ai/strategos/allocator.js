@@ -1,4 +1,6 @@
 const SPEND_SMOOTHING = 0.05;
+const ORDER_MEMORY_S = 180;
+const ORDER_TYPES = ["train", "construct"];
 
 export class Allocator
 {
@@ -16,6 +18,8 @@ export class Allocator
 			this.unmet[code] = 0;
 		}
 		this.lastTime = undefined;
+		this.orders = new Map();
+		this.ordered = new Map();
 		this.held = {};
 		this.allocations = 0;
 		for (const code of codes)
@@ -27,6 +31,7 @@ export class Allocator
 		return Object.freeze({
 			"observed": this.lastTime !== undefined,
 			"spendRate": Object.freeze(Object.assign({}, this.spendRate)),
+			"orders": Object.freeze(Object.fromEntries(this.orders)),
 			"unmet": Object.freeze(Object.assign({}, this.unmet))
 		});
 	}
@@ -41,6 +46,16 @@ export class Allocator
 			if (seconds > 0)
 				this.spendRate[code] += SPEND_SMOOTHING * (spent[code] / seconds - this.spendRate[code]);
 		}
+		if (seconds > 0)
+		{
+			const blend = 1 - Math.exp(-seconds / ORDER_MEMORY_S);
+			for (const template of this.ordered.keys())
+				if (!this.orders.has(template))
+					this.orders.set(template, 0);
+			for (const [template, rate] of this.orders)
+				this.orders.set(template, rate + blend * ((this.ordered.get(template) || 0) / seconds - rate));
+		}
+		this.ordered.clear();
 	}
 
 	allocate(world, requests)
@@ -106,6 +121,8 @@ export class Allocator
 				for (const code of this.codes)
 					spent[code] += request.claims.resources && request.claims.resources[code] || 0;
 			this.commit(request, budget);
+			if (ORDER_TYPES.includes(request.action.type))
+				this.ordered.set(request.action.template, (this.ordered.get(request.action.template) || 0) + (request.action.count || 1));
 			grants.push(request);
 		}
 		this.observe(world, spent, unmet);

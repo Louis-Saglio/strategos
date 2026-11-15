@@ -189,6 +189,7 @@ export class Catalog
 				"modifications": tech && tech.modifications() || [],
 				"affects": tech && tech.affects() || null,
 				"affectLists": tech && tech.affects() && tech.affects().length ? tech.affects().map(affect => affect.split(/\s+/)) : [[]],
+				"sibling": tech && tech.pairedWith() || null,
 				"researchTime": tech ? tech.researchTime() : 0
 			}));
 		}
@@ -296,7 +297,18 @@ export class Catalog
 	{
 		const producer = entity.templateName();
 		if (!this.researchables.has(producer))
-			this.researchables.set(producer, entity.researchableTechs(this.gameState, this.civ) || []);
+		{
+			const listed = [];
+			for (const name of entity.researchableTechs(this.gameState, this.civ) || [])
+			{
+				const tech = this.gameState.getTemplate(name);
+				const members = tech && tech.pairDef() ? tech.getPairedTechs().map(member => member._templateName) : [name];
+				for (const member of members)
+					if (!listed.includes(member))
+						listed.push(member);
+			}
+			this.researchables.set(producer, listed);
+		}
 		this.refreshTurnCaches();
 		return this.researchables.get(producer).filter(name => {
 			if (!this.researchOpen.has(name))

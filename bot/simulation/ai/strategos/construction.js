@@ -1,5 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { exchangeOutlook, techBenefit } from "simulation/ai/strategos/valuation.js";
+import { exchangeOutlook, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -847,6 +847,8 @@ export class Construction
 	laboratoryRequest(world, priorities, placement)
 	{
 		let best = null;
+		const prices = resourcePrices(world);
+		const priced = cost => world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0);
 		for (const name of this.offered(world))
 		{
 			if (!this.catalog.isPlaceableOnLand(name) || !this.catalog.template(name).get("Researcher") ||
@@ -854,11 +856,8 @@ export class Construction
 				continue;
 			let surplus = 0;
 			for (const tech of this.catalog.researchable(this.catalog.template(name)))
-			{
-				const cost = this.catalog.techCost(tech, name);
-				surplus += Math.max(0, techBenefit(world, this.catalog, tech) - world.codes.reduce((sum, code) => sum + cost[code], 0));
-			}
-			const ratio = surplus / Math.max(1, this.catalog.costSum(name));
+				surplus += Math.max(0, techBenefit(world, this.catalog, tech) - priced(this.catalog.techCost(tech, name)));
+			const ratio = surplus / Math.max(1, priced(this.catalog.cost(name)));
 			if (ratio > 1 && (!best || ratio > best.ratio || (ratio === best.ratio && name < best.name)))
 				best = { name, ratio };
 		}

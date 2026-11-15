@@ -198,6 +198,89 @@ export class ResourceIndex
 	}
 }
 
+const LOSS_MEMORY_S = 120;
+const LOSS_KINDS = ["civilian", "soldier", "structure"];
+const LOSS_ATTACK_WINDOW = 50;
+
+export class LossIndex
+{
+	constructor(player)
+	{
+		this.player = player;
+		this.pending = {};
+		this.rates = {};
+		for (const kind of LOSS_KINDS)
+		{
+			this.pending[kind] = 0;
+			this.rates[kind] = 0;
+		}
+		this.lastTime = undefined;
+		this.turn = 0;
+		this.struck = new Map();
+	}
+
+	kind(ent)
+	{
+		if (ent.hasClass("Structure"))
+			return "structure";
+		if (!ent.hasClass("Unit") || ent.hasClass("Animal"))
+			return null;
+		return ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship") ? "soldier" : "civilian";
+	}
+
+	record(events, catalog)
+	{
+		this.turn += 1;
+		for (const evt of events && events.Attacked || [])
+			this.struck.set(evt.target, this.turn);
+		if (this.turn % LOSS_ATTACK_WINDOW === 0)
+			for (const [id, turn] of this.struck)
+				if (this.turn - turn > LOSS_ATTACK_WINDOW)
+					this.struck.delete(id);
+		const destroyed = events && events.Destroy || [];
+		const taken = events && events.OwnershipChanged || [];
+		if (!destroyed.length && !taken.length)
+			return;
+		const renamed = new Set((events.EntityRenamed || []).map(evt => evt.entity));
+		for (const evt of destroyed)
+		{
+			const ent = evt.entityObj;
+			const struck = this.struck.get(evt.entity);
+			if (!ent || evt.SuccessfulFoundation || renamed.has(evt.entity) || ent.owner() !== this.player ||
+			    ent.foundationProgress() !== undefined || struck === undefined || this.turn - struck > LOSS_ATTACK_WINDOW)
+				continue;
+			const kind = this.kind(ent);
+			if (kind)
+				this.pending[kind] += catalog.costSum(ent.templateName());
+		}
+		for (const evt of taken)
+		{
+			if (evt.from !== this.player)
+				continue;
+			const ent = catalog.gameState.getEntityById(evt.entity);
+			const kind = ent && this.kind(ent);
+			if (kind)
+				this.pending[kind] += catalog.costSum(ent.templateName());
+		}
+	}
+
+	flush(time)
+	{
+		const seconds = this.lastTime === undefined ? 0 : (time - this.lastTime) / 1000;
+		this.lastTime = time;
+		if (seconds > 0)
+		{
+			const blend = 1 - Math.exp(-seconds / LOSS_MEMORY_S);
+			for (const kind of LOSS_KINDS)
+			{
+				this.rates[kind] += blend * (this.pending[kind] / seconds - this.rates[kind]);
+				this.pending[kind] = 0;
+			}
+		}
+		return Object.freeze(Object.assign({}, this.rates));
+	}
+}
+
 const SHORE_SPACING = 12;
 const YARD_BLOCKED_MS = 150000;
 
@@ -456,7 +539,7 @@ export function squareDistance(a, b)
 	return dx * dx + dz * dz;
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendingConstructions, demand)
+export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, pendingConstructions, demand)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const playerData = gameState.playerData;
@@ -511,10 +594,18 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 	const workers = [];
 	const settlers = [];
 	const breakers = [];
+	const roster = new Map();
 	const anchorRegions = new Set(anchors.map(anchor => landRegionNear(accessibility, anchor.position)));
 	for (const ent of gameState.getOwnUnits().values())
 	{
 		const position = ent.position();
+		const unitName = ent.templateName();
+		if (!roster.has(unitName))
+			roster.set(unitName, { "template": unitName, "classes": ent.classes(), "count": 0, "value": 0, "soldier": ent.hasClass("Soldier"),
+				"military": ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship"), "structure": false });
+		const listed = roster.get(unitName);
+		listed.count += 1;
+		listed.value += catalog.costSum(unitName);
 		if (position && catalog.isBreaker(ent.templateName()))
 		{
 			const orders = ent.unitAIOrderData() || [];
@@ -887,6 +978,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 			"state": ent.unitAIState() || "",
 			"idle": ent.isIdle(),
 			"fishing": ent.hasClass("FishingBoat"),
+			"classes": ent.classes(),
+			"profile": ent.hasClass("FishingBoat") ? catalog.gathering(ent) : null,
 			"bombard": catalog.isBombardShip(ent.templateName()),
 			"gathering": (ent.unitAIState() || "").includes("GATHER") || (ent.unitAIState() || "").includes("RETURNRESOURCE"),
 			"warship": ent.hasClass("Warship"),
@@ -964,9 +1057,17 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, pendin
 		}
 	}
 
+	const estate = Object.keys(structureCounts).sort().map(name => Object.freeze({
+		"template": name, "classes": catalog.template(name).classes(), "count": structureCounts[name],
+		"value": structureCounts[name] * catalog.costSum(name), "soldier": false, "military": false, "structure": true
+	}));
+
 	return Object.freeze({
 		"time": gameState.getTimeElapsed(),
 		"player": player,
+		"roster": Object.freeze([...roster.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
+		"estate": Object.freeze(estate),
+		"losses": lossIndex.flush(gameState.getTimeElapsed()),
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
 		"heroes": Object.freeze(heroes),

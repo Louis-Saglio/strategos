@@ -12,7 +12,7 @@ import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
-import { ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
+import { LossIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
@@ -33,6 +33,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.catalog = new Catalog(gameState);
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.shoreIndex = new ShoreIndex();
+	this.lossIndex = new LossIndex(this.player);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
 	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
 		new Research(this.catalog), new Trade()];
@@ -47,6 +48,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 
 StrategosBot.prototype.OnUpdate = function()
 {
+	this.lossIndex.record(this.events, this.catalog);
 	if (this.gameState.playerData.state === "active" && (this.turn + this.player) % DECISION_PERIOD === DECISION_PHASE)
 		this.decide();
 	this.turn += 1;
@@ -63,7 +65,7 @@ StrategosBot.prototype.decide = function()
 		mark = now;
 	};
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, pending, this.allocator.demand());
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, pending, this.allocator.demand());
 	lap("world");
 	const priorities = this.strategy.update(world);
 	const requests = [];

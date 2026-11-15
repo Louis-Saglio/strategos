@@ -224,9 +224,257 @@ export function unitScore(world, catalog, name, context)
 		(1 + DIVERSITY_WEIGHT * share / size) / (1 + ROLE_DIVERSITY_WEIGHT * roleShare / size);
 }
 
+const SPEED_WEIGHT = 0.5;
+const RANGE_WEIGHT = 1;
+const SPREAD_WEIGHT = 0.3;
+const POINT_BLANK_GAIN = 0.1;
+const REGEN_WINDOW_S = 60;
+const REGEN_WEIGHT = 0.5;
+const PROMOTION_WEIGHT = 0.1;
+const RANK_GAIN = 0.35;
+const FIRE_SHARE = 0.5;
+const SHELTER_HEAL_GAIN = 0.05;
+const BUILDER_RATE = 0.6;
+const TRAINER_SECOND_VALUE = 0.8;
+const FISH_KIND = "food.fish";
+const FORGONE_GATHERERS = 5;
+const COST_PREFIX = "Cost/Resources/";
+const TRICKLE_PREFIX = "ResourceTrickle/Rates/";
+const PLAYER_CLASS = "Player";
+const PLAYER_TRICKLE_S = 1;
+const DURABILITY_PATHS = ["Capturable/CapturePoints"];
+const FIRE_PATHS = ["BuildingAI/DefaultArrowCount", "BuildingAI/GarrisonArrowMultiplier"];
+
 export function techBenefit(world, catalog, tech)
 {
-	return TECH_HORIZON_S * gatherGain(world, catalog, tech) + militaryBenefit(world, catalog, tech);
+	return TECH_HORIZON_S * (gatherGain(world, catalog, tech) + fishingGain(world, catalog, tech) + trickleGain(world, catalog, tech)) +
+		militaryBenefit(world, catalog, tech) + assetBenefit(world, catalog, tech) + protectionBenefit(world, catalog, tech) +
+		flowBenefit(world, catalog, tech) + housingBenefit(world, catalog, tech);
+}
+
+function isCombat(modification)
+{
+	return modification.value.startsWith(ATTACK_PREFIX + "Melee/Damage/") || modification.value.startsWith(ATTACK_PREFIX + "Ranged/Damage/") ||
+		modification.value.endsWith("/RepeatTime") || modification.value.startsWith(RESISTANCE_PREFIX) || modification.value === HEALTH_KEY;
+}
+
+function changed(modification, base)
+{
+	return modification.replace !== undefined ? +modification.replace : base * (modification.multiply || 1) + (modification.add || 0);
+}
+
+function relative(modification, base)
+{
+	return base > 0 ? changed(modification, base) / base - 1 : 0;
+}
+
+function applying(catalog, info, group)
+{
+	return info.modifications.filter(modification => catalog.modificationApplies(info, modification, group.classes));
+}
+
+function traitGain(catalog, group, modification)
+{
+	const path = modification.value;
+	const profile = catalog.combat(group.template);
+	if (path === "UnitMotion/WalkSpeed")
+		return SPEED_WEIGHT * relative(modification, profile.speed);
+	if (path === "Attack/Ranged/MaxRange")
+		return profile.ranged ? RANGE_WEIGHT * relative(modification, profile.range) : 0;
+	if (path === "Attack/Ranged/Projectile/Spread")
+		return profile.ranged ? -SPREAD_WEIGHT * relative(modification, 1) : 0;
+	if (path === "Health/RegenRate" || path === "Health/IdleRegenRate")
+		return profile.hp > 0 ? REGEN_WEIGHT * Math.min(1, REGEN_WINDOW_S * (modification.add || 0) / profile.hp) : 0;
+	if (path === "Promotion/RequiredXp")
+	{
+		if (!catalog.template(group.template).get("Promotion"))
+			return 0;
+		return modification.replace !== undefined ? RANK_GAIN : PROMOTION_WEIGHT * (1 / Math.max(0.1, modification.multiply || 1) - 1);
+	}
+	return 0;
+}
+
+export function assetBenefit(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	if (!info.modifications.length)
+		return 0;
+	let benefit = 0;
+	for (const group of world.roster)
+	{
+		if (!group.military)
+			continue;
+		const applied = applying(catalog, info, group);
+		if (!applied.length)
+			continue;
+		let gain = 0;
+		if (!group.soldier)
+		{
+			const combat = applied.filter(isCombat);
+			const profile = catalog.combat(group.template);
+			if (combat.length)
+				gain += (1 + attackGain(profile, combat)) * (1 + durabilityGain(profile, combat, world.enemyDamageMix)) - 1;
+		}
+		for (const modification of applied)
+			gain += traitGain(catalog, group, modification);
+		benefit += group.value * gain;
+	}
+	return benefit;
+}
+
+function shieldGain(catalog, group, applied, mix)
+{
+	const template = catalog.template(group.template);
+	const profile = catalog.combat(group.template);
+	let gain = durabilityGain(profile, applied.filter(isCombat), mix);
+	for (const modification of applied)
+	{
+		const path = modification.value;
+		if (DURABILITY_PATHS.includes(path))
+			gain += relative(modification, +template.get(path) || 0);
+		else if (FIRE_PATHS.includes(path))
+			gain += FIRE_SHARE * relative(modification, +template.get(path) || 0);
+		else if (path === "Attack/Ranged/MaxRange" && profile.ranged)
+			gain += FIRE_SHARE * relative(modification, profile.range);
+		else if (path === "Attack/Ranged/MinRange" && profile.ranged)
+			gain += POINT_BLANK_GAIN;
+		else if (path === "GarrisonHolder/BuffHeal" && template.get("GarrisonHolder"))
+			gain += SHELTER_HEAL_GAIN;
+	}
+	return gain;
+}
+
+export function protectionBenefit(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	if (!info.modifications.length)
+		return 0;
+	let benefit = 0;
+	for (const [kind, groups] of [["structure", world.estate], ["civilian", world.roster.filter(group => !group.military)]])
+	{
+		if (!(world.losses[kind] > 0))
+			continue;
+		let total = 0;
+		let gained = 0;
+		for (const group of groups)
+		{
+			total += group.value;
+			const applied = applying(catalog, info, group);
+			if (applied.length)
+				gained += group.value * shieldGain(catalog, group, applied, world.enemyDamageMix);
+		}
+		const gain = total > 0 ? gained / total : 0;
+		if (gain > -1)
+			benefit += world.losses[kind] * TECH_HORIZON_S * gain / (1 + gain);
+	}
+	return benefit;
+}
+
+export function fishingGain(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	if (!info.modifications.some(modification => modification.value.startsWith("ResourceGatherer/")))
+		return 0;
+	let gain = 0;
+	for (const ship of world.fleet)
+	{
+		if (!ship.profile)
+			continue;
+		const rate = ship.profile.rates[FISH_KIND] || 0;
+		const capacity = ship.profile.capacities.food || 0;
+		for (const modification of info.modifications)
+		{
+			if (!catalog.modificationApplies(info, modification, ship.classes))
+				continue;
+			if (modification.value === RATE_PREFIX + FISH_KIND || modification.value === SPEED_KEY)
+				gain += rate * ((modification.multiply || 1) - 1);
+			else if (modification.value === CAPACITY_PREFIX + "food" && modification.add && capacity > 0)
+				gain += rate * WALK_SHARE * modification.add / (capacity + modification.add);
+		}
+	}
+	return gain * GATHER_EFFICIENCY;
+}
+
+export function trickleGain(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	let gain = 0;
+	for (const modification of info.modifications)
+	{
+		if (!modification.value.startsWith(TRICKLE_PREFIX) || !modification.add)
+			continue;
+		if (catalog.modificationApplies(info, modification, [PLAYER_CLASS]))
+			gain += modification.add / PLAYER_TRICKLE_S;
+		for (const group of world.estate)
+		{
+			const interval = +catalog.template(group.template).get("ResourceTrickle/Interval") || 0;
+			if (interval > 0 && catalog.modificationApplies(info, modification, group.classes))
+				gain += group.count * modification.add * 1000 / interval;
+		}
+	}
+	return gain;
+}
+
+export function flowBenefit(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	const paths = info.modifications.filter(modification => modification.value.startsWith(COST_PREFIX) || modification.value === "Cost/BuildTime");
+	let benefit = 0;
+	if (paths.length)
+		for (const name in world.demand.orders)
+		{
+			const rate = world.demand.orders[name];
+			const template = catalog.template(name);
+			if (!(rate > 0) || !template)
+				continue;
+			const classes = template.classes();
+			const structure = classes.includes("Structure");
+			for (const modification of paths)
+			{
+				if (!catalog.modificationApplies(info, modification, classes))
+					continue;
+				if (modification.value === "Cost/BuildTime")
+				{
+					const time = catalog.buildTime(name);
+					benefit += rate * TECH_HORIZON_S * (time - changed(modification, time)) * (structure ? BUILDER_RATE : TRAINER_SECOND_VALUE);
+					continue;
+				}
+				const base = catalog.cost(name)[modification.value.slice(COST_PREFIX.length)] || 0;
+				benefit += rate * TECH_HORIZON_S * (base - Math.max(0, changed(modification, base)));
+			}
+		}
+	for (const modification of info.modifications)
+	{
+		if (modification.value !== "Trainer/BatchTimeModifier" || !modification.add)
+			continue;
+		const saved = 1 - Math.pow(TRAINING_BATCH, modification.add);
+		for (const trainer of world.trainers)
+			if (trainer.queueLength > 0 && catalog.modificationApplies(info, modification, catalog.template(trainer.template).classes()))
+				benefit += TECH_HORIZON_S * TRAINER_SECOND_VALUE * saved;
+	}
+	return benefit;
+}
+
+export function housingBenefit(world, catalog, tech)
+{
+	const info = catalog.technology(tech);
+	const paths = info.modifications.filter(modification => modification.value === "Population/Bonus");
+	if (!paths.length)
+		return 0;
+	let extra = 0;
+	let price = Infinity;
+	for (const group of world.estate)
+	{
+		const bonus = catalog.populationBonus(group.template);
+		if (!(bonus > 0))
+			continue;
+		price = Math.min(price, group.value / group.count / bonus);
+		for (const modification of paths)
+			if (catalog.modificationApplies(info, modification, group.classes))
+				extra += group.count * (changed(modification, bonus) - bonus);
+	}
+	const room = Math.max(0, world.populationMax - world.populationLimit);
+	return isFinite(price) ? Math.min(extra, room) * price : 0;
 }
 
 export function gatherGain(world, catalog, tech)
@@ -253,7 +501,37 @@ export function gatherGain(world, catalog, tech)
 				gain += rate * WALK_SHARE * modification.add / (capacity + modification.add);
 		}
 	}
-	return gain * GATHER_EFFICIENCY;
+	return (gain + forgoneGain(world, catalog, info)) * GATHER_EFFICIENCY;
+}
+
+function forgoneGain(world, catalog, info)
+{
+	let gain = 0;
+	for (const modification of info.modifications)
+	{
+		if (!modification.value.startsWith(RATE_PREFIX) || !(modification.multiply < 1))
+			continue;
+		const kind = modification.value.slice(RATE_PREFIX.length);
+		const code = kind.split(".")[0];
+		let places = 0;
+		for (const site of world.sites[code] || [])
+			if (site.kind === kind && isFinite(site.amount))
+				places += Math.max(0, site.capacity - site.gatherers);
+		if (kind === FISH_KIND)
+			for (const school of world.fish)
+				places += Math.max(0, school.capacity - school.gatherers);
+		if (!places)
+			continue;
+		let rate = 0;
+		for (const worker of world.workers)
+			if (catalog.modificationApplies(info, modification, worker.classes))
+				rate = Math.max(rate, worker.profile.rates[kind] || 0);
+		for (const ship of world.fleet)
+			if (ship.profile && catalog.modificationApplies(info, modification, ship.classes))
+				rate = Math.max(rate, ship.profile.rates[kind] || 0);
+		gain += Math.min(places, FORGONE_GATHERERS) * rate * (modification.multiply - 1);
+	}
+	return gain;
 }
 
 export function militaryBenefit(world, catalog, tech)
