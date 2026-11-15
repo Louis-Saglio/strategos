@@ -1,5 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { exchangeOutlook, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
+import { TECH_HORIZON_S, auraBenefit, effectBenefit, enemyProfile, exchangeOutlook, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -52,6 +52,10 @@ const REPAIR_MAX_BUILDERS = 3;
 const REPAIR_MIN_MISSING = 0.1;
 const REPAIR_SAFE_RADIUS = 90;
 const WONDER_STOCK = 2;
+const ELITE_EDGE = 1.2;
+const ELITE_STOCK = 2;
+const TERRITORY_PATH = "TerritoryInfluence/Radius";
+const TERRITORY_VALUE = 5000;
 const WONDER_BUILDERS = 20;
 
 export class Construction
@@ -98,9 +102,9 @@ export class Construction
 		}
 		const requests = [];
 		const placement = new Placement(world, this.player);
-		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.laboratoryRequest,
+		for (const plan of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.worksRequest,
 			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.outpostCentreRequest,
-			this.dockRequest, this.wonderRequest])
+			this.dockRequest, this.wonderRequest, this.eliteRequest])
 		{
 			const request = plan.call(this, world, priorities, placement);
 			if (request)
@@ -888,26 +892,88 @@ export class Construction
 		return this.nearCentreRequest(world, placement, template, priorities.values.market);
 	}
 
-	laboratoryRequest(world, priorities, placement)
+	worksRequest(world, priorities, placement)
 	{
 		let best = null;
 		const prices = resourcePrices(world);
 		const priced = cost => world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0);
+		const cramped = this.crampedAt !== undefined && world.time - this.crampedAt < CRAMPED_MEMORY_MS;
 		for (const name of this.offered(world))
 		{
-			if (!this.catalog.isPlaceableOnLand(name) || !this.catalog.template(name).get("Researcher") ||
-			    this.count(world, other => other === name) > 0)
+			if (!this.catalog.isPlaceableOnLand(name) || this.count(world, other => other === name) > 0)
 				continue;
-			let surplus = 0;
-			for (const tech of this.catalog.researchable(this.catalog.template(name)))
-				surplus += Math.max(0, techBenefit(world, this.catalog, tech) - priced(this.catalog.techCost(tech, name)));
-			const ratio = surplus / Math.max(1, priced(this.catalog.cost(name)));
+			const template = this.catalog.template(name);
+			const auras = this.catalog.auras(name);
+			let benefit = 0;
+			if (template.get("Researcher"))
+				for (const tech of this.catalog.researchable(template))
+				{
+					let gain = techBenefit(world, this.catalog, tech);
+					for (const aura of auras)
+						if (this.catalog.aura(aura).requiredTechnology === tech)
+							gain += this.catalog.aura(aura).coverage * effectBenefit(world, this.catalog, this.catalog.aura(aura));
+					benefit += Math.max(0, gain - priced(this.catalog.techCost(tech, name)));
+				}
+			for (const aura of auras)
+			{
+				benefit += auraBenefit(world, this.catalog, aura, false);
+				if (cramped)
+					for (const modification of this.catalog.aura(aura).modifications)
+						if (modification.value === TERRITORY_PATH && modification.multiply > 1)
+							benefit += (modification.multiply - 1) * TERRITORY_VALUE;
+			}
+			const trickle = this.catalog.trickle(name);
+			for (const code of world.codes)
+				benefit += trickle[code] * TECH_HORIZON_S;
+			const ratio = benefit / Math.max(1, priced(this.catalog.cost(name)));
 			if (ratio > 1 && (!best || ratio > best.ratio || (ratio === best.ratio && name < best.name)))
 				best = { name, ratio };
 		}
 		if (!best)
 			return null;
+		if (this.works !== best.name)
+		{
+			this.works = best.name;
+			this.telemetry.line("BUILD", world.time, { "works": best.name, "ratio": Math.round(best.ratio * 100) / 100 });
+		}
 		return this.nearCentreRequest(world, placement, best.name, priorities.values.laboratory);
+	}
+
+	eliteRequest(world, priorities, placement)
+	{
+		const enemy = enemyProfile(world, this.catalog);
+		const perSlot = name => unitStrength(world, this.catalog, name, enemy) / Math.max(1, this.catalog.population(name));
+		const known = new Set();
+		let current = 0;
+		let hero = world.heroes.length > 0;
+		for (const trainer of world.trainers)
+			for (const name of trainer.trainable)
+			{
+				known.add(name);
+				hero = hero || this.catalog.isHero(name);
+				if (this.catalog.isFighter(name))
+					current = Math.max(current, perSlot(name));
+			}
+		let best = null;
+		for (const name of this.offered(world))
+		{
+			if (!this.catalog.isPlaceableOnLand(name) || this.count(world, candidate => candidate === name) > 0)
+				continue;
+			const units = this.catalog.trainsFrom(name).filter(unit => !known.has(unit));
+			const stronger = units.some(unit => this.catalog.isFighter(unit) && perSlot(unit) >= ELITE_EDGE * current);
+			if (!stronger && !(!hero && units.some(unit => this.catalog.isHero(unit))))
+				continue;
+			const cost = this.catalog.costSum(name);
+			if (!best || cost < best.cost || cost === best.cost && name < best.name)
+				best = { name, cost };
+		}
+		if (!best)
+			return null;
+		const cost = this.catalog.cost(best.name);
+		if (world.codes.some(code => world.resources[code] < ELITE_STOCK * (cost[code] || 0)) ||
+		    world.pendingConstructions.length > 0)
+			return null;
+		return this.nearCentreRequest(world, placement, best.name, priorities.values.production);
 	}
 
 	dropsiteRequest(world, priorities, placement)

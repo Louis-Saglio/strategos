@@ -201,6 +201,7 @@ export class ResourceIndex
 const LOSS_MEMORY_S = 120;
 const LOSS_KINDS = ["civilian", "soldier", "structure"];
 const LOSS_ATTACK_WINDOW = 50;
+const CASUALTY_MEMORY = 900;
 
 export class LossIndex
 {
@@ -217,6 +218,13 @@ export class LossIndex
 		this.lastTime = undefined;
 		this.turn = 0;
 		this.struck = new Map();
+		this.fallen = [];
+	}
+
+	casualties()
+	{
+		this.fallen = this.fallen.filter(entry => this.turn - entry.turn <= CASUALTY_MEMORY);
+		return Object.freeze(this.fallen.map(entry => entry.position));
 	}
 
 	kind(ent)
@@ -252,6 +260,8 @@ export class LossIndex
 			const kind = this.kind(ent);
 			if (kind)
 				this.pending[kind] += catalog.costSum(ent.templateName());
+			if (kind === "civilian" && ent.position())
+				this.fallen.push({ "position": ent.position(), "turn": this.turn });
 		}
 		for (const evt of taken)
 		{
@@ -1087,6 +1097,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"estate": Object.freeze(estate),
 		"healers": Object.freeze(healers),
 		"losses": lossIndex.flush(gameState.getTimeElapsed()),
+		"casualties": lossIndex.casualties(),
 		"homeRegion": homeRegion,
 		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
 		"heroes": Object.freeze(heroes),

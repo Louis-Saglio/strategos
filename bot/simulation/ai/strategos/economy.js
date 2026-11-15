@@ -1,4 +1,4 @@
-import { TRAINING_BATCH, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
+import { TRAINING_BATCH, auraBenefit, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
@@ -32,7 +32,12 @@ export class Economy
 			return [];
 		for (const trainer of world.trainers)
 		{
-			const template = trainer.trainable.filter(name => this.catalog.isHero(name)).sort()[0];
+			const worth = name => this.catalog.costSum(name) +
+				this.catalog.auras(name).reduce((sum, aura) => sum + auraBenefit(world, this.catalog, aura, true), 0);
+			const template = trainer.trainable.filter(name => this.catalog.isHero(name))
+				.map(name => ({ name, "worth": worth(name) }))
+				.sort((a, b) => b.worth - a.worth || (a.name < b.name ? -1 : 1))
+				.map(entry => entry.name)[0];
 			if (!template || trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
 			const cost = this.catalog.cost(template);

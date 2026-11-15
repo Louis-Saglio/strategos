@@ -1,4 +1,7 @@
 const RESISTANCE_BASE = 0.9;
+const FIXED_AURA_RADIUS = 100;
+const FIXED_AURA_SHARE = 0.5;
+const OWN_AURA_PLAYERS = ["Player", "Ally", "MutualAlly"];
 
 export class Catalog
 {
@@ -16,6 +19,8 @@ export class Catalog
 		this.researchables = new Map();
 		this.researchOpen = new Map();
 		this.technologies = new Map();
+		this.auraInfos = new Map();
+		this.auraLists = new Map();
 		this.combats = new Map();
 		this.hitRates = new Map();
 		this.breakers = new Map();
@@ -202,6 +207,40 @@ export class Catalog
 		return this.technologies.get(name);
 	}
 
+	aura(name)
+	{
+		if (!this.auraInfos.has(name))
+		{
+			const raw = AuraTemplates.Has(name) ? AuraTemplates.Get(name) : {};
+			const players = raw.affectedPlayers || ["Player"];
+			const ranged = raw.type === "range";
+			const everywhere = raw.type === "global" || raw.type === "player";
+			this.auraInfos.set(name, Object.freeze({
+				"modifications": raw.modifications || [],
+				"affectLists": raw.affects && raw.affects.length ? raw.affects.map(affect => affect.split(/\s+/)) : [[]],
+				"type": raw.type || "",
+				"radius": ranged ? +raw.radius || 0 : 0,
+				"coverage": everywhere ? 1 : ranged ? Math.min(1, (+raw.radius || 0) / FIXED_AURA_RADIUS) * FIXED_AURA_SHARE : 0,
+				"own": players.some(player => OWN_AURA_PLAYERS.includes(player)),
+				"requiredTechnology": raw.requiredTechnology || null,
+				"sibling": null
+			}));
+		}
+		return this.auraInfos.get(name);
+	}
+
+	auras(name)
+	{
+		if (!this.auraLists.has(name))
+		{
+			const template = this.template(name);
+			const listed = template && template.get("Auras/_string") || "";
+			this.auraLists.set(name, listed.split(/\s+/).filter(aura => aura && aura[0] !== "-")
+				.map(aura => aura.replace("{civ}", this.civ)).filter(aura => AuraTemplates.Has(aura)));
+		}
+		return this.auraLists.get(name);
+	}
+
 	modificationApplies(info, modification, classes)
 	{
 		const extra = modification.affects ? modification.affects.split(/\s+/) : [];
@@ -376,6 +415,22 @@ export class Catalog
 	{
 		return this.trains(name, unit => this.isWorker(unit) && this.isSoldier(unit)) &&
 			!this.trains(name, unit => this.isCivilian(unit));
+	}
+
+	trainsFrom(name)
+	{
+		const trainable = this.template(name).trainableEntities(this.civ) || [];
+		return trainable.filter(unit => unit && this.template(unit) && this.available(unit));
+	}
+
+	trickle(name)
+	{
+		const template = this.template(name);
+		const interval = +template.get("ResourceTrickle/Interval") || 0;
+		const rates = {};
+		for (const code of this.codes)
+			rates[code] = interval > 0 ? (+template.get("ResourceTrickle/Rates/" + code) || 0) * 1000 / interval : 0;
+		return rates;
 	}
 
 	trains(name, accept)

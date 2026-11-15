@@ -239,6 +239,9 @@ const SHELTER_HEAL_GAIN = 0.05;
 const BUILDER_RATE = 0.6;
 const TRAINER_SECOND_VALUE = 0.8;
 const HEAL_RANGE_WEIGHT = 0.3;
+const MOBILE_AURA_RADIUS = 60;
+const STUDY_PREFIX = "Researcher/TechCostMultiplier/";
+const STUDY_SHARE = 0.5;
 const FISH_KIND = "food.fish";
 const FORGONE_GATHERERS = 5;
 const FORGONE_RATE = 1;
@@ -252,9 +255,67 @@ const FIRE_PATHS = ["BuildingAI/DefaultArrowCount", "BuildingAI/GarrisonArrowMul
 
 export function techBenefit(world, catalog, tech)
 {
-	return TECH_HORIZON_S * (gatherGain(world, catalog, tech) + fishingGain(world, catalog, tech) + trickleGain(world, catalog, tech)) +
-		militaryBenefit(world, catalog, tech) + assetBenefit(world, catalog, tech) + protectionBenefit(world, catalog, tech) +
-		flowBenefit(world, catalog, tech) + housingBenefit(world, catalog, tech);
+	return effectBenefit(world, catalog, catalog.technology(tech)) + grantedAuraBenefit(world, catalog, tech);
+}
+
+export function effectBenefit(world, catalog, info)
+{
+	return TECH_HORIZON_S * (gatherGain(world, catalog, info) + fishingGain(world, catalog, info) + trickleGain(world, catalog, info)) +
+		militaryBenefit(world, catalog, info) + assetBenefit(world, catalog, info) + protectionBenefit(world, catalog, info) +
+		flowBenefit(world, catalog, info) + housingBenefit(world, catalog, info) + capBenefit(world, catalog, info) +
+		studyBenefit(world, catalog, info);
+}
+
+function grantedAuraBenefit(world, catalog, tech)
+{
+	let benefit = 0;
+	for (const group of world.estate)
+		for (const name of catalog.auras(group.template))
+		{
+			const aura = catalog.aura(name);
+			if (aura.requiredTechnology === tech)
+				benefit += group.count * aura.coverage * effectBenefit(world, catalog, aura);
+		}
+	return benefit;
+}
+
+export function auraBenefit(world, catalog, name, mobile)
+{
+	const aura = catalog.aura(name);
+	if (!aura.own || aura.requiredTechnology && !catalog.gameState.isResearched(aura.requiredTechnology))
+		return 0;
+	const coverage = mobile && aura.radius ? Math.min(1, aura.radius / MOBILE_AURA_RADIUS) : aura.coverage;
+	return coverage * effectBenefit(world, catalog, aura);
+}
+
+function capBenefit(world, catalog, info)
+{
+	let benefit = 0;
+	for (const modification of info.modifications)
+		if (modification.value === "Player/MaxPopulation" && catalog.modificationApplies(info, modification, [PLAYER_CLASS]))
+			benefit += (changed(modification, world.populationMax) - world.populationMax) * POPULATION_PRICE * populationPressure(world);
+	return benefit;
+}
+
+function studyBenefit(world, catalog, info)
+{
+	const paths = info.modifications.filter(modification => modification.value.startsWith(STUDY_PREFIX) && !modification.value.endsWith("/time"));
+	if (!paths.length)
+		return 0;
+	let benefit = 0;
+	for (const researcher of world.researchers)
+	{
+		const classes = catalog.template(researcher.template).classes();
+		for (const modification of paths)
+		{
+			if (!catalog.modificationApplies(info, modification, classes))
+				continue;
+			const code = modification.value.slice(STUDY_PREFIX.length);
+			for (const tech of researcher.techs)
+				benefit += STUDY_SHARE * (catalog.techCost(tech, researcher.template)[code] || 0) * (1 - (modification.multiply || 1));
+		}
+	}
+	return benefit;
 }
 
 function isCombat(modification)
@@ -299,9 +360,8 @@ function traitGain(catalog, group, modification)
 	return 0;
 }
 
-export function assetBenefit(world, catalog, tech)
+export function assetBenefit(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	if (!info.modifications.length)
 		return 0;
 	let benefit = 0;
@@ -362,9 +422,8 @@ function shieldGain(catalog, group, applied, mix)
 	return gain;
 }
 
-export function protectionBenefit(world, catalog, tech)
+export function protectionBenefit(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	if (!info.modifications.length)
 		return 0;
 	let benefit = 0;
@@ -388,9 +447,8 @@ export function protectionBenefit(world, catalog, tech)
 	return benefit;
 }
 
-export function fishingGain(world, catalog, tech)
+export function fishingGain(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	if (!info.modifications.some(modification => modification.value.startsWith("ResourceGatherer/")))
 		return 0;
 	let gain = 0;
@@ -413,9 +471,8 @@ export function fishingGain(world, catalog, tech)
 	return gain * GATHER_EFFICIENCY;
 }
 
-export function trickleGain(world, catalog, tech)
+export function trickleGain(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	let gain = 0;
 	for (const modification of info.modifications)
 	{
@@ -433,9 +490,8 @@ export function trickleGain(world, catalog, tech)
 	return gain;
 }
 
-export function flowBenefit(world, catalog, tech)
+export function flowBenefit(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	const paths = info.modifications.filter(modification => modification.value.startsWith(COST_PREFIX) || modification.value === "Cost/BuildTime");
 	let benefit = 0;
 	if (paths.length)
@@ -473,9 +529,8 @@ export function flowBenefit(world, catalog, tech)
 	return benefit;
 }
 
-export function housingBenefit(world, catalog, tech)
+export function housingBenefit(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	const paths = info.modifications.filter(modification => modification.value === "Population/Bonus");
 	if (!paths.length)
 		return 0;
@@ -495,9 +550,8 @@ export function housingBenefit(world, catalog, tech)
 	return isFinite(price) ? Math.min(extra, room) * price : 0;
 }
 
-export function gatherGain(world, catalog, tech)
+export function gatherGain(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	if (!info.modifications.some(modification => modification.value.startsWith("ResourceGatherer/")))
 		return 0;
 	let gain = 0;
@@ -553,9 +607,8 @@ function forgoneGain(world, catalog, info)
 	return gain;
 }
 
-export function militaryBenefit(world, catalog, tech)
+export function militaryBenefit(world, catalog, info)
 {
-	const info = catalog.technology(tech);
 	const combat = info.modifications.filter(modification => modification.value.startsWith(ATTACK_PREFIX) ||
 		modification.value.startsWith(RESISTANCE_PREFIX) || modification.value === HEALTH_KEY);
 	if (!combat.length)
