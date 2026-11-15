@@ -22,6 +22,9 @@ export class Catalog
 		this.auraInfos = new Map();
 		this.auraLists = new Map();
 		this.upgradeLists = new Map();
+		this.costs = new Map();
+		this.costSums = new Map();
+		this.trickles = new Map();
 		this.combats = new Map();
 		this.hitRates = new Map();
 		this.breakers = new Map();
@@ -36,6 +39,9 @@ export class Catalog
 			this.availability.clear();
 			this.gatherProfiles.clear();
 			this.researchOpen.clear();
+			this.costs.clear();
+			this.costSums.clear();
+			this.trickles.clear();
 			this.availabilityTime = time;
 		}
 	}
@@ -135,17 +141,27 @@ export class Catalog
 
 	cost(name)
 	{
-		const raw = this.template(name).cost();
-		const cost = {};
-		for (const code of this.codes)
-			cost[code] = raw[code] || 0;
-		return cost;
+		this.refreshTurnCaches();
+		if (!this.costs.has(name))
+		{
+			const raw = this.template(name).cost();
+			const cost = {};
+			for (const code of this.codes)
+				cost[code] = raw[code] || 0;
+			this.costs.set(name, Object.freeze(cost));
+		}
+		return this.costs.get(name);
 	}
 
 	costSum(name)
 	{
-		const cost = this.cost(name);
-		return this.codes.reduce((sum, code) => sum + cost[code], 0);
+		this.refreshTurnCaches();
+		if (!this.costSums.has(name))
+		{
+			const cost = this.cost(name);
+			this.costSums.set(name, this.codes.reduce((sum, code) => sum + cost[code], 0));
+		}
+		return this.costSums.get(name);
 	}
 
 	population(name)
@@ -442,12 +458,17 @@ export class Catalog
 
 	trickle(name)
 	{
-		const template = this.template(name);
-		const interval = +template.get("ResourceTrickle/Interval") || 0;
-		const rates = {};
-		for (const code of this.codes)
-			rates[code] = interval > 0 ? (+template.get("ResourceTrickle/Rates/" + code) || 0) * 1000 / interval : 0;
-		return rates;
+		this.refreshTurnCaches();
+		if (!this.trickles.has(name))
+		{
+			const template = this.template(name);
+			const interval = +template.get("ResourceTrickle/Interval") || 0;
+			const rates = {};
+			for (const code of this.codes)
+				rates[code] = interval > 0 ? (+template.get("ResourceTrickle/Rates/" + code) || 0) * 1000 / interval : 0;
+			this.trickles.set(name, Object.freeze(rates));
+		}
+		return this.trickles.get(name);
 	}
 
 	upgrades(name)

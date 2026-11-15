@@ -253,9 +253,16 @@ const PLAYER_TRICKLE_S = 1;
 const DURABILITY_PATHS = ["Capturable/CapturePoints"];
 const FIRE_PATHS = ["BuildingAI/DefaultArrowCount", "BuildingAI/GarrisonArrowMultiplier"];
 
+const techBenefits = new WeakMap();
+
 export function techBenefit(world, catalog, tech)
 {
-	return effectBenefit(world, catalog, catalog.technology(tech)) + grantedAuraBenefit(world, catalog, tech);
+	if (!techBenefits.has(world))
+		techBenefits.set(world, new Map());
+	const known = techBenefits.get(world);
+	if (!known.has(tech))
+		known.set(tech, effectBenefit(world, catalog, catalog.technology(tech)) + grantedAuraBenefit(world, catalog, tech));
+	return known.get(tech);
 }
 
 export function effectBenefit(world, catalog, info)

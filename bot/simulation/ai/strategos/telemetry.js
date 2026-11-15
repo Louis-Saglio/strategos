@@ -8,6 +8,7 @@ export class Telemetry
 		this.totalMs = 0;
 		this.maxMs = 0;
 		this.stageMaxMs = {};
+		this.stageTotalMs = {};
 		this.production = new Map();
 	}
 
@@ -50,7 +51,10 @@ export class Telemetry
 		this.totalMs += ms;
 		this.maxMs = Math.max(this.maxMs, ms);
 		for (const stage in stages)
+		{
 			this.stageMaxMs[stage] = Math.max(this.stageMaxMs[stage] || 0, stages[stage]);
+			this.stageTotalMs[stage] = (this.stageTotalMs[stage] || 0) + stages[stage];
+		}
 	}
 
 	flushDecisions(timeMs)
@@ -61,11 +65,14 @@ export class Telemetry
 			"decisions": this.decisions,
 			"meanMs": Math.round(this.totalMs / this.decisions * 100) / 100,
 			"maxMs": this.maxMs,
-			"stageMaxMs": this.stageMaxMs
+			"stageMaxMs": this.stageMaxMs,
+			"stageMeanMs": Object.fromEntries(Object.keys(this.stageTotalMs).map(stage =>
+				[stage, Math.round(this.stageTotalMs[stage] / this.decisions * 100) / 100]))
 		});
 		this.decisions = 0;
 		this.totalMs = 0;
 		this.maxMs = 0;
 		this.stageMaxMs = {};
+		this.stageTotalMs = {};
 	}
 }
