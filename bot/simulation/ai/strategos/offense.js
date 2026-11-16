@@ -57,7 +57,16 @@ export class Offense
 			return this.mopUpRequests(world, priorities);
 		const holding = this.holdRequests(world, priorities);
 		const held = new Set(holding.filter(request => request.action.type === "garrison").map(request => request.action.unit));
-		return holding.concat(this.armyRequests(world, priorities, home, held), this.breakerRequests(world, priorities, home));
+		return holding.concat(this.armyRequests(world, priorities, home, held), this.breakerRequests(world, priorities, home),
+			this.strayRequests(world, priorities, home, held));
+	}
+
+	strayRequests(world, priorities, home, held)
+	{
+		return world.fighters
+			.filter(fighter => !this.army.has(fighter.id) && !held.has(fighter.id) && fighter.state.includes("COMBAT") &&
+				!world.ownSide(fighter.position))
+			.map(fighter => this.order(fighter, { "type": "walk", "x": home.position[0], "z": home.position[1] }, priorities));
 	}
 
 	mopUpRequests(world, priorities)

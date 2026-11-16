@@ -40,7 +40,7 @@ export class Defense
 	requests(world, priorities)
 	{
 		this.foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;
-		this.hostiles = world.threats.concat(world.wild, this.approaching(world));
+		this.hostiles = world.threats.filter(threat => world.ownSide(threat.position)).concat(world.wild, this.approaching(world));
 		if (this.hostiles.length)
 			this.lastThreatTime = world.time;
 		if (!this.hostiles.length)
@@ -131,7 +131,7 @@ export class Defense
 		const limit = WARNING_RADIUS * WARNING_RADIUS;
 		const inside = new Set(world.threats.map(threat => threat.id));
 		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !WORKING_STATES.some(state => enemy.state.includes(state)) &&
-			sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit));
+			world.ownSide(enemy.position) && sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit));
 	}
 
 	hostileGroup(world)
@@ -166,7 +166,7 @@ export class Defense
 		if (guard.group.length)
 		{
 			this.ratio = guard.ratio;
-			this.engaged = this.engaged ? this.ratio >= ENGAGE_EXIT : this.ratio >= ENGAGE_ENTER;
+			this.engaged = this.engaged ? this.ratio >= priorities.guardPlan.engage.exit : this.ratio >= priorities.guardPlan.engage.enter;
 			return this.engaged ? this.fight(world, priorities, free, guard.needed) : this.fallBack(world, priorities, free, near, centre);
 		}
 		const cover = coveringHolders(world.holders, centre, COVER_MARGIN);
@@ -198,7 +198,11 @@ export class Defense
 	fight(world, priorities, free, units)
 	{
 		const limit = BATTLE_RADIUS * BATTLE_RADIUS;
-		const enemies = this.foes.filter(enemy => units.some(unit => squareDistance(unit.position, enemy.position) <= limit));
+		const enemies = this.foes.filter(enemy => world.ownSide(enemy.position) &&
+			units.some(unit => squareDistance(unit.position, enemy.position) <= limit));
+		const allowed = new Set(enemies.map(enemy => enemy.id));
+		for (const hostile of this.hostiles)
+			allowed.add(hostile.id);
 		const home = world.centres[0];
 		const retreat = unit => {
 			const holder = this.nearestHolder(world, unit, free, candidate => candidate.heal > 0, RETREAT_RADIUS);
@@ -217,7 +221,7 @@ export class Defense
 			if (!action)
 			{
 				const { threat } = this.nearestThreat(world, unit.position);
-				action = unit.state.includes("COMBAT") || !threat ? { "type": "hold" } : { "type": "attack", "target": threat.id };
+				action = unit.state.includes("COMBAT") && allowed.has(unit.target) || !threat ? { "type": "hold" } : { "type": "attack", "target": threat.id };
 			}
 			requests.push(this.order(unit, action, priorities));
 		}

@@ -1149,6 +1149,15 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"regionOf": position => accessibility.getAccessValue(position),
 		"regionArea": region => (accessibility.regionSize[region] || 0) * accessibility.cellSize * accessibility.cellSize,
 		"regions": Object.freeze([...presence.values()].sort((a, b) => a.id - b.id).map(entry => Object.freeze(entry))),
+		"ownSide": position => {
+			let own = Infinity;
+			for (const centre of centres)
+				own = Math.min(own, squareDistance(centre.position, position));
+			let theirs = Infinity;
+			for (const centre of enemyCentres)
+				theirs = Math.min(theirs, squareDistance(centre.position, position));
+			return own <= theirs;
+		},
 		"regionWealth": (region, code) => resourceIndex.grid(gameState).regions[code] && resourceIndex.grid(gameState).regions[code].get(region) || 0,
 		"offered": Object.freeze([...offered].sort()),
 		"settlers": Object.freeze(settlers),

@@ -16,7 +16,7 @@ const OPENING = {
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
 		"targetsTried": 6, "recall": 0.1, "reinforce": { "min": 20 },
 		"beachhead": { "superiority": 1, "reserve": 10 } },
-	"guard": { "enter": 3, "exit": 1, "horizonS": 90, "near": 80, "reach": 150 },
+	"guard": { "enter": 3, "exit": 1, "engage": { "enter": 3, "exit": 2 }, "horizonS": 90, "near": 80, "reach": 150 },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
 	"trade": { "minRate": 0.3, "richRate": 0.5, "minDistance": 400, "max": 10, "populationPerTrader": 20, "scarceWealth": 3000, "scarceCodes": ["stone", "metal"] },
@@ -290,7 +290,7 @@ export class Strategy
 	guard(world)
 	{
 		const plan = OPENING.guard;
-		const inside = new Set(world.threats.map(threat => threat.id));
+		const inside = new Set(world.threats.filter(threat => world.ownSide(threat.position)).map(threat => threat.id));
 		for (const unit of world.wild)
 			inside.add(unit.id);
 		const foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;
@@ -396,6 +396,7 @@ export class Strategy
 			"military": this.military(world),
 			"offense": OPENING.offense,
 			"guard": this.guard(world),
+			"guardPlan": OPENING.guard,
 			"expansion": OPENING.expansion,
 			"medics": OPENING.medics,
 			"trade": OPENING.trade,
