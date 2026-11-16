@@ -53,7 +53,7 @@ export class Offense
 		const home = world.centres[0];
 		if (!home)
 			return [];
-		if (!world.enemyStructures.length && world.enemyTargets.length && world.enemyTargets[0].unit)
+		if (!world.enemyStructures.length && world.enemyTargets.length)
 			return this.mopUpRequests(world, priorities);
 		const holding = this.holdRequests(world, priorities);
 		const held = new Set(holding.filter(request => request.action.type === "garrison").map(request => request.action.unit));
@@ -80,7 +80,7 @@ export class Offense
 			}
 			if (best)
 				requests.push(this.order(fighter, { "type": "attack-walk", "x": best.position[0], "z": best.position[1],
-					"targetClasses": UNIT_CLASSES }, priorities));
+					"targetClasses": best.unit ? UNIT_CLASSES : TARGET_CLASSES }, priorities));
 		}
 		if (requests.length && !this.mopping)
 		{
