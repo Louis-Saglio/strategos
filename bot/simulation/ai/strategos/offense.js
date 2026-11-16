@@ -64,8 +64,8 @@ export class Offense
 	strayRequests(world, priorities, home, held)
 	{
 		return world.fighters
-			.filter(fighter => !this.army.has(fighter.id) && !held.has(fighter.id) && fighter.state.includes("COMBAT") &&
-				!world.ownSide(fighter.position))
+			.filter(fighter => fighter.region === world.homeRegion && !this.army.has(fighter.id) && !held.has(fighter.id) &&
+				fighter.state.includes("COMBAT") && !world.ownSide(fighter.position))
 			.map(fighter => this.order(fighter, { "type": "walk", "x": home.position[0], "z": home.position[1] }, priorities));
 	}
 
