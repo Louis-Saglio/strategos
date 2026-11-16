@@ -815,6 +815,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const enemyStructures = [];
 	let enemySoldiers = 0;
 	const enemyFighters = [];
+	const enemyHidden = [];
+	const enemyCivilians = [];
+	let enemyGatherers = 0;
 	const enemyDamage = {};
 	const enemyTemplates = new Map();
 	let enemyDamageTotal = 0;
@@ -850,6 +853,13 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				}));
 			else if (ent.position() && stragglers.length < STRAGGLERS_KEPT)
 				stragglers.push(ent);
+			const labour = ent.unitAIState() || "";
+			if (labour.includes("GATHER") || labour.includes("RETURNRESOURCE"))
+				enemyGatherers += 1;
+			if (ent.position() && catalog.isCivilian(ent.templateName()))
+				enemyCivilians.push(Object.freeze({
+					"id": ent.id(), "position": ent.position(), "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": labour
+				}));
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
@@ -866,6 +876,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 						"target": orders.length && orders[0] ? orders[0].target : undefined
 					}));
 				}
+				else
+					enemyHidden.push(Object.freeze({ "id": ent.id(), "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": "" }));
 				const attacks = catalog.combat(ent.templateName()).attacks;
 				for (const type in attacks)
 					for (const kind in attacks[type].damage)
@@ -1184,6 +1196,9 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"barter": Object.freeze({ "open": !!playerData.canBarter, "prices": playerData.barterPrices }),
 		"enemySoldiers": enemySoldiers,
 		"enemyFighters": Object.freeze(enemyFighters),
+		"enemyHidden": Object.freeze(enemyHidden),
+		"enemyCivilians": Object.freeze(enemyCivilians),
+		"enemyGatherers": enemyGatherers,
 		"enemyCentres": Object.freeze(enemyCentres),
 		"enemyTargets": Object.freeze(objectives),
 		"enemyStructures": Object.freeze(enemyStructures),

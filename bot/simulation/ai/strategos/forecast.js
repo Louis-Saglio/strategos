@@ -1,4 +1,8 @@
 const RESISTANCE_BASE = 0.9;
+const CONTACT_RADIUS = 60;
+const REACH_RADIUS = 150;
+const COVER_MARGIN = 5;
+const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
 
 export const FORECAST = {
 	"stepS": 1,
@@ -15,21 +19,25 @@ export const FORECAST = {
 	"arrivals": 0.25
 };
 
-function side(input)
+function side(input, rules)
 {
 	return {
-		"groups": input.groups.map(group => ({
-			"count": group.hitpoints > 0 ? group.count : 0,
-			"initialCount": group.hitpoints > 0 ? group.count : 0,
-			"hitpoints": Math.max(0, group.hitpoints),
-			"initialHitpoints": Math.max(0, group.hitpoints),
+		"groups": input.groups.map(group => {
+			const share = (group.at || 0) > 0 ? rules.arrivals : 1;
+			const count = group.hitpoints > 0 ? group.count * share : 0;
+			const hitpoints = Math.max(0, group.hitpoints) * share;
+			return {
+			"count": count,
+			"initialCount": count,
+			"hitpoints": hitpoints,
+			"initialHitpoints": hitpoints,
 			"ranged": group.ranged,
 			"value": group.value,
 			"at": group.at || 0,
 			"engaged": group.engaged === undefined ? 1 : group.count > 0 ? group.engaged / group.count : 0,
-			"arriving": (group.at || 0) > 0,
 			"rates": group.rates
-		})),
+			};
+		}),
 		"fire": input.fire || []
 	};
 }
@@ -51,8 +59,7 @@ function strike(attackers, defenders, fire, time, rules, damage)
 	const fighting = [];
 	for (const group of attackers)
 	{
-		const strength = group.count * (group.arriving ? rules.arrivals :
-			group.engaged + (time < rules.joinS ? 0 : rules.joinShare) * (1 - group.engaged));
+		const strength = group.count * (group.at > 0 ? 1 : group.engaged + (time < rules.joinS ? 0 : rules.joinShare) * (1 - group.engaged));
 		fighting.push(strength);
 		if (group.ranged)
 			ranged += strength;
@@ -104,11 +111,16 @@ function toll(groups)
 	return { "lost": lost, "value": value, "left": left };
 }
 
+function firing(force)
+{
+	return force.fire.some(rate => rate > 0);
+}
+
 export function forecast(battle, options)
 {
 	const rules = options ? Object.assign({}, FORECAST, options) : FORECAST;
-	const own = side(battle.ours);
-	const other = side(battle.theirs);
+	const own = side(battle.ours, rules);
+	const other = side(battle.theirs, rules);
 	own.groups.forEach((group, index) => { group.index = index; });
 	other.groups.forEach((group, index) => { group.index = index; });
 	const marks = [];
@@ -119,7 +131,7 @@ export function forecast(battle, options)
 	{
 		const mine = active(own.groups, seconds);
 		const foes = active(other.groups, seconds);
-		if ((!mine.length || !foes.length) && seconds >= arrivals)
+		if (seconds >= arrivals && (!mine.length && !foes.length || !mine.length && !firing(own) || !foes.length && !firing(other)))
 			break;
 		const onTheirs = [];
 		const onOurs = [];
@@ -145,7 +157,7 @@ export function forecast(battle, options)
 	};
 }
 
-function grouped(units, opponents, arriving)
+function grouped(units, opponents, arriving, committed)
 {
 	const foes = new Set(opponents.map(unit => unit.id));
 	const groups = new Map();
@@ -159,7 +171,7 @@ function grouped(units, opponents, arriving)
 		return group;
 	};
 	for (const unit of units)
-		if (unit.state.includes("COMBAT") && foes.has(unit.target))
+		if (committed || unit.state.includes("COMBAT") && foes.has(unit.target))
 			entry(unit, 0).engaged += 1;
 		else
 			entry(unit, 0);
@@ -205,12 +217,87 @@ function force(catalog, groups, opponents, structures)
 	};
 }
 
-export function engagement(catalog, units, opponents, cover, opposingCover, arriving, opposingArriving)
+export function engagement(catalog, units, opponents, cover, opposingCover, arriving, opposingArriving, committed)
 {
-	const mine = grouped(units, opponents, arriving);
-	const foes = grouped(opponents, units, opposingArriving);
+	const mine = grouped(units, opponents, arriving, committed);
+	const foes = grouped(opponents, units, opposingArriving, false);
 	return {
 		"ours": force(catalog, mine, foes, cover || []),
 		"theirs": force(catalog, foes, mine, opposingCover || [])
+	};
+}
+
+function apart(a, b)
+{
+	return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]);
+}
+
+export function centroid(units)
+{
+	const centre = [0, 0];
+	for (const unit of units)
+	{
+		centre[0] += unit.position[0] / units.length;
+		centre[1] += unit.position[1] / units.length;
+	}
+	return centre;
+}
+
+export function within(units, centre, taken)
+{
+	const limit = CONTACT_RADIUS * CONTACT_RADIUS;
+	return units.filter(unit => !(taken && taken.has(unit.id)) && apart(unit.position, centre) <= limit);
+}
+
+export function arriving(catalog, units, centre, present, working, reach, fighting)
+{
+	const limit = (reach || REACH_RADIUS) * (reach || REACH_RADIUS);
+	const coming = [];
+	for (const unit of units)
+	{
+		if (present.has(unit.id) || !fighting && unit.state.includes("COMBAT") ||
+		    working && WORKING_STATES.some(state => unit.state.includes(state)))
+			continue;
+		const distance = apart(unit.position, centre);
+		if (distance > limit)
+			continue;
+		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template).speed)) });
+	}
+	return coming;
+}
+
+export function covering(structures, centre, side)
+{
+	const stand = side.length ? centroid(side) : centre;
+	return structures.filter(structure => {
+		if (!(structure.fire.arrows > 0))
+			return false;
+		const reach = (structure.range + COVER_MARGIN) * (structure.range + COVER_MARGIN);
+		return apart(structure.position, centre) <= reach || apart(structure.position, stand) <= reach;
+	});
+}
+
+export function prospect(catalog, members, centre, enemies, structures, plan)
+{
+	const seen = within(enemies, centre);
+	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= plan.reach * plan.reach);
+	const present = seen.concat(plan.hidden || [], prey);
+	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
+		.map(entry => plan.massed ? { "unit": entry.unit, "seconds": 1 } : entry);
+	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true),
+		Object.assign({ "arrivals": plan.response, "joinS": plan.reaction }, plan.horizonS ? { "horizonS": plan.horizonS } : {}));
+	let opposing = 0;
+	for (const unit of present)
+		opposing += catalog.costSum(unit.template);
+	for (const entry of coming)
+		opposing += catalog.costSum(entry.unit.template);
+	return {
+		"cost": outlook.ours.value,
+		"gain": outlook.theirs.value,
+		"lost": outlook.ours.lost,
+		"killed": outlook.theirs.lost,
+		"defenders": present.length,
+		"coming": coming.length,
+		"opposing": opposing
 	};
 }

@@ -1,7 +1,7 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 export const TECH_HORIZON_S = 180;
-const GATHER_EFFICIENCY = 0.6;
+export const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
 const RESISTANCE_BASE = 0.9;
 const ARROW_HIT_SHARE = 0.5;

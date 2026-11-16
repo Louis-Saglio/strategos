@@ -1,5 +1,6 @@
 import { squareDistance } from "simulation/ai/strategos/world.js";
-import { captureOutlook } from "simulation/ai/strategos/valuation.js";
+import { GATHER_EFFICIENCY, captureOutlook, resourcePrices } from "simulation/ai/strategos/valuation.js";
+import { prospect } from "simulation/ai/strategos/forecast.js";
 
 const RALLY_FRACTION = 0.35;
 const RALLY_MAX_DISTANCE = 120;
@@ -11,7 +12,11 @@ const RETURN_TIMEOUT_MS = 60000;
 const HOME_ALARM_THREATS = 6;
 const HOME_CALM_THREATS = 3;
 const ARMY_REACH = 150;
-const RETREAT_FRACTION = 0.4;
+const RETREAT_FRACTION = 0.25;
+const COMMIT_MS = 10000;
+const FRONT_MIN = 3;
+const PRIZE_HORIZON_S = 60;
+const WAIT_REPORT_MS = 60000;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
 const ASSAULT_EXIT_SHARE = 0.25;
@@ -230,9 +235,11 @@ export class Offense
 		const free = members.filter(member => !held.has(member.id) && !member.state.includes("GARRISON"));
 		const reason = this.mode !== "return" && this.retreatReason(world, priorities, free, home);
 		if (reason)
-			this.switchMode(world, "return", {
+			this.switchMode(world, "return", Object.assign({
 				"alive": members.length, "launched": this.launchSize, "reason": reason, "threats": world.threats.length
-			});
+			}, reason === "outmatched" ? {
+				"defenders": this.adverse.defenders, "coming": this.adverse.coming, "cost": Math.round(this.adverse.cost), "gain": Math.round(this.adverse.gain)
+			} : {}));
 		if (this.mode === "rally")
 			return this.rallyRequests(world, priorities, free);
 		if (this.mode === "attack")
@@ -281,23 +288,128 @@ export class Offense
 		return this.outlookOf(world, members, target).reach >= margin * target.points;
 	}
 
-	chooseTarget(world, priorities, members, from, region)
+	armyValue(members)
 	{
-		let best = null;
-		let bestScore = 0;
+		return members.reduce((sum, member) => sum + this.catalog.costSum(member.template), 0);
+	}
+
+	prize(world, priorities, members, target)
+	{
+		if (target.centre && world.breakers.length >= priorities.offense.breakers.launch)
+			return target.value;
+		const net = this.outlookOf(world, members, target).power - this.expected(target).regen;
+		return net > 0 ? target.value * Math.min(1, PRIZE_HORIZON_S * net / Math.max(1, target.points)) : 0;
+	}
+
+	plan(priorities, reach, massed)
+	{
+		const exchange = priorities.offense.exchange;
+		return { "reach": reach, "response": exchange.response, "reaction": exchange.reaction, "massed": massed,
+			"horizonS": massed ? exchange.dominance.horizonS : undefined };
+	}
+
+	attrition(world, priorities)
+	{
+		const plan = priorities.offense.exchange.attrition;
+		let gathering = 0;
+		for (const code of world.codes)
+			gathering += world.gatherers[code];
+		return Math.min(plan.max, Math.max(plan.min, world.enemyGatherers / Math.max(1, gathering)));
+	}
+
+	forgone(world, members)
+	{
+		const prices = resourcePrices(world);
+		const working = new Map();
+		for (const worker of world.workers)
+			if (worker.soldier && worker.gathering && prices[worker.gathering] !== undefined)
+				working.set(worker.id, GATHER_EFFICIENCY * worker.meanRates[worker.gathering] * prices[worker.gathering]);
+		let income = 0;
+		let speed = 0;
+		for (const member of members)
+		{
+			income += working.get(member.id) || 0;
+			speed += this.catalog.combat(member.template).speed / members.length;
+		}
+		return { "income": income, "speed": Math.max(1, speed) };
+	}
+
+	superiority(world, priorities, members)
+	{
+		const whole = prospect(this.catalog, members, this.armyCentre(members), world.enemyFighters, [],
+			Object.assign(this.plan(priorities, Infinity, true), { "hidden": world.enemyHidden }));
+		return { "cost": whole.cost, "gain": whole.gain, "opposing": whole.opposing, "ratio": whole.cost > 0 ? whole.gain / whole.cost : Infinity };
+	}
+
+	worth(world, priorities, members, target, from, forgone, field)
+	{
+		const exchange = priorities.offense.exchange;
+		const outlook = prospect(this.catalog, members, target.position, world.enemyFighters, world.enemyStructures,
+			Object.assign(this.plan(priorities, exchange.reach.launch), { "prey": world.enemyCivilians }));
+		outlook.prize = this.prize(world, priorities, members, target);
+		outlook.trip = forgone.income * 2 * Math.sqrt(squareDistance(target.position, from)) / forgone.speed;
+		outlook.army = this.armyValue(members);
+		outlook.attrition = this.attrition(world, priorities);
+		outlook.field = field;
+		outlook.dominant = field.ratio >= exchange.enter * outlook.attrition;
+		outlook.worth = outlook.dominant && outlook.cost <= exchange.maxCost * outlook.army ||
+			outlook.gain + outlook.prize >= exchange.enter * outlook.attrition * (outlook.cost + outlook.trip);
+		return outlook;
+	}
+
+	described(outlook)
+	{
+		return {
+			"defenders": outlook.defenders, "coming": outlook.coming, "cost": Math.round(outlook.cost || 0), "gain": Math.round(outlook.gain || 0),
+			"prize": Math.round(outlook.prize || 0), "trip": Math.round(outlook.trip || 0), "dominant": !!outlook.dominant,
+			"attrition": outlook.attrition === undefined ? undefined : Math.round(outlook.attrition * 100) / 100,
+			"field": outlook.field ? [Math.round(outlook.field.cost), Math.round(outlook.field.gain), Math.round(outlook.field.opposing)] : undefined,
+			"armyValue": Math.round(outlook.army || 0)
+		};
+	}
+
+	outmatched(world, priorities, members)
+	{
+		if (!members.length)
+			return null;
+		const exchange = priorities.offense.exchange;
+		const front = members.filter(member => member.state.includes("COMBAT"));
+		const outlook = prospect(this.catalog, members, this.armyCentre(front.length >= FRONT_MIN ? front : members), world.enemyFighters,
+			world.enemyStructures, Object.assign(this.plan(priorities, exchange.reach.fight), { "prey": world.enemyCivilians }));
+		const prize = this.assaulting ? this.prize(world, priorities, members, this.target) : 0;
+		return outlook.cost >= exchange.minCost * this.armyValue(members) &&
+			outlook.gain + prize < exchange.exit * this.attrition(world, priorities) * outlook.cost ? outlook : null;
+	}
+
+	chooseTarget(world, priorities, members, from, region, gated)
+	{
+		const ranked = [];
 		for (const target of world.enemyStructures)
 		{
 			if (target.region !== region || !this.feasible(world, priorities, members, target, priorities.offense.capture.enter))
 				continue;
 			const weight = target.centre ? TARGET_WEIGHTS.centre : target.fire.arrows ? TARGET_WEIGHTS.defensive : TARGET_WEIGHTS.other;
 			const score = weight * target.value / (1 + Math.sqrt(squareDistance(target.position, from)) / TARGET_DISTANCE_SCALE);
-			if (score > bestScore || (score === bestScore && best && target.id < best.id))
-			{
-				best = target;
-				bestScore = score;
-			}
+			if (score > 0)
+				ranked.push({ target, score });
 		}
-		return best;
+		ranked.sort((a, b) => b.score - a.score || a.target.id - b.target.id);
+		if (!gated)
+			return ranked.length ? ranked[0].target : null;
+		const forgone = this.forgone(world, members);
+		const field = this.superiority(world, priorities, members);
+		this.refused = null;
+		for (const { target } of ranked.slice(0, priorities.offense.targetsTried))
+		{
+			const outlook = this.worth(world, priorities, members, target, from, forgone, field);
+			if (outlook.worth)
+			{
+				this.outlook = outlook;
+				return target;
+			}
+			this.refused = this.refused || { "target": target.id, "army": members.length, "outlook": outlook };
+		}
+		return null;
 	}
 
 	launch(world, priorities, home)
@@ -323,12 +435,12 @@ export class Offense
 		for (const region of regions)
 		{
 			const group = groups.get(region);
-			if (group.length < offense.minArmy || region === world.homeRegion && group.length < offense.superiority * world.enemySoldiers)
+			if (group.length < offense.minArmy)
 				continue;
 			if (region !== world.homeRegion && this.beachhead(world, priorities, group, region, groups.get(world.homeRegion) || []))
 				continue;
 			const origin = region === world.homeRegion ? home.position : this.armyCentre(group);
-			const found = this.chooseTarget(world, priorities, group, origin, region);
+			const found = this.chooseTarget(world, priorities, group, origin, region, region === world.homeRegion);
 			if (!found && !storm && region !== world.homeRegion && !world.breakers.length && group.length >= STORM_MIN_ARMY &&
 			    group.length >= STORM_SUPERIORITY * world.enemySoldiers)
 				storm = { group, region };
@@ -340,6 +452,9 @@ export class Offense
 			this.region = region;
 			break;
 		}
+		if (!target && this.refused && this.telemetry.due("ATTACK-wait", world.time, WAIT_REPORT_MS))
+			this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": "wait", "army": this.refused.army, "target": this.refused.target,
+				"enemySoldiers": world.enemySoldiers }, this.described(this.refused.outlook)));
 		if (!target)
 			return storm ? this.stormRequests(world, priorities, storm.group, storm.region) : [];
 		this.base = base;
@@ -354,7 +469,9 @@ export class Offense
 		this.rally = [base[0] + dx / length * step, base[1] + dz / length * step];
 		this.army = new Set(available.map(fighter => fighter.id));
 		this.launchSize = this.army.size;
-		this.switchMode(world, "rally", { "target": target.id, "value": target.value, "centre": target.centre, "enemySoldiers": world.enemySoldiers });
+		this.switchMode(world, "rally", Object.assign({
+			"target": target.id, "value": target.value, "centre": target.centre, "enemySoldiers": world.enemySoldiers
+		}, this.overseas ? {} : this.described(this.outlook)));
 		return this.rallyRequests(world, priorities, available);
 	}
 
@@ -364,6 +481,12 @@ export class Offense
 			return "alarm";
 		if (!this.overseas && members.length < this.launchSize * RETREAT_FRACTION)
 			return "losses";
+		if (!this.overseas && this.mode === "attack" && world.time - this.since >= COMMIT_MS)
+		{
+			this.adverse = this.outmatched(world, priorities, members);
+			if (this.adverse)
+				return "outmatched";
+		}
 		if (this.mode === "attack" && !world.enemyStructures.some(structure => structure.id === this.target.id) &&
 			!this.retarget(world, priorities, members))
 			return "done";

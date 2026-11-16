@@ -1,60 +1,12 @@
-import { engagement, forecast } from "simulation/ai/strategos/forecast.js";
+import { arriving, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 import { balance } from "simulation/ai/strategos/tactics.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
-const CONTACT_RADIUS = 60;
-const REACH_RADIUS = 150;
-const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
 const MIN_SIDE = 4;
 const SAME_BATTLE_RADIUS = 120;
 const REPORT_PERIOD_MS = 30000;
 const FORGET_MS = 60000;
-const COVER_MARGIN = 5;
 const UNIT_PREFIX = "units/";
-
-function centroid(units)
-{
-	const centre = [0, 0];
-	for (const unit of units)
-	{
-		centre[0] += unit.position[0] / units.length;
-		centre[1] += unit.position[1] / units.length;
-	}
-	return centre;
-}
-
-function within(units, centre, taken)
-{
-	const limit = CONTACT_RADIUS * CONTACT_RADIUS;
-	return units.filter(unit => !taken.has(unit.id) && squareDistance(unit.position, centre) <= limit);
-}
-
-function arriving(catalog, units, centre, present, working)
-{
-	const limit = REACH_RADIUS * REACH_RADIUS;
-	const coming = [];
-	for (const unit of units)
-	{
-		if (present.has(unit.id) || unit.state.includes("COMBAT") || working && WORKING_STATES.some(state => unit.state.includes(state)))
-			continue;
-		const distance = squareDistance(unit.position, centre);
-		if (distance > limit)
-			continue;
-		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template).speed)) });
-	}
-	return coming;
-}
-
-function covering(structures, centre, side)
-{
-	const stand = side.length ? centroid(side) : centre;
-	return structures.filter(structure => {
-		if (!(structure.fire.arrows > 0))
-			return false;
-		const reach = (structure.range + COVER_MARGIN) * (structure.range + COVER_MARGIN);
-		return squareDistance(structure.position, centre) <= reach || squareDistance(structure.position, stand) <= reach;
-	});
-}
 
 function round(value)
 {
