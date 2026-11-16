@@ -9,6 +9,7 @@ Development tooling for Strategos. Not part of the bot.
 | `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
 | `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
 | `census.py` | what each AI used in a batch against what its civ offers: command types, technologies, structures, units |
+| `league.py` + `league.json` | play the bot against a set of named opponents (Petra's behaviours, Brennus, past versions, plan variants) on the same seeds; one table |
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
@@ -314,6 +315,36 @@ transitions of WHO's side, and for each metric the means, the mean
 paired delta and the paired t-test p-value. Besides `score` it compares
 `win_min` (the minutes to victory above) and `concluded` (the share of
 games won before the limit).
+
+### league.py — the bot against a set of opponents
+
+```sh
+tools/league.py -l 30 tmp/league-NAME 9301-9332                 # working tree against every member
+tools/league.py -l 30 --candidate .@c61665b tmp/league-base 9301-9332
+tools/league.py -l 30 --members push,boom tmp/league-x 1-16 -- -M random/lake -H thinkpad,vps2
+tools/league.py --table tmp/league-NAME                         # the table again
+```
+
+`tools/league.json` names the members: `"player"` is an AI the runner
+knows (`petra/5/aggressive`, `brennus`); `"bot"` is a commit of this
+repository, the bot as it was then; `"bot"` with `"set"` is that commit
+with values of its strategy table overridden (dotted paths into `OPENING`
+of `strategy.js`), a plan variant. Commits are pinned so a member stays
+the same opponent whatever the working tree becomes; a member that no
+longer moves when the bot changes can be dropped, a new one is one entry.
+`"civ"` and `"biome"` pin what a member needs (Brennus plays gaul on
+temperate mainland only).
+
+Bot members are built into `OUTDIR/members/NAME/bot` with the AI renamed
+`lg_NAME`, then each member gets its own batch `OUTDIR/NAME` (run.py, one
+after the other, same seeds, candidate as player 1 / team 1), so
+`analyze.py`, `compare.py OUT_A/NAME OUT_B/NAME` and every other tool read
+them as usual. A candidate given as a directory (the working tree by
+default) is copied once into `OUTDIR/candidate`, so every member meets the
+same bot even if the tree is edited meanwhile. Options after `--` go to run.py. The table gives per member
+the candidate's games, wins / losses / undecided (a game ahead on points
+counted as won or lost), the wins concluded before the limit, the minutes
+to victory and the mean score.
 
 ### forecast.py — the combat forecast against recorded battles
 

@@ -1,0 +1,18 @@
+{
+	"members": {
+		"petra": { "player": "petra/5" },
+		"petra-aggressive": { "player": "petra/5/aggressive" },
+		"petra-defensive": { "player": "petra/5/defensive" },
+		"brennus": { "player": "brennus", "civ": "gaul", "biome": "generic/temperate" },
+		"c61665b": { "bot": "c61665b" },
+		"b897ff1": { "bot": "b897ff1" },
+		"push": {
+			"bot": "c61665b",
+			"set": { "military.firstTrainerPopulation": 12, "military.civilianTarget": 35, "offense.minArmy": 12 }
+		},
+		"boom": {
+			"bot": "c61665b",
+			"set": { "military.civilianTarget": 130, "military.civilianShare": 0.5 }
+		}
+	}
+}
