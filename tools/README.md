@@ -177,10 +177,11 @@ metres, players with civ and engine team — 0-based, -1 for none),
 30 s by default, `--map-interval` ms, 0 = off), `[HARNESS] eco` every
 minute (each player's cumulative resources gathered and population, read
 from the statistics tracker), `[HARNESS] kills` every 30 s when something
-died (`{"t","k":[[t,victimOwner,victimKind,x,z,killerOwner,killerKind],...]}`,
+died (`{"t","k":[[t,victimOwner,victimKind,x,z,killerOwner,killerKind],...],"ids":[...]}`,
 kinds as in the map snapshots: 0 other, 1 worker, 2 soldier, 3 cavalry,
 4 siege, 5 structure, 6 civic centre, 7 ship; a killer of kind 5 or 6 is
-defensive fire; read by wrapping `Health.prototype.KilledBy`, which leaves
+defensive fire; `ids` is the entity id of each victim, in the order of
+`k`; read by wrapping `Health.prototype.KilledBy`, which leaves
 the game identical: 64 of 64 games bit-identical with and without it) and
 `[HARNESS] refused` for every construction command the engine did not
 carry out (`{"t","p","template","x","z","why"}` with the message of the

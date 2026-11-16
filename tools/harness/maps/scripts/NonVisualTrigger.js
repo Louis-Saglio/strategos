@@ -16,10 +16,11 @@
  *   [HARNESS] eco {"t": <sim s>, "<player id>": {"gathered": {<resource>: n}, "pop": n}, ...}
  *     every minute: cumulative resources gathered (StatisticsTracker basic
  *     statistics) and population, read-only.
- *   [HARNESS] kills {"t": <sim s>, "k": [[t,victimOwner,victimKind,x,z,killerOwner,killerKind], ...]}
+ *   [HARNESS] kills {"t": <sim s>, "k": [[t,victimOwner,victimKind,x,z,killerOwner,killerKind], ...], "ids": [victim, ...]}
  *     every 30 s when something died: every entity killed by an attack since
  *     the previous line, with what killed it (kinds as in the map snapshot,
- *     0 for anything else; an arrow kill reads killerKind 5 or 6). Recorded
+ *     0 for anything else; an arrow kill reads killerKind 5 or 6); "ids"
+ *     holds the entity id of each victim, in the order of "k". Recorded
  *     by wrapping Health.prototype.KilledBy, which is called and returns
  *     exactly as before.
  *   [HARNESS] refused {"t": <sim s>, "p": player, "template": name, "x": n, "z": n, "why": message}
@@ -249,6 +250,7 @@ Trigger.prototype.HarnessRecordKill = function(victim, killer, killerOwner)
 	this.harnessKills.push("[" + now.toFixed(1) + "," + (cmpOwnership ? cmpOwnership.GetOwner() : -1) + "," +
 		this.HarnessKind(victim) + "," + (pos ? Math.round(pos.x) : -1) + "," + (pos ? Math.round(pos.y) : -1) + "," +
 		killerOwner + "," + this.HarnessKind(killer) + "]");
+	this.harnessKillIds.push(victim);
 };
 
 Trigger.prototype.HarnessKills = function()
@@ -256,8 +258,10 @@ Trigger.prototype.HarnessKills = function()
 	if (!this.harnessKills.length)
 		return;
 	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
-	print("[HARNESS] kills {\"t\":" + now.toFixed(0) + ",\"k\":[" + this.harnessKills.join(",") + "]}\n");
+	print("[HARNESS] kills {\"t\":" + now.toFixed(0) + ",\"k\":[" + this.harnessKills.join(",") + "],\"ids\":[" +
+		this.harnessKillIds.join(",") + "]}\n");
 	this.harnessKills = [];
+	this.harnessKillIds = [];
 };
 
 Trigger.prototype.HarnessSides = function()
@@ -357,6 +361,7 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.harnessOnce = true;
 	cmpTrigger.harnessKindCache = new Map();
 	cmpTrigger.harnessKills = [];
+	cmpTrigger.harnessKillIds = [];
 	cmpTrigger.harnessBehind = {};
 	cmpTrigger.harnessCensus = {};
 	const harnessBaseKilledBy = Health.prototype.KilledBy;
