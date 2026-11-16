@@ -7,7 +7,8 @@ const OPENING = {
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "caravan": 11, "upgrade": 12, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"military": { "firstTrainerPopulation": 20, "populationPerTrainer": 25, "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
-		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 } },
+		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 },
+		"threat": { "minEnemy": 15, "enter": 0.7, "exit": 1, "horizonS": 90 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
@@ -268,6 +269,24 @@ export class Strategy
 		return best ? { "position": Object.freeze(best.position), "region": best.region, "sea": best.sea } : null;
 	}
 
+	threatened(world)
+	{
+		const plan = OPENING.military.threat;
+		const home = world.centres[0];
+		if (!home || world.enemyFighters.length < plan.minEnemy)
+		{
+			this.underThreat = false;
+			return false;
+		}
+		const ours = world.fighters.filter(fighter => fighter.region === world.homeRegion);
+		const cover = covering(world.holders, home.position, []);
+		const outlook = forecast(engagement(this.catalog, ours, world.enemyFighters, cover, [], [], [], true),
+			{ "horizonS": plan.horizonS, "joinScale": 0 });
+		const ratio = outlook.theirs.value / Math.max(1, outlook.ours.value);
+		this.underThreat = this.underThreat ? ratio < plan.exit : ratio < plan.enter;
+		return this.underThreat;
+	}
+
 	military(world)
 	{
 		const plan = OPENING.military;
@@ -277,7 +296,7 @@ export class Strategy
 		const hostiles = world.threats.length + world.wild.length;
 		if (hostiles >= plan.raid.hostiles && hostiles >= plan.raid.share * (world.fighters.length + world.garrisonedSoldiers))
 			this.raidedAt = world.time;
-		const raided = this.raidedAt !== undefined && world.time - this.raidedAt < plan.raid.memoryMs;
+		const raided = this.raidedAt !== undefined && world.time - this.raidedAt < plan.raid.memoryMs || this.threatened(world);
 		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty ||
 		    this.militaryPlan.raided !== raided)
 		{
