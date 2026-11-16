@@ -47,6 +47,13 @@ that total to the best other player's total, units trained, units lost,
 enemy units killed, value killed / value lost, buildings constructed,
 population, map controlled (%).
 
+After the outcome counts, one line for player WHO: the wins concluded
+before the limit (their median length, how many before 15 min), the minutes
+to victory — the length of a concluded win, the limit for every game not
+won before it (ahead on points, undecided or lost), averaged — and the
+number of games not won before the limit. Against an opponent the bot nearly always
+beats, wins and losses no longer move; this is the measure that does.
+
 --at MIN takes the gathered resources, their total and ratio, and the
 population from the harness `[HARNESS] eco` line at minute MIN instead of
 the end of game (a game that ended earlier keeps its last line), so one
@@ -220,6 +227,37 @@ def score(row, player):
     return {"win": 1, "loss": -1, "timeout": 0}.get(side_result(row, player))
 
 
+def victory_minutes(row, player):
+    """Minutes to victory for player's side: the game's length when it won
+    before the limit, the limit when it did not (ahead on points, undecided
+    or lost), None for a failed game or one without a recorded limit."""
+    limit = row["spec"].get("limit_minutes")
+    if side_result(row, player) == "fail" or not limit:
+        return None
+    if concluded_win(row, player):
+        return min(float(row["game_min"]), float(limit))
+    return float(limit)
+
+
+def concluded_win(row, player):
+    """True when player's side won before the time limit (not merely ahead on points at it)."""
+    return side_result(row, player) == "win" and row["outcome"].endswith(" won")
+
+
+def victory_line(rows, who=None):
+    """The minutes-to-victory summary of a batch for player WHO, or None when no game has a limit."""
+    timed = [(r, player_id(r, who)) for r in rows]
+    minutes = [m for m in (victory_minutes(r, p) for r, p in timed) if m is not None]
+    if not minutes:
+        return None
+    wins = sorted(float(r["game_min"]) for r, p in timed if victory_minutes(r, p) is not None and concluded_win(r, p))
+    limits = sorted({r["spec"]["limit_minutes"] for r, p in timed if victory_minutes(r, p) is not None})
+    median = f"median {wins[len(wins) // 2]:.1f} min, {sum(w < 15 for w in wins)} before 15 min" if wins else "none"
+    return (f"{who or 'strategos'}: {len(wins)} concluded wins ({median}); minutes to victory "
+            f"{sum(minutes) / len(minutes):.1f} (a game not won counted at the limit of "
+            f"{'/'.join(str(x) for x in limits)}); not won before the limit {len(minutes) - len(wins)} of {len(minutes)}")
+
+
 def spec_value(row, key, player):
     """The value of a --by key in a match, as a string."""
     spec = row["spec"]
@@ -388,6 +426,9 @@ def main():
           f"; {count(lambda r: r['outcome'] == 'killed')} killed by the wall-clock cap, "
           f"{count(lambda r: r['errors'])} with errors, {count(lambda r: r['failed_ai'])} failed-AI, "
           f"{count(lambda r: r['exit'] not in (0, '-'))} nonzero exit")
+    line = victory_line(rows, a.player)
+    if line:
+        print(line)
     for key in filter(None, a.by.split(",")):
         print_breakdown(rows, key, a.player)
     if a.tsv:

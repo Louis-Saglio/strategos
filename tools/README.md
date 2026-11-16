@@ -301,9 +301,19 @@ reads the gathered resources, total, ratio and population from the
 harness eco line at minute MIN instead, so one batch can be judged at
 several minutes.
 
+After the outcome counts `analyze.py` prints the minutes to victory of
+WHO: the wins concluded before the limit (median length, how many before
+15 min), the mean of the game's length for those and of the limit for
+every game not won before it (ahead on points, undecided or lost), and the
+number of games not won before the limit. Against an opponent the bot
+nearly always beats, wins and losses no longer move from one version to
+the next; this measure does.
+
 `compare.py`: pairs two batches by tag; identical-game count, outcome
 transitions of WHO's side, and for each metric the means, the mean
-paired delta and the paired t-test p-value.
+paired delta and the paired t-test p-value. Besides `score` it compares
+`win_min` (the minutes to victory above) and `concluded` (the share of
+games won before the limit).
 
 ### forecast.py — the combat forecast against recorded battles
 

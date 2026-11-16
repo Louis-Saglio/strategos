@@ -19,6 +19,10 @@ Matches are paired by tag (default: every tag present in both). Prints:
   lines, see analyze.py).
 - score: per match +1 when player N's side won, -1 when it lost, 0 on a
   timeout (failed matches are left out), compared like the metrics.
+- win_min: minutes to victory — the game's length when player N's side won
+  before the limit, the limit otherwise (analyze.py) — and concluded, the
+  share of games won before the limit. The measure to read against an
+  opponent the bot nearly always beats.
 
 --by KEY[,KEY...] (the keys of analyze.py --by) adds, per value of each
 KEY, the number of pairs and each batch's wins / losses / timeouts and mean
@@ -125,7 +129,7 @@ def main():
     for k, v in sorted(trans.items()):
         print(f"  {k}: {len(v)} ({' '.join(v[:12])}{' ...' if len(v) > 12 else ''})")
 
-    names = ["score", "game_min"] + analyze.METRICS
+    names = ["score", "win_min", "concluded", "game_min"] + analyze.METRICS
     print(f"\n{'metric':10} {'base':>10} {'variant':>10} {'delta':>10} {'p':>7}  n")
     for m in names:
         pairs = []
@@ -134,6 +138,10 @@ def main():
             for row in (base[t], var[t]):
                 if m == "score":
                     v = score(row, pid(row))
+                elif m == "win_min":
+                    v = analyze.victory_minutes(row, pid(row))
+                elif m == "concluded":
+                    v = None if analyze.victory_minutes(row, pid(row)) is None else int(analyze.concluded_win(row, pid(row)))
                 elif m == "game_min":
                     v = row["game_min"]
                 else:
@@ -150,7 +158,8 @@ def main():
         mb = sum(p[0] for p in pairs) / len(pairs)
         mv = sum(p[1] for p in pairs) / len(pairs)
         p = paired_p([p[1] - p[0] for p in pairs])
-        print(f"{m:10} {mb:10.1f} {mv:10.1f} {mv - mb:+10.1f} {('%.3f' % p) if p is not None else '-':>7}  {len(pairs)}")
+        digits = 2 if m in ("score", "concluded") else 1
+        print(f"{m:10} {mb:10.{digits}f} {mv:10.{digits}f} {mv - mb:+10.{digits}f} {('%.3f' % p) if p is not None else '-':>7}  {len(pairs)}")
 
 
     for key in filter(None, a.by.split(",")):
