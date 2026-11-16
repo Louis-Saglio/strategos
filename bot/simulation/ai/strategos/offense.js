@@ -344,10 +344,11 @@ export class Offense
 	worth(world, priorities, members, target, from, forgone, field)
 	{
 		const exchange = priorities.offense.exchange;
+		const walk = Math.sqrt(squareDistance(target.position, from)) / forgone.speed;
 		const outlook = prospect(this.catalog, members, target.position, world.enemyFighters, world.enemyStructures,
-			Object.assign(this.plan(priorities, exchange.reach.launch), { "prey": world.enemyCivilians }));
+			Object.assign(this.plan(priorities, exchange.reach.launch), { "prey": world.enemyCivilians, "lead": walk }));
 		outlook.prize = this.prize(world, priorities, members, target);
-		outlook.trip = forgone.income * 2 * Math.sqrt(squareDistance(target.position, from)) / forgone.speed;
+		outlook.trip = forgone.income * 2 * walk;
 		outlook.army = this.armyValue(members);
 		outlook.attrition = this.attrition(world, priorities);
 		outlook.field = field;

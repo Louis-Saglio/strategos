@@ -8,14 +8,13 @@ export const FORECAST = {
 	"stepS": 1,
 	"horizonS": 60,
 	"marksS": [30, 60],
-	"meleeContact": 1.5,
-	"rangedContact": 0.75,
-	"meleeEfficiency": 0.2,
-	"rangedEfficiency": 0.3,
+	"meleeEfficiency": 0.7,
+	"rangedEfficiency": 1,
 	"arrowHitShare": 0.3,
-	"focus": 1.3,
-	"joinS": 20,
-	"joinShare": 1,
+	"focus": 1,
+	"meleeJoinS": 20,
+	"rangedJoinS": 14,
+	"joinScale": 1,
 	"arrivals": 0.25
 };
 
@@ -54,26 +53,17 @@ function strike(attackers, defenders, fire, time, rules, damage)
 		enemies += target.count;
 	if (!(enemies > 0))
 		return;
-	let melee = 0;
-	let ranged = 0;
-	const fighting = [];
-	for (const group of attackers)
-	{
-		const strength = group.count * (group.at > 0 ? 1 : group.engaged + (time < rules.joinS ? 0 : rules.joinShare) * (1 - group.engaged));
-		fighting.push(strength);
-		if (group.ranged)
-			ranged += strength;
-		else
-			melee += strength;
-	}
-	const meleeShare = melee > 0 ? rules.meleeEfficiency * Math.min(1, rules.meleeContact * enemies / melee) : 0;
-	const rangedShare = ranged > 0 ? rules.rangedEfficiency * Math.min(1, rules.rangedContact * enemies / ranged) : 0;
+	const fighting = attackers.map(group => {
+		const joinS = rules.joinScale * (group.ranged ? rules.rangedJoinS : rules.meleeJoinS);
+		const joined = joinS > 0 ? Math.min(1, (time + rules.stepS) / joinS) : 1;
+		return group.count * (group.at > 0 ? 1 : group.engaged + joined * (1 - group.engaged));
+	});
 	for (const target of defenders)
 	{
 		const share = target.count / enemies;
 		let dealt = 0;
 		attackers.forEach((group, index) => {
-			dealt += fighting[index] * (group.ranged ? rangedShare : meleeShare) * (group.rates[target.index] || 0);
+			dealt += fighting[index] * (group.ranged ? rules.rangedEfficiency : rules.meleeEfficiency) * (group.rates[target.index] || 0);
 		});
 		dealt += rules.arrowHitShare * (fire[target.index] || 0);
 		damage[target.index] = share * dealt * rules.stepS;
@@ -171,7 +161,7 @@ function grouped(units, opponents, arriving, committed)
 		return group;
 	};
 	for (const unit of units)
-		if (committed || unit.state.includes("COMBAT") && foes.has(unit.target))
+		if (committed || unit.state.includes("ATTACKING") && foes.has(unit.target))
 			entry(unit, 0).engaged += 1;
 		else
 			entry(unit, 0);
@@ -283,9 +273,9 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= plan.reach * plan.reach);
 	const present = seen.concat(plan.hidden || [], prey);
 	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
-		.map(entry => plan.massed ? { "unit": entry.unit, "seconds": 1 } : entry);
+		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - (plan.lead || 0)) }));
 	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true),
-		Object.assign({ "arrivals": plan.response, "joinS": plan.reaction }, plan.horizonS ? { "horizonS": plan.horizonS } : {}));
+		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction }, plan.horizonS ? { "horizonS": plan.horizonS } : {}));
 	let opposing = 0;
 	for (const unit of present)
 		opposing += catalog.costSum(unit.template);

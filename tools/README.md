@@ -392,10 +392,17 @@ reports the error of the lost share of each side, how often the model
 names the side that loses more, the correlation with the observed
 difference of lost shares and with the units lost and their net
 exchange, next to `balance` and the head count where they can answer.
-`--by cover,size,seq` splits the samples. `--fit` searches the `FORECAST`
-table of `forecast.js` by coordinate descent on half of the games (split
-by a hash of their name) and reports the error on the other half; it
-prints the constants, it does not edit the bot.
+`--by cover,size,seq` splits the samples. `--fit` searches, by coordinate
+descent on half of the games (split by a hash of their name) with the
+error reported on the other half, the constants of `forecast.js` that a
+duel cannot set: the share of an arriving wave that counts, the share of
+the arrows that hit, the scale of the joining times. It prints the
+constants, it does not edit the bot.
+
+The truth of a recorded battle is not clean: a listed unit that dies was
+not always killed by a listed unit (reinforcements beyond 150 m, arrows
+met while chasing). The core of the model — who strikes, how fast, how
+losses fall on a group — is set on duels instead.
 
 ### duel.py — the combat forecast against duels
 

@@ -44,11 +44,15 @@ carries, and the head count ratio):
 theirs / both); --by size by the units engaged; --by seq into battle
 onsets and later reports.
 
---fit searches the constants of forecast.js (the FORECAST table) by
-coordinate descent on the games with an even hash, minimising the root
-mean square error of the two lost shares, and reports it on the other games
-before and after. It prints the table to put into forecast.js; it does not
-edit the bot.
+--fit searches, by coordinate descent on the games with an even hash,
+minimising the root mean square error of the two lost shares, the constants
+of forecast.js that only a real battle can set (GRID: the share of an
+arriving wave that counts, the share of the arrows that hit, the scale of
+the joining times), and reports the error on the other games before and
+after. It prints the constants to put into forecast.js; it does not edit
+the bot. The core of the model is fitted on duels (tools/duel.py): in a
+recorded battle a listed unit is not always killed by a listed unit, so
+this truth cannot tell how fast two forces alone destroy each other.
 """
 import argparse
 import hashlib
@@ -66,15 +70,9 @@ START_TAG = "[HARNESS] start "
 END_TAG = "[HARNESS] time limit reached"
 MIN_GAP = 2
 GRID = {
-    "joinS": [0, 3, 6, 10, 15, 20, 30],
-    "joinShare": [0, 0.1, 0.25, 0.5, 0.75, 1],
     "arrivals": [0, 0.1, 0.25, 0.5, 0.75, 1],
-    "meleeContact": [0.5, 0.75, 1, 1.5, 2, 3, 4, 6],
-    "rangedContact": [0.5, 0.75, 1, 1.5, 2, 3, 4, 6, 10],
-    "meleeEfficiency": [0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.85, 1],
-    "rangedEfficiency": [0.1, 0.15, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.85, 1],
     "arrowHitShare": [0.05, 0.1, 0.2, 0.3, 0.5, 0.7, 1],
-    "focus": [0.4, 0.6, 0.8, 1, 1.3, 1.6],
+    "joinScale": [0, 0.25, 0.5, 1, 1.5],
 }
 
 
