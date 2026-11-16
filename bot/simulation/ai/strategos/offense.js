@@ -9,9 +9,6 @@ const RALLY_QUORUM = 0.8;
 const RALLY_TIMEOUT_MS = 45000;
 const HOME_RADIUS = 50;
 const RETURN_TIMEOUT_MS = 60000;
-const HOME_ALARM_THREATS = 6;
-const HOME_CALM_THREATS = 3;
-const ARMY_REACH = 150;
 const RETREAT_FRACTION = 0.25;
 const COMMIT_MS = 10000;
 const FRONT_MIN = 3;
@@ -416,12 +413,12 @@ export class Offense
 	launch(world, priorities, home)
 	{
 		const offense = priorities.offense;
-		if (world.threats.length >= HOME_CALM_THREATS || !world.enemyTargets.length)
+		if (!priorities.guard.holds || !world.enemyTargets.length)
 			return [];
 		const groups = new Map();
 		for (const fighter of world.fighters)
 		{
-			if (fighter.region === world.homeRegion && fighter.state.includes("COMBAT"))
+			if (fighter.region === world.homeRegion && fighter.state.includes("COMBAT") || priorities.guard.ids.has(fighter.id))
 				continue;
 			if (!groups.has(fighter.region))
 				groups.set(fighter.region, []);
@@ -478,7 +475,7 @@ export class Offense
 
 	retreatReason(world, priorities, members, home)
 	{
-		if (this.threatsOutOfReach(world, members, home) >= HOME_ALARM_THREATS)
+		if (!this.overseas && !priorities.guard.holds && priorities.guard.value >= priorities.offense.recall * this.armyValue(members))
 			return "alarm";
 		if (!this.overseas && members.length < this.launchSize * RETREAT_FRACTION)
 			return "losses";
@@ -503,20 +500,6 @@ export class Offense
 			centre[1] += member.position[1] / members.length;
 		}
 		return centre;
-	}
-
-	threatsOutOfReach(world, members, home)
-	{
-		if (this.overseas)
-			return 0;
-		if (this.mode !== "attack" || !members.length || world.threats.length < HOME_ALARM_THREATS)
-			return world.threats.length;
-		const centre = this.armyCentre(members);
-		const limit = ARMY_REACH * ARMY_REACH;
-		return world.threats.filter(threat => {
-			const distance = squareDistance(threat.position, centre);
-			return distance > limit || squareDistance(threat.position, home.position) < distance;
-		}).length;
 	}
 
 	retarget(world, priorities, members)

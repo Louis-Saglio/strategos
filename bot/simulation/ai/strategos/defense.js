@@ -67,6 +67,9 @@ export class Defense
 				"outnumbered": this.outnumbered,
 				"engaged": this.engaged,
 				"ratio": Math.round(Math.min(this.ratio, 99) * 100) / 100,
+				"hostile": priorities.guard.group.length,
+				"guard": this.guarding,
+				"holds": priorities.guard.holds,
 				"engage": requests.filter(request => request.action.type === "attack").length,
 				"shelter": requests.filter(request => request.action.type === "garrison").length
 			});
@@ -152,12 +155,20 @@ export class Defense
 
 	engageRequests(world, priorities, free)
 	{
-		const group = this.hostileGroup(world);
-		const centre = centroid(group.length ? group : this.hostiles);
+		const guard = priorities.guard;
+		const group = guard.group.length ? guard.group : this.hostileGroup(world);
+		const centre = guard.group.length ? guard.centre : centroid(group.length ? group : this.hostiles);
 		const near = world.fighters
 			.map(fighter => ({ fighter, "distance": this.nearestThreat(world, fighter.position).distance }))
 			.filter(entry => entry.distance <= ENGAGE_RADIUS)
 			.sort((a, b) => a.distance - b.distance || a.fighter.id - b.fighter.id);
+		this.guarding = guard.group.length ? guard.needed.length : 0;
+		if (guard.group.length)
+		{
+			this.ratio = guard.ratio;
+			this.engaged = this.engaged ? this.ratio >= ENGAGE_EXIT : this.ratio >= ENGAGE_ENTER;
+			return this.engaged ? this.fight(world, priorities, free, guard.needed) : this.fallBack(world, priorities, free, near, centre);
+		}
 		const cover = coveringHolders(world.holders, centre, COVER_MARGIN);
 		this.ratio = balance(this.catalog, near.map(entry => entry.fighter), group, cover);
 		this.engaged = this.engaged ? this.ratio >= ENGAGE_EXIT : this.ratio >= ENGAGE_ENTER;

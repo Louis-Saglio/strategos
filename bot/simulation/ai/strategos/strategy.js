@@ -1,5 +1,6 @@
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
+import { arriving, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -13,8 +14,9 @@ const OPENING = {
 	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 },
 		"exchange": { "enter": 1.3, "exit": 0.8, "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0,
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
-		"targetsTried": 6,
+		"targetsTried": 6, "recall": 0.1,
 		"beachhead": { "superiority": 1, "reserve": 10 } },
+	"guard": { "enter": 3, "exit": 1, "horizonS": 90, "near": 80, "reach": 150 },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
 	"trade": { "minRate": 0.3, "richRate": 0.5, "minDistance": 400, "max": 10, "populationPerTrader": 20, "scarceWealth": 3000, "scarceCodes": ["stone", "metal"] },
@@ -35,6 +37,9 @@ const PLANS = {
 	"relics": world => world.victory.includes("capture_the_relic"),
 	"wonder": world => world.victory.includes("wonder")
 };
+
+const NO_GUARD = Object.freeze({ "group": Object.freeze([]), "needed": Object.freeze([]), "ids": new Set(), "ratio": Infinity, "holds": true, "value": 0 });
+const FAR = 1e6;
 
 const DEMAND_HORIZON_S = 60;
 const STOCK_BUFFER = 100;
@@ -282,6 +287,74 @@ export class Strategy
 		return this.militaryPlan;
 	}
 
+	guard(world)
+	{
+		const plan = OPENING.guard;
+		const inside = new Set(world.threats.map(threat => threat.id));
+		for (const unit of world.wild)
+			inside.add(unit.id);
+		const foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;
+		const seeds = foes.filter(unit => inside.has(unit.id));
+		if (!seeds.length)
+		{
+			this.guards = new Set();
+			this.held = true;
+			return NO_GUARD;
+		}
+		const near = plan.near * plan.near;
+		const group = foes.filter(unit => inside.has(unit.id) || seeds.some(seed => squareDistance(seed.position, unit.position) <= near));
+		const centre = centroid(group);
+		const present = new Set(group.map(unit => unit.id));
+		const opposing = arriving(this.catalog, world.enemyFighters, centre, present, true, plan.reach, true);
+		const cover = covering(world.holders, centre, []);
+		const opposingCover = covering(world.enemyStructures, centre, []);
+		const territory = world.grids.territory;
+		const reach = plan.reach * plan.reach;
+		const kept = this.guards || new Set();
+		let candidates = world.fighters
+			.map(fighter => ({ "fighter": fighter, "distance": squareDistance(fighter.position, centre) }))
+			.filter(entry => entry.distance <= reach ||
+				territoryAt(territory, entry.fighter.position[0], entry.fighter.position[1]).owner === world.player);
+		candidates.sort((a, b) => a.distance - b.distance || a.fighter.id - b.fighter.id);
+		if (candidates.length)
+			candidates = candidates.filter(entry => entry.fighter.region === candidates[0].fighter.region);
+		candidates.sort((a, b) => kept.has(b.fighter.id) - kept.has(a.fighter.id) || a.distance - b.distance || a.fighter.id - b.fighter.id);
+		const fighters = candidates.map(entry => entry.fighter);
+		const ratio = count => {
+			const chosen = fighters.slice(0, count);
+			const close = within(chosen, centre);
+			const closeIds = new Set(close.map(unit => unit.id));
+			const coming = arriving(this.catalog, chosen, centre, closeIds, false, FAR, true);
+			const outlook = forecast(engagement(this.catalog, close, group, cover, opposingCover, coming, opposing, true),
+				{ "horizonS": plan.horizonS, "arrivals": 1, "joinScale": 0 });
+			return outlook.theirs.value / Math.max(1, outlook.ours.value);
+		};
+		const whole = fighters.length ? ratio(fighters.length) : 0;
+		let enough = fighters.length;
+		if (whole >= plan.enter)
+		{
+			let short = 0;
+			while (enough - short > 1)
+			{
+				const middle = Math.floor((short + enough) / 2);
+				if (ratio(middle) >= plan.enter)
+					enough = middle;
+				else
+					short = middle;
+			}
+		}
+		const needed = fighters.slice(0, enough);
+		let value = 0;
+		for (const unit of group)
+			value += this.catalog.costSum(unit.template);
+		for (const entry of opposing)
+			value += this.catalog.costSum(entry.unit.template);
+		this.guards = new Set(needed.map(fighter => fighter.id));
+		this.held = this.held === false ? whole >= plan.enter : whole >= plan.exit;
+		return Object.freeze({ "group": Object.freeze(group), "centre": Object.freeze(centre), "needed": Object.freeze(needed), "ids": this.guards,
+			"ratio": whole, "holds": this.held, "value": value });
+	}
+
 	scarce(world)
 	{
 		const plan = OPENING.trade;
@@ -322,6 +395,7 @@ export class Strategy
 			"housing": OPENING.housing,
 			"military": this.military(world),
 			"offense": OPENING.offense,
+			"guard": this.guard(world),
 			"expansion": OPENING.expansion,
 			"medics": OPENING.medics,
 			"trade": OPENING.trade,
