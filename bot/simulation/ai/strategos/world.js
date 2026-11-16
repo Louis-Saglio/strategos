@@ -858,17 +858,22 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				enemyGatherers += 1;
 			if (ent.position() && catalog.isCivilian(ent.templateName()))
 				enemyCivilians.push(Object.freeze({
-					"id": ent.id(), "position": ent.position(), "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": labour
+					"id": ent.id(), "owner": enemy, "position": ent.position(), "template": ent.templateName(), "hitpoints": ent.hitpoints(),
+					"state": labour
 				}));
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
-				enemyTemplates.set(ent.templateName(), (enemyTemplates.get(ent.templateName()) || 0) + 1);
+				const kind = ent.templateName() + "|" + enemy;
+				if (!enemyTemplates.has(kind))
+					enemyTemplates.set(kind, { "kind": kind, "template": ent.templateName(), "owner": enemy, "count": 0 });
+				enemyTemplates.get(kind).count += 1;
 				if (ent.position())
 				{
 					const orders = ent.unitAIOrderData() || [];
 					enemyFighters.push(Object.freeze({
 						"id": ent.id(),
+						"owner": enemy,
 						"position": ent.position(),
 						"template": ent.templateName(),
 						"hitpoints": ent.hitpoints(),
@@ -877,8 +882,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 					}));
 				}
 				else
-					enemyHidden.push(Object.freeze({ "id": ent.id(), "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": "" }));
-				const attacks = catalog.combat(ent.templateName()).attacks;
+					enemyHidden.push(Object.freeze({ "id": ent.id(), "owner": enemy, "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": "" }));
+				const attacks = catalog.combat(ent.templateName(), enemy).attacks;
 				for (const type in attacks)
 					for (const kind in attacks[type].damage)
 					{
@@ -911,6 +916,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			continue;
 		wild.push(Object.freeze({
 			"id": ent.id(),
+			"owner": 0,
 			"position": position,
 			"template": ent.templateName(),
 			"hitpoints": ent.hitpoints(),
@@ -1216,8 +1222,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"breakers": Object.freeze(breakers),
 		"army": Object.freeze([...army.values()].sort((a, b) => a.template < b.template ? -1 : 1).map(group => Object.freeze(group))),
 		"enemyDamageMix": Object.freeze(enemyDamageMix),
-		"enemyArmy": Object.freeze([...enemyTemplates].sort((a, b) => a[0] < b[0] ? -1 : 1)
-			.map(([template, count]) => Object.freeze({ template, count }))),
+		"enemyArmy": Object.freeze([...enemyTemplates.values()].sort((a, b) => a.kind < b.kind ? -1 : 1).map(group => Object.freeze(group))),
 		"pendingConstructions": Object.freeze(pendingConstructions),
 		"demand": demand,
 		"trainers": Object.freeze(trainers),

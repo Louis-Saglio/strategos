@@ -162,9 +162,9 @@ function grouped(units, opponents, arriving, committed)
 	const foes = new Set(opponents.map(unit => unit.id));
 	const groups = new Map();
 	const entry = (unit, wave) => {
-		const key = unit.template + "|" + wave;
+		const key = unit.template + "|" + wave + "|" + unit.owner;
 		if (!groups.has(key))
-			groups.set(key, { "key": key, "template": unit.template, "count": 0, "hitpoints": 0, "engaged": 0, "at": 0 });
+			groups.set(key, { "key": key, "template": unit.template, "owner": unit.owner, "count": 0, "hitpoints": 0, "engaged": 0, "at": 0 });
 		const group = groups.get(key);
 		group.count += 1;
 		group.hitpoints += unit.hitpoints;
@@ -185,7 +185,7 @@ function grouped(units, opponents, arriving, committed)
 function arrowRates(catalog, structures, targets)
 {
 	return targets.map(target => {
-		const resistance = catalog.combat(target.template).resistance;
+		const resistance = catalog.combat(target.template, target.owner).resistance;
 		let rate = 0;
 		for (const structure of structures)
 		{
@@ -209,9 +209,9 @@ function force(catalog, groups, opponents, structures)
 			"hitpoints": group.hitpoints,
 			"engaged": group.engaged,
 			"at": group.at,
-			"ranged": catalog.combat(group.template).ranged,
+			"ranged": catalog.combat(group.template, group.owner).ranged,
 			"value": catalog.costSum(group.template),
-			"rates": opponents.map(target => catalog.hitRate(group.template, target.template))
+			"rates": opponents.map(target => catalog.hitRate(group.template, target.template, group.owner, target.owner))
 		})),
 		"fire": arrowRates(catalog, structures, opponents)
 	};
@@ -261,7 +261,7 @@ export function arriving(catalog, units, centre, present, working, reach, fighti
 		const distance = apart(unit.position, centre);
 		if (distance > limit)
 			continue;
-		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template).speed)) });
+		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template, unit.owner).speed)) });
 	}
 	return coming;
 }

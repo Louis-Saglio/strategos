@@ -7,8 +7,13 @@ function histogram(units)
 {
 	const groups = new Map();
 	for (const unit of units)
-		groups.set(unit.template, (groups.get(unit.template) || 0) + 1);
-	return groups;
+	{
+		const key = unit.template + "|" + unit.owner;
+		if (!groups.has(key))
+			groups.set(key, { "template": unit.template, "owner": unit.owner, "count": 0 });
+		groups.get(key).count += 1;
+	}
+	return [...groups.values()];
 }
 
 function arrowRate(catalog, holder, opponents, total)
@@ -16,9 +21,9 @@ function arrowRate(catalog, holder, opponents, total)
 	if (!holder.fire.arrows || !total)
 		return 0;
 	let damage = 0;
-	for (const [template, count] of opponents)
+	for (const { template, owner, count } of opponents)
 	{
-		const resistance = catalog.combat(template).resistance;
+		const resistance = catalog.combat(template, owner).resistance;
 		let hit = 0;
 		for (const kind in holder.fire.damage)
 			hit += holder.fire.damage[kind] * Math.pow(RESISTANCE_BASE, resistance[kind] || 0);
@@ -39,8 +44,8 @@ export function force(catalog, units, opponents, holders)
 		if (!total)
 			continue;
 		let rate = 0;
-		for (const [template, count] of theirs)
-			rate += count * catalog.hitRate(unit.template, template);
+		for (const { template, owner, count } of theirs)
+			rate += count * catalog.hitRate(unit.template, template, unit.owner, owner);
 		dps += rate / total;
 	}
 	for (const holder of holders || [])
@@ -112,8 +117,8 @@ export function skirmish(catalog, ours, enemies, retreat)
 	for (const enemy of enemies)
 	{
 		let rate = 0;
-		for (const [template, count] of ourTemplates)
-			rate += count * catalog.hitRate(enemy.template, template);
+		for (const { template, owner, count } of ourTemplates)
+			rate += count * catalog.hitRate(enemy.template, template, enemy.owner, owner);
 		danger.set(enemy.id, ours.length ? rate / ours.length : 0);
 	}
 	const pending = new Map();
@@ -133,8 +138,8 @@ export function skirmish(catalog, ours, enemies, retreat)
 	for (const unit of ranged)
 	{
 		const profile = catalog.combat(unit.template);
-		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template).ranged);
-		if (chaser.unit && chaser.distance <= KITE_RADIUS && profile.speed > catalog.combat(chaser.unit.template).speed)
+		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
+		if (chaser.unit && chaser.distance <= KITE_RADIUS && profile.speed > catalog.combat(chaser.unit.template, chaser.unit.owner).speed)
 		{
 			const dx = unit.position[0] - chaser.unit.position[0];
 			const dz = unit.position[1] - chaser.unit.position[1];
@@ -168,13 +173,13 @@ export function skirmish(catalog, ours, enemies, retreat)
 			actions.set(unit.id, unit.state.includes("COMBAT") ? { "type": "hold" } : { "type": "attack", "target": closest.id });
 			continue;
 		}
-		pending.set(chosen.id, (pending.get(chosen.id) || 0) + FOCUS_HORIZON_S * catalog.hitRate(unit.template, chosen.template));
+		pending.set(chosen.id, (pending.get(chosen.id) || 0) + FOCUS_HORIZON_S * catalog.hitRate(unit.template, chosen.template, unit.owner, chosen.owner));
 		actions.set(unit.id, chosen.id === unit.target ? { "type": "hold" } : { "type": "attack", "target": chosen.id });
 	}
 	const guarded = new Set();
 	for (const unit of ranged)
 	{
-		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template).ranged);
+		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
 		if (!chaser.unit || chaser.distance > GUARD_RADIUS || guarded.has(chaser.unit.id))
 			continue;
 		const guard = nearest(melee, chaser.unit.position, candidate => !actions.has(candidate.id));

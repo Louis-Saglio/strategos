@@ -8,6 +8,7 @@ export class Catalog
 	constructor(gameState)
 	{
 		this.gameState = gameState;
+		this.player = gameState.getPlayerID();
 		this.civ = gameState.getPlayerCiv();
 		this.codes = Resources.GetCodes();
 		this.templates = new Map();
@@ -29,6 +30,7 @@ export class Catalog
 		this.hitRates = new Map();
 		this.breakers = new Map();
 		this.availabilityTime = undefined;
+		this.researched = undefined;
 	}
 
 	refreshTurnCaches()
@@ -43,6 +45,15 @@ export class Catalog
 			this.costSums.clear();
 			this.trickles.clear();
 			this.availabilityTime = time;
+			let researched = 0;
+			for (const data of this.gameState.sharedScript.playersData)
+				researched += data && data.researchedTechs ? data.researchedTechs.size : 0;
+			if (researched !== this.researched)
+			{
+				this.combats.clear();
+				this.hitRates.clear();
+				this.researched = researched;
+			}
 		}
 	}
 
@@ -77,6 +88,15 @@ export class Catalog
 		if (!this.templates.has(name))
 			this.templates.set(name, this.gameState.getTemplate(name));
 		return this.templates.get(name);
+	}
+
+	templateOf(name, owner)
+	{
+		if (owner === this.player)
+			return this.template(name);
+		const template = this.gameState.getTemplate(name);
+		template._entity = { "owner": owner };
+		return template;
 	}
 
 	producerList(cache, entity, list)
@@ -308,11 +328,19 @@ export class Catalog
 		return rates;
 	}
 
-	combat(name)
+	combat(name, owner)
 	{
-		if (!this.combats.has(name))
+		this.refreshTurnCaches();
+		const holder = owner === undefined ? this.player : owner;
+		let profiles = this.combats.get(holder);
+		if (!profiles)
 		{
-			const template = this.template(name);
+			profiles = new Map();
+			this.combats.set(holder, profiles);
+		}
+		if (!profiles.has(name))
+		{
+			const template = this.templateOf(name, holder);
 			const attacks = {};
 			for (const type of template.attackTypes() || [])
 			{
@@ -333,7 +361,7 @@ export class Catalog
 			const resistance = (template.resistanceStrengths() || {}).Damage || {};
 			const ranged = !!attacks.Ranged;
 			const reach = ranged ? template.attackRange("Ranged") : attacks.Melee && template.attackRange("Melee");
-			this.combats.set(name, Object.freeze({
+			profiles.set(name, Object.freeze({
 				"hp": template.maxHitpoints(),
 				"ranged": ranged,
 				"range": reach ? +reach.max || 0 : 0,
@@ -343,16 +371,17 @@ export class Catalog
 				"resistance": Object.freeze(Object.assign({}, resistance))
 			}));
 		}
-		return this.combats.get(name);
+		return profiles.get(name);
 	}
 
-	hitRate(attacker, target)
+	hitRate(attacker, target, attackerOwner, targetOwner)
 	{
-		const key = attacker + "|" + target;
+		this.refreshTurnCaches();
+		const key = attacker + "|" + target + "|" + attackerOwner + "|" + targetOwner;
 		if (!this.hitRates.has(key))
 		{
-			const own = this.combat(attacker);
-			const other = this.combat(target);
+			const own = this.combat(attacker, attackerOwner);
+			const other = this.combat(target, targetOwner);
 			let best = 0;
 			for (const type in own.attacks)
 			{

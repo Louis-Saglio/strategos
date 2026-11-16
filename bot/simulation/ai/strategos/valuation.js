@@ -117,7 +117,7 @@ export function enemyProfile(world, catalog)
 	let dps = 0;
 	for (const group of world.enemyArmy)
 	{
-		const profile = catalog.combat(group.template);
+		const profile = catalog.combat(group.template, group.owner);
 		total += group.count;
 		for (const kind of COMBAT_KINDS)
 			softness[kind] += group.count * Math.pow(RESISTANCE_BASE, profile.resistance[kind] || 0);
