@@ -224,10 +224,12 @@ export class Offense
 					this.army.add(fighter.id);
 					this.launchSize += 1;
 				}
-		const members = world.fighters.filter(fighter => this.army.has(fighter.id));
+		let members = world.fighters.filter(fighter => this.army.has(fighter.id));
 		this.army = new Set(members.map(fighter => fighter.id));
 		if (this.mode === "home")
 			return this.launch(world, priorities, home);
+		if (this.mode === "attack" && !this.overseas && this.reinforce(world, priorities, members, home))
+			members = world.fighters.filter(fighter => this.army.has(fighter.id));
 		home = { "position": this.base };
 		const free = members.filter(member => !held.has(member.id) && !member.state.includes("GARRISON"));
 		const reason = this.mode !== "return" && this.retreatReason(world, priorities, free, home);
@@ -242,6 +244,28 @@ export class Offense
 		if (this.mode === "attack")
 			return this.attackRequests(world, priorities, free, home);
 		return this.returnRequests(world, priorities, free, home);
+	}
+
+	reinforce(world, priorities, members, home)
+	{
+		const plan = priorities.offense.reinforce;
+		if (!priorities.guard.holds || !members.length || !world.enemyStructures.some(structure => structure.id === this.target.id))
+			return false;
+		const joiners = world.fighters.filter(fighter => fighter.region === world.homeRegion && !this.army.has(fighter.id) &&
+			!priorities.guard.ids.has(fighter.id) && !fighter.state.includes("COMBAT"));
+		if (joiners.length < plan.min)
+			return false;
+		const whole = members.concat(joiners);
+		const outlook = this.worth(world, priorities, whole, this.target, home.position, this.forgone(world, joiners),
+			this.superiority(world, priorities, whole));
+		if (!outlook.worth)
+			return false;
+		for (const fighter of joiners)
+			this.army.add(fighter.id);
+		this.launchSize += joiners.length;
+		this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": "reinforce", "army": whole.length, "joined": joiners.length },
+			this.described(outlook)));
+		return true;
 	}
 
 	switchMode(world, mode, details)
