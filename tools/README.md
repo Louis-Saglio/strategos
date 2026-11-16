@@ -326,11 +326,22 @@ number of games not won before the limit. Against an opponent the bot
 nearly always beats, wins and losses no longer move from one version to
 the next; this measure does.
 
+The same line gives the games decided on the field and the minutes it
+took: the first standing line from which every other side's military
+value stays at or below a quarter of WHO's side's until the end
+(`DECIDED_RATIO`), a game never decided counted at the limit. It is the
+moment an opponent that resigns a lost game would. The AIs never resign,
+and the harness resignation (`-R`, assets below 0.1 of the strongest
+side's for 2 minutes) rarely comes before the conquest, so the minutes to
+victory also measure how long a beaten opponent takes to finish — four
+to eight minutes for a garrisoned centre. Read the two together.
+
 `compare.py`: pairs two batches by tag; identical-game count, outcome
 transitions of WHO's side, and for each metric the means, the mean
 paired delta and the paired t-test p-value. Besides `score` it compares
-`win_min` (the minutes to victory above) and `concluded` (the share of
-games won before the limit).
+`win_min` (the minutes to victory above), `concluded` (the share of
+games won before the limit), `dec_min` and `decided` (the minutes until a
+game is decided on the field and the share of games that are).
 
 ### league.py — the bot against a set of opponents
 
@@ -360,7 +371,8 @@ default) is copied once into `OUTDIR/candidate`, so every member meets the
 same bot even if the tree is edited meanwhile. Options after `--` go to run.py. The table gives per member
 the candidate's games, wins / losses / undecided (a game ahead on points
 counted as won or lost), the wins concluded before the limit, the minutes
-to victory and the mean score.
+to victory, the mean score, and the games decided on the field with the
+minutes it took.
 
 ### forecast.py — the combat forecast against recorded battles
 

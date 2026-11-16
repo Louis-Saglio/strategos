@@ -70,6 +70,7 @@ LIMIT_TAG = "[HARNESS] time limit reached"
 START_TAG = "[HARNESS] start "
 ECO_TAG = "[HARNESS] eco "
 STANDING_TAG = "[HARNESS] standing "
+DECIDED_RATIO = 0.25
 RESIGN_TAG = "[HARNESS] resign "
 POINTS_RATIO = 3.0
 
@@ -109,6 +110,20 @@ def last_json(text, tag):
             except json.JSONDecodeError:
                 pass
     return obj
+
+
+def standing_lines(text):
+    """Every `[HARNESS] standing` line of a game: [(seconds, {side: (assets, military)})]."""
+    rows = []
+    for line in text.splitlines():
+        if line.startswith(STANDING_TAG):
+            try:
+                obj = json.loads(line[len(STANDING_TAG):])
+            except json.JSONDecodeError:
+                continue
+            if obj.get("teams"):
+                rows.append((obj["t"], {side_name(k): (v["assets"], v["military"]) for k, v in obj["teams"].items()}))
+    return rows
 
 
 def side_name(key):
@@ -239,6 +254,36 @@ def victory_minutes(row, player):
     return float(limit)
 
 
+def decided_minutes(row, player):
+    """Minutes until the game is decided on the field for player's side: the
+    first standing line from which every other side's military value stays
+    at or below DECIDED_RATIO x that of player's side (itself above zero)
+    until the end — the moment an opponent that resigns a lost game would.
+    A game won before that counts at its length, a game never decided at
+    the limit; None for a failed game or one without a recorded limit."""
+    limit = row["spec"].get("limit_minutes")
+    if side_result(row, player) == "fail" or not limit:
+        return None
+    mine, since = side_of(row, player), None
+    for seconds, sides in row.get("standings", []):
+        own = sides.get(mine, (0, 0))[1]
+        others = [v[1] for k, v in sides.items() if k != mine]
+        if own > 0 and others and all(o <= DECIDED_RATIO * own for o in others):
+            since = seconds if since is None else since
+        else:
+            since = None
+    end = float(row["game_min"]) if concluded_win(row, player) else float(limit)
+    if side_result(row, player) == "loss":
+        return float(limit)
+    return min(end, since / 60) if since is not None else end
+
+
+def decided(row, player):
+    """True when the game was decided on the field for player's side before the limit (decided_minutes)."""
+    minutes, limit = decided_minutes(row, player), row["spec"].get("limit_minutes")
+    return minutes is not None and minutes < float(limit)
+
+
 def concluded_win(row, player):
     """True when player's side won before the time limit (not merely ahead on points at it)."""
     return side_result(row, player) == "win" and row["outcome"].endswith(" won")
@@ -253,9 +298,12 @@ def victory_line(rows, who=None):
     wins = sorted(float(r["game_min"]) for r, p in timed if victory_minutes(r, p) is not None and concluded_win(r, p))
     limits = sorted({r["spec"]["limit_minutes"] for r, p in timed if victory_minutes(r, p) is not None})
     median = f"median {wins[len(wins) // 2]:.1f} min, {sum(w < 15 for w in wins)} before 15 min" if wins else "none"
+    dec = [m for m in (decided_minutes(r, p) for r, p in timed) if m is not None]
     return (f"{who or 'strategos'}: {len(wins)} concluded wins ({median}); minutes to victory "
             f"{sum(minutes) / len(minutes):.1f} (a game not won counted at the limit of "
-            f"{'/'.join(str(x) for x in limits)}); not won before the limit {len(minutes) - len(wins)} of {len(minutes)}")
+            f"{'/'.join(str(x) for x in limits)}); not won before the limit {len(minutes) - len(wins)} of {len(minutes)}; "
+            f"decided on the field {sum(decided(r, p) for r, p in timed)} of {len(dec)}, after {sum(dec) / len(dec):.1f} min "
+            f"(enemy military at most {DECIDED_RATIO} x ours from then on; not decided counted at the limit)")
 
 
 def spec_value(row, key, player):
@@ -376,6 +424,7 @@ def analyze(outdir, tag):
         "stats": stats,
         "spec": spec,
         "eco": eco_lines(text),
+        "standings": standing_lines(text),
     }
 
 

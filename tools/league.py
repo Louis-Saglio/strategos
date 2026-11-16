@@ -35,8 +35,13 @@ after `--` go to run.py as they are (`-M`, `-s`, `-H`, `-S` ...).
 The table has one row per member: games, the candidate's wins / losses /
 undecided games (a game ahead on points at the limit counts as won or
 lost, as in compare.py), the wins concluded before the limit, the minutes
-to victory (analyze.py: a game not won counted at the limit) and the mean
-score. --table prints it again from an OUTDIR already played.
+to victory (analyze.py: a game not won counted at the limit), the mean
+score, and the games decided on the field with the minutes it took
+(analyze.py: the enemy's military value at most a quarter of the
+candidate's from then on — when an opponent that resigns would; the AIs
+of the league never do, so the minutes to victory also measure how long a
+beaten opponent takes to finish). --table prints it again from an OUTDIR
+already played.
 """
 import argparse
 import io
@@ -132,18 +137,23 @@ def table(outdir, members):
         minutes = [m for m in (analyze.victory_minutes(r, analyze.player_id(r, "strategos")) for r in games)
                    if m is not None]
         concluded = sum(analyze.concluded_win(r, analyze.player_id(r, "strategos")) for r in games)
+        dec = [m for m in (analyze.decided_minutes(r, analyze.player_id(r, "strategos")) for r in games) if m is not None]
+        decided = sum(analyze.decided(r, analyze.player_id(r, "strategos")) for r in games)
         rows.append((member, len(games), res.count("win"), res.count("loss"), res.count("timeout"), res.count("fail"),
                      concluded, sum(minutes) / len(minutes) if minutes else None,
-                     (res.count("win") - res.count("loss")) / len(played) if played else None))
+                     (res.count("win") - res.count("loss")) / len(played) if played else None,
+                     decided, sum(dec) / len(dec) if dec else None))
     if not rows:
         die(f"no game in {outdir}")
     width = max(len("member"), max(len(r[0]) for r in rows))
-    print(f"{'member'.ljust(width)}  games   win  loss  undecided  fail  concluded  win_min  score")
-    for member, n, w, l, t, f, c, m, sc in rows:
+    print(f"{'member'.ljust(width)}  games   win  loss  undecided  fail  concluded  win_min  score  decided  dec_min")
+    for member, n, w, l, t, f, c, m, sc, d, dm in rows:
         print(f"{member.ljust(width)}  {n:5d} {w:5d} {l:5d} {t:10d} {f:5d} {c:10d}  "
-              f"{(f'{m:7.1f}' if m is not None else '      -')}  {(f'{sc:+.2f}' if sc is not None else '-')}")
+              f"{(f'{m:7.1f}' if m is not None else '      -')}  {(f'{sc:+.2f}' if sc is not None else '    -')}  {d:7d}  "
+              f"{(f'{dm:7.1f}' if dm is not None else '      -')}")
     tot = [sum(r[i] for r in rows) for i in range(1, 7)]
-    print(f"{'all'.ljust(width)}  {tot[0]:5d} {tot[1]:5d} {tot[2]:5d} {tot[3]:10d} {tot[4]:5d} {tot[5]:10d}")
+    print(f"{'all'.ljust(width)}  {tot[0]:5d} {tot[1]:5d} {tot[2]:5d} {tot[3]:10d} {tot[4]:5d} {tot[5]:10d}"
+          f"{' ' * 18}{sum(r[9] for r in rows):7d}")
 
 
 def main():

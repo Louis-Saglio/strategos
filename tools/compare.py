@@ -23,6 +23,11 @@ Matches are paired by tag (default: every tag present in both). Prints:
   before the limit, the limit otherwise (analyze.py) — and concluded, the
   share of games won before the limit. The measure to read against an
   opponent the bot nearly always beats.
+- dec_min: minutes until the game is decided on the field for player N's
+  side — the enemy's military value at most a quarter of its own from then
+  on (analyze.py), a game never decided counted at the limit — and decided,
+  the share of games that are. What an opponent that resigns would give;
+  win_min adds the time a beaten opponent takes to finish.
 
 --by KEY[,KEY...] (the keys of analyze.py --by) adds, per value of each
 KEY, the number of pairs and each batch's wins / losses / timeouts and mean
@@ -129,7 +134,7 @@ def main():
     for k, v in sorted(trans.items()):
         print(f"  {k}: {len(v)} ({' '.join(v[:12])}{' ...' if len(v) > 12 else ''})")
 
-    names = ["score", "win_min", "concluded", "game_min"] + analyze.METRICS
+    names = ["score", "win_min", "concluded", "dec_min", "decided", "game_min"] + analyze.METRICS
     print(f"\n{'metric':10} {'base':>10} {'variant':>10} {'delta':>10} {'p':>7}  n")
     for m in names:
         pairs = []
@@ -142,6 +147,10 @@ def main():
                     v = analyze.victory_minutes(row, pid(row))
                 elif m == "concluded":
                     v = None if analyze.victory_minutes(row, pid(row)) is None else int(analyze.concluded_win(row, pid(row)))
+                elif m == "dec_min":
+                    v = analyze.decided_minutes(row, pid(row))
+                elif m == "decided":
+                    v = None if analyze.decided_minutes(row, pid(row)) is None else int(analyze.decided(row, pid(row)))
                 elif m == "game_min":
                     v = row["game_min"]
                 else:
@@ -158,7 +167,7 @@ def main():
         mb = sum(p[0] for p in pairs) / len(pairs)
         mv = sum(p[1] for p in pairs) / len(pairs)
         p = paired_p([p[1] - p[0] for p in pairs])
-        digits = 2 if m in ("score", "concluded") else 1
+        digits = 2 if m in ("score", "concluded", "decided") else 1
         print(f"{m:10} {mb:10.{digits}f} {mv:10.{digits}f} {mv - mb:+10.{digits}f} {('%.3f' % p) if p is not None else '-':>7}  {len(pairs)}")
 
 
