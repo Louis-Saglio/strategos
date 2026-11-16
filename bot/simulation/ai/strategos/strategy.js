@@ -12,7 +12,7 @@ const OPENING = {
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
 	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 },
-		"exchange": { "enter": 1.3, "exit": 0.8, "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0,
+		"exchange": { "enter": 1.3, "exit": 0.8, "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
 		"targetsTried": 6, "recall": 0.1,
 		"beachhead": { "superiority": 1, "reserve": 10 } },

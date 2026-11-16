@@ -15,6 +15,7 @@ export const FORECAST = {
 	"meleeJoinS": 20,
 	"rangedJoinS": 14,
 	"joinScale": 1,
+	"handicap": 1,
 	"arrivals": 0.25
 };
 
@@ -46,7 +47,7 @@ function active(groups, time)
 	return groups.filter(group => group.at <= time && group.count > 0);
 }
 
-function strike(attackers, defenders, fire, time, rules, damage)
+function strike(attackers, defenders, fire, time, rules, damage, handicap)
 {
 	let enemies = 0;
 	for (const target of defenders)
@@ -65,7 +66,7 @@ function strike(attackers, defenders, fire, time, rules, damage)
 		attackers.forEach((group, index) => {
 			dealt += fighting[index] * (group.ranged ? rules.rangedEfficiency : rules.meleeEfficiency) * (group.rates[target.index] || 0);
 		});
-		dealt += rules.arrowHitShare * (fire[target.index] || 0);
+		dealt = dealt * handicap + rules.arrowHitShare * (fire[target.index] || 0);
 		damage[target.index] = share * dealt * rules.stepS;
 	}
 }
@@ -125,8 +126,8 @@ export function forecast(battle, options)
 			break;
 		const onTheirs = [];
 		const onOurs = [];
-		strike(mine, foes, own.fire, seconds, rules, onTheirs);
-		strike(foes, mine, other.fire, seconds, rules, onOurs);
+		strike(mine, foes, own.fire, seconds, rules, onTheirs, rules.handicap);
+		strike(foes, mine, other.fire, seconds, rules, onOurs, 1);
 		wound(foes, onTheirs, rules);
 		wound(mine, onOurs, rules);
 		seconds += rules.stepS;
@@ -270,12 +271,14 @@ export function covering(structures, centre, side)
 export function prospect(catalog, members, centre, enemies, structures, plan)
 {
 	const seen = within(enemies, centre);
-	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= plan.reach * plan.reach);
+	const preyReach = plan.preyReach || plan.reach;
+	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= preyReach * preyReach);
 	const present = seen.concat(plan.hidden || [], prey);
 	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
 		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - (plan.lead || 0)) }));
 	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true),
-		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction }, plan.horizonS ? { "horizonS": plan.horizonS } : {}));
+		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction, "handicap": plan.handicap || 1 },
+			plan.horizonS ? { "horizonS": plan.horizonS } : {}));
 	let opposing = 0;
 	for (const unit of present)
 		opposing += catalog.costSum(unit.template);

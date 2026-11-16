@@ -334,16 +334,18 @@ export class Offense
 	superiority(world, priorities, members)
 	{
 		const whole = prospect(this.catalog, members, this.armyCentre(members), world.enemyFighters, [],
-			Object.assign(this.plan(priorities, Infinity, true), { "hidden": world.enemyHidden }));
+			Object.assign(this.plan(priorities, Infinity, true), { "hidden": world.enemyHidden, "handicap": priorities.offense.exchange.handicap }));
 		return { "cost": whole.cost, "gain": whole.gain, "opposing": whole.opposing, "ratio": whole.cost > 0 ? whole.gain / whole.cost : Infinity };
 	}
 
 	worth(world, priorities, members, target, from, forgone, field)
 	{
 		const exchange = priorities.offense.exchange;
-		const walk = Math.sqrt(squareDistance(target.position, from)) / forgone.speed;
+		const distance = Math.sqrt(squareDistance(target.position, from));
+		const walk = distance / forgone.speed;
 		const outlook = prospect(this.catalog, members, target.position, world.enemyFighters, world.enemyStructures,
-			Object.assign(this.plan(priorities, exchange.reach.launch), { "prey": world.enemyCivilians, "lead": walk }));
+			Object.assign(this.plan(priorities, exchange.reach.launch + distance),
+				{ "prey": world.enemyCivilians, "preyReach": exchange.reach.launch, "lead": walk, "handicap": exchange.handicap }));
 		outlook.prize = this.prize(world, priorities, members, target);
 		outlook.trip = forgone.income * 2 * walk;
 		outlook.army = this.armyValue(members);
