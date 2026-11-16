@@ -11,6 +11,7 @@ Development tooling for Strategos. Not part of the bot.
 | `census.py` | what each AI used in a batch against what its civ offers: command types, technologies, structures, units |
 | `league.py` + `league.json` | play the bot against a set of named opponents (Petra's behaviours, Brennus, past versions, plan variants) on the same seeds; one table |
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
+| `duel.py` | check the core of the combat forecast against the duels of the duel scenario; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
@@ -271,6 +272,21 @@ tools/run.sh -l 7 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
     -M random/strategos_battle_d30_a45_w_l90 -b '*' -H local OUTDIR 1-16
 ```
 
+`strategos_duel`: what a fight between two groups of soldiers costs each
+side with nothing else around. No AI plays; the trigger script fights 34
+duels one after the other at the centre of the map, out of reach of every
+structure — equal and unequal sizes (10 to 90 against 10 to 30), basic
+melee infantry, basic ranged infantry or half of each — and prints the
+forces and, every second, the units and hit points left (`[DUEL]` lines;
+the protocol is in the header of `strategos_duel_triggers.js`). A game is
+the whole list and takes about a second of wall time; the seed draws the
+two civs. `tools/duel.py` reads the batch:
+
+```sh
+tools/run.sh -l 40 -R 0 -p 'none:*:1' -p 'none:*:2' \
+    -M random/strategos_duel -b '*' -H local OUTDIR 1-24
+```
+
 ### analyze.py, compare.py
 
 ```sh
@@ -380,6 +396,26 @@ exchange, next to `balance` and the head count where they can answer.
 table of `forecast.js` by coordinate descent on half of the games (split
 by a hash of their name) and reports the error on the other half; it
 prints the constants, it does not edit the bot.
+
+### duel.py — the combat forecast against duels
+
+```sh
+tools/duel.py tmp/BATCH [tmp/BATCH2 ...] [--cases] [--set k=v,...]
+tools/duel.py --fit tmp/BATCH ...
+```
+
+Reads batches of the `strategos_duel` scenario. A duel is one sample,
+taken at the last tick before the first hit point is lost, and the truth
+is the units each side has lost 5, 10, 20 and 40 s later. The prediction
+is the `forecast.js` of `--bot` run under node on the forces the trigger
+script printed (`--set` overrides constants). It prints, per class of duel
+(or per duel with `--cases`), the units lost by each side at each mark,
+observed and forecast, then the root mean square error of the lost shares
+and how often the side losing more units is named. `--fit` searches the
+core constants (efficiency and joining time of melee and ranged units,
+focus) on every other game and reports the error on the rest. Equal duels
+end with one side wiped out and the other half alive, either way round,
+so their error cannot go to zero: judge a fit on the unequal ones.
 
 ### census.py — what an AI uses of what its civ offers
 

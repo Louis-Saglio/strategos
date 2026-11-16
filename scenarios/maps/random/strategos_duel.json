@@ -1,0 +1,19 @@
+{
+	"settings": {
+		"Name": "Strategos scenario: duels",
+		"Script": "strategos_duel.js",
+		"Description": "Strategos development scenario (see strategos_duel_triggers.js). Not a playable map.",
+		"Keywords": [
+			"trigger"
+		],
+		"SupportedBiomes": "generic/",
+		"CircularMap": true,
+		"PlayerPlacements": [
+			"circle"
+		],
+		"TriggerScripts": [
+			"scripts/TriggerHelper.js",
+			"random/strategos_duel_triggers.js"
+		]
+	}
+}
