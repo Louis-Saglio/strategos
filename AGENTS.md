@@ -186,6 +186,20 @@ Compute and iteration time are the project's scarcest resources.
   stalled match, runaway slowdown), never something to retry with a
   bigger cap.
 
+## Number of games
+
+Waiting for games is development time lost: while a batch runs, the work
+that depends on it stands still.
+
+- **A game is launched only for information known to be useful**, that
+  the games already played do not give. Before a batch, state the
+  question it answers and why that many games are needed to answer it: a
+  batch of 200 games requires that each of the 200 has a large,
+  demonstrable value.
+- **Start small, then decide.** Be conservative: launch a few games
+  first, analyse them, and launch more only when the results already
+  obtained are shown to be insufficient for the decision at hand.
+
 ## Evaluating changes
 
 - Compare a change against the committed bot on the same seeds (paired),
