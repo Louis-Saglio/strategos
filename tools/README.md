@@ -9,6 +9,7 @@ Development tooling for Strategos. Not part of the bot.
 | `hosts.json` | match hosts: ssh name, slot count, determinism verification, calibration |
 | `analyze.py` | one-line-per-match summary of a batch, optional end-of-game metrics |
 | `census.py` | what each AI used in a batch against what its civ offers: command types, technologies, structures, units |
+| `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
@@ -303,6 +304,41 @@ several minutes.
 `compare.py`: pairs two batches by tag; identical-game count, outcome
 transitions of WHO's side, and for each metric the means, the mean
 paired delta and the paired t-test p-value.
+
+### forecast.py — the combat forecast against recorded battles
+
+```sh
+tools/forecast.py tmp/BATCH [tmp/BATCH2 ...] [--window 30] [--by cover,size,seq]
+tools/forecast.py --fit tmp/BATCH ...
+```
+
+The bot prints `[FORECAST]` at the onset of every battle (4 or more
+soldiers of each side within 60 m of a fight) and every 30 s while it
+lasts: the forces as it sees them and what `forecast.js` predicts. Per
+side, `groups` holds one `[template, count, hit points, ranged, cost,
+engaged, at]` per template and wave: the soldiers within 60 m (`at` 0,
+`engaged` of them fighting a unit of the other side) and those within
+150 m that can join (`at`, the mean seconds they need; gathering enemies
+left out); `rates` is what one unit of a group deals per second to each
+group of the other side, `fire` the arrow damage per second the covering
+structures would deal to each group, `ids` the units of each side in the
+order of the groups. `marks` is the prediction (`[seconds, ours lost,
+theirs lost]`), `balance` the dps x hit points ratio the defence uses.
+
+`forecast.py` takes as truth the listed units that the harness saw die
+(the `ids` of `[HARNESS] kills`) in the `--window` seconds after the line,
+and recomputes the prediction from the logged forces with the
+`forecast.js` of `--bot` (default `bot/`), run under node by
+`forecast_eval.mjs` — a change of the model is therefore read on games
+already played (`--logged` takes the prediction the game printed). It
+reports the error of the lost share of each side, how often the model
+names the side that loses more, the correlation with the observed
+difference of lost shares and with the units lost and their net
+exchange, next to `balance` and the head count where they can answer.
+`--by cover,size,seq` splits the samples. `--fit` searches the `FORECAST`
+table of `forecast.js` by coordinate descent on half of the games (split
+by a hash of their name) and reports the error on the other half; it
+prints the constants, it does not edit the bot.
 
 ### census.py — what an AI uses of what its civ offers
 
