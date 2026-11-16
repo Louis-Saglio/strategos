@@ -360,7 +360,8 @@ export class Offense
 	described(outlook)
 	{
 		return {
-			"defenders": outlook.defenders, "coming": outlook.coming, "cost": Math.round(outlook.cost || 0), "gain": Math.round(outlook.gain || 0),
+			"defenders": outlook.defenders, "prey": outlook.prey, "coming": outlook.coming, "cost": Math.round(outlook.cost || 0),
+			"gain": Math.round(outlook.gain || 0),
 			"prize": Math.round(outlook.prize || 0), "trip": Math.round(outlook.trip || 0), "dominant": !!outlook.dominant,
 			"attrition": outlook.attrition === undefined ? undefined : Math.round(outlook.attrition * 100) / 100,
 			"field": outlook.field ? [Math.round(outlook.field.cost), Math.round(outlook.field.gain), Math.round(outlook.field.opposing)] : undefined,
@@ -415,6 +416,7 @@ export class Offense
 	launch(world, priorities, home)
 	{
 		const offense = priorities.offense;
+		this.refused = null;
 		if (!priorities.guard.holds || !world.enemyTargets.length)
 			return [];
 		const groups = new Map();

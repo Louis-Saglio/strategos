@@ -16,6 +16,7 @@ export const FORECAST = {
 	"rangedJoinS": 14,
 	"joinScale": 1,
 	"handicap": 1,
+	"preyShare": 0.2,
 	"arrivals": 0.25
 };
 
@@ -23,7 +24,7 @@ function side(input, rules)
 {
 	return {
 		"groups": input.groups.map(group => {
-			const share = (group.at || 0) > 0 ? rules.arrivals : 1;
+			const share = group.passive ? rules.preyShare : (group.at || 0) > 0 ? rules.arrivals : 1;
 			const count = group.hitpoints > 0 ? group.count * share : 0;
 			const hitpoints = Math.max(0, group.hitpoints) * share;
 			return {
@@ -35,7 +36,8 @@ function side(input, rules)
 			"value": group.value,
 			"at": group.at || 0,
 			"engaged": group.engaged === undefined ? 1 : group.count > 0 ? group.engaged / group.count : 0,
-			"rates": group.rates
+			"rates": group.rates,
+			"passive": !!group.passive
 			};
 		}),
 		"fire": input.fire || []
@@ -49,17 +51,21 @@ function active(groups, time)
 
 function strike(attackers, defenders, fire, time, rules, damage, handicap)
 {
+	const armed = defenders.filter(target => !target.passive);
+	const targets = armed.length ? armed : defenders;
 	let enemies = 0;
-	for (const target of defenders)
+	for (const target of targets)
 		enemies += target.count;
 	if (!(enemies > 0))
 		return;
 	const fighting = attackers.map(group => {
+		if (group.passive)
+			return 0;
 		const joinS = rules.joinScale * (group.ranged ? rules.rangedJoinS : rules.meleeJoinS);
 		const joined = joinS > 0 ? Math.min(1, (time + rules.stepS) / joinS) : 1;
 		return group.count * (group.at > 0 ? 1 : group.engaged + joined * (1 - group.engaged));
 	});
-	for (const target of defenders)
+	for (const target of targets)
 	{
 		const share = target.count / enemies;
 		let dealt = 0;
@@ -148,14 +154,16 @@ export function forecast(battle, options)
 	};
 }
 
-function grouped(units, opponents, arriving, committed)
+function grouped(units, opponents, arriving, committed, passive)
 {
 	const foes = new Set(opponents.map(unit => unit.id));
 	const groups = new Map();
 	const entry = (unit, wave) => {
-		const key = unit.template + "|" + wave + "|" + unit.owner;
+		const prey = !!passive && passive.has(unit.id);
+		const key = unit.template + "|" + wave + "|" + unit.owner + "|" + prey;
 		if (!groups.has(key))
-			groups.set(key, { "key": key, "template": unit.template, "owner": unit.owner, "count": 0, "hitpoints": 0, "engaged": 0, "at": 0 });
+			groups.set(key, { "key": key, "template": unit.template, "owner": unit.owner, "passive": prey, "count": 0, "hitpoints": 0, "engaged": 0,
+				"at": 0 });
 		const group = groups.get(key);
 		group.count += 1;
 		group.hitpoints += unit.hitpoints;
@@ -200,6 +208,7 @@ function force(catalog, groups, opponents, structures)
 			"hitpoints": group.hitpoints,
 			"engaged": group.engaged,
 			"at": group.at,
+			"passive": group.passive,
 			"ranged": catalog.combat(group.template, group.owner).ranged,
 			"value": catalog.costSum(group.template),
 			"rates": opponents.map(target => catalog.hitRate(group.template, target.template, group.owner, target.owner))
@@ -208,10 +217,10 @@ function force(catalog, groups, opponents, structures)
 	};
 }
 
-export function engagement(catalog, units, opponents, cover, opposingCover, arriving, opposingArriving, committed)
+export function engagement(catalog, units, opponents, cover, opposingCover, arriving, opposingArriving, committed, passive)
 {
 	const mine = grouped(units, opponents, arriving, committed);
-	const foes = grouped(opponents, units, opposingArriving, false);
+	const foes = grouped(opponents, units, opposingArriving, false, passive);
 	return {
 		"ours": force(catalog, mine, foes, cover || []),
 		"theirs": force(catalog, foes, mine, opposingCover || [])
@@ -276,7 +285,8 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 	const present = seen.concat(plan.hidden || [], prey);
 	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
 		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - (plan.lead || 0)) }));
-	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true),
+	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true,
+		new Set(prey.map(unit => unit.id))),
 		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction, "handicap": plan.handicap || 1 },
 			plan.horizonS ? { "horizonS": plan.horizonS } : {}));
 	let opposing = 0;
@@ -289,7 +299,8 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 		"gain": outlook.theirs.value,
 		"lost": outlook.ours.lost,
 		"killed": outlook.theirs.lost,
-		"defenders": present.length,
+		"defenders": present.length - prey.length,
+		"prey": prey.length,
 		"coming": coming.length,
 		"opposing": opposing
 	};
