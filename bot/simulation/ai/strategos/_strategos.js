@@ -1,5 +1,6 @@
 import { BaseAI } from "simulation/ai/common-api/baseAI.js";
 import { Allocator } from "simulation/ai/strategos/allocator.js";
+import { BattleLog } from "simulation/ai/strategos/battles.js";
 import { Catalog } from "simulation/ai/strategos/catalog.js";
 import { Construction } from "simulation/ai/strategos/construction.js";
 import { Defense } from "simulation/ai/strategos/defense.js";
@@ -36,6 +37,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.shoreIndex = new ShoreIndex();
 	this.lossIndex = new LossIndex(this.player);
+	this.battleLog = new BattleLog(this.catalog, this.telemetry);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
 	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
 		new Research(this.catalog), new Trade(this.catalog, this.telemetry), new Medics(this.catalog, this.telemetry),
@@ -70,6 +72,8 @@ StrategosBot.prototype.decide = function()
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
 	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, pending, this.allocator.demand());
 	lap("world");
+	this.battleLog.observe(world);
+	lap("BattleLog");
 	const priorities = this.strategy.update(world);
 	const requests = [];
 	for (const subsystem of this.subsystems)
