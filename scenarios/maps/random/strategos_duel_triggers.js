@@ -14,7 +14,8 @@
  *   r  its first basic ranged infantry citizen-soldier,
  *   x  half of each (melee in front).
  * A case whose civ lacks the unit is skipped. Player 1 is always the
- * larger side.
+ * larger side; the sizes run from equal to 8 to 1, with 1.2 and 1.5 to 1
+ * to see how safe a narrow superiority is.
  *
  * stdout protocol:
  *   [DUEL] start {"case", "t", "kinds", "sides": [SIDE, SIDE]}
@@ -51,7 +52,9 @@ const DUEL_CASES = [
 	["m", 40, "m", 10], ["r", 40, "r", 10], ["r", 40, "m", 10], ["m", 40, "r", 10], ["x", 40, "x", 10],
 	["m", 80, "m", 10], ["r", 80, "r", 10], ["r", 80, "m", 10], ["m", 80, "r", 10], ["x", 80, "x", 10],
 	["m", 60, "m", 30], ["r", 60, "r", 30], ["x", 60, "x", 30],
-	["m", 90, "m", 30], ["r", 90, "r", 30], ["x", 90, "x", 30]
+	["m", 90, "m", 30], ["r", 90, "r", 30], ["x", 90, "x", 30],
+	["m", 36, "m", 30], ["r", 36, "r", 30], ["x", 36, "x", 30],
+	["m", 45, "m", 30], ["r", 45, "r", 30], ["x", 45, "x", 30]
 ];
 
 Trigger.prototype.DuelTemplate = function(player, classes)

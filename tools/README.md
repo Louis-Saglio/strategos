@@ -273,7 +273,7 @@ tools/run.sh -l 7 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
 ```
 
 `strategos_duel`: what a fight between two groups of soldiers costs each
-side with nothing else around. No AI plays; the trigger script fights 34
+side with nothing else around. No AI plays; the trigger script fights 40
 duels one after the other at the centre of the map, out of reach of every
 structure — equal and unequal sizes (10 to 90 against 10 to 30), basic
 melee infantry, basic ranged infantry or half of each — and prints the
