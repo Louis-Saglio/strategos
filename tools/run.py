@@ -97,6 +97,10 @@ Options:
   -R RATIO       harness resignation: a side whose assets (units, structures
                  and stock, at cost) stay below RATIO x the strongest other
                  side's for 2 minutes is defeated (default 0.1; 0 = never)
+  --commands     the harness prints every command of every player, turn by
+                 turn (`[HARNESS] cmd` lines; the replay does not record the
+                 commands of an AI); tools/identity.py compares two plays on
+                 them. Off by default: a few thousand lines a game
   -t SEC         wall-clock cap per match (default: derived from -l, see
                  below; a larger value is accepted with a warning)
   -m AI=SOURCE   mod source for an AI (repeatable)
@@ -469,7 +473,7 @@ def is_scenario(map_name):
     return any(os.path.isfile(os.path.join(SCENARIOS, "maps", map_name + ext)) for ext in (".json", ".xml"))
 
 
-def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False):
+def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False, commands=False):
     """Copy every needed mod into OUTDIR/mods/. Returns (mount order, provenance)."""
     mods_dir = os.path.join(outdir, "mods")
     if os.path.exists(mods_dir):
@@ -530,11 +534,17 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=F
     text = re.sub(r"const HARNESS_MAP_INTERVAL_MS = \d+;", f"const HARNESS_MAP_INTERVAL_MS = {map_interval};",
                   text)
     text = re.sub(r"const HARNESS_RESIGN_RATIO = [\d.]+;", f"const HARNESS_RESIGN_RATIO = {resign};", text)
+    text, set_commands = re.subn(r"const HARNESS_COMMANDS = \d+;", f"const HARNESS_COMMANDS = {int(commands)};",
+                                 text)
+    if set_commands != 1:
+        die(f"{os.path.join(HARNESS, 'maps/scripts/NonVisualTrigger.js')}: {set_commands} line(s) "
+            "`const HARNESS_COMMANDS = N;` where one is expected: --commands cannot be set, and a play recorded "
+            "as made with the command lines would have none")
     with open(trig, "w", encoding="utf-8") as fh:
         fh.write(text)
     prov[mod_name(HARNESS)] = {"source": HARNESS, "commit": git_info(REPO), "content": content_hash(hdest),
                                "limit_minutes": limit, "map_interval_ms": map_interval,
-                               "resign_ratio": resign}
+                               "resign_ratio": resign, "commands": bool(commands)}
     order.append(mod_name(HARNESS))
     return order, prov
 
@@ -907,6 +917,7 @@ def main():
     ap.add_argument("--rotate", action="store_true")
     ap.add_argument("--map-interval", type=int, default=30000)
     ap.add_argument("-R", dest="resign", type=float, default=0.1)
+    ap.add_argument("--commands", action="store_true")
     ap.add_argument("--verify-host")
     ap.add_argument("--calibrate", nargs=2, metavar=("HOST", "KS"))
     ap.add_argument("rest", nargs="*")
@@ -982,7 +993,7 @@ def main():
         die("no match to run")
     ais = {p["ai"] for s in specs for p in s["players"]}
     order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval, a.resign,
-                                scenarios=any(is_scenario(s["map"]) for s in specs))
+                                scenarios=any(is_scenario(s["map"]) for s in specs), commands=a.commands)
     syntax_check(os.path.join(outdir, "mods"))
     for s in specs:
         s["mods"] = [m for m in order]

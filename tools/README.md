@@ -13,6 +13,7 @@ Development tooling for Strategos. Not part of the bot.
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `duel.py` | check the core of the combat forecast against the duels of the duel scenario; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
+| `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request the set grants |
 | `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
@@ -227,6 +228,19 @@ A command the engine then refuses is counted too. Read-only: 233 of 246
 games bit-identical to games of the previous harness, the 13 others
 differing by the bot. `census.py` reads it.
 
+With `run.sh --commands` it also prints `[HARNESS] cmd {"turn","p","c"}`
+for every command of every player, in the order the simulation receives
+them, from the same trigger event: `turn` is the replay's turn number,
+`p` the player, `c` the command as issued. The replay (`commands.txt`)
+holds the commands of human players only — an AI's commands never reach
+it — so these lines are the one place where the orders of the AIs can be
+read turn by turn. Off by default (a few thousand lines a game);
+`identity.py` plays with it. `run.py` stops before any game when it cannot
+set the harness constant that turns them on (`HARNESS_COMMANDS`).
+Read-only: the 10 games of the identity set that had been played at the
+same limit without it (2 against two Petra, 8 naval) are bit-identical
+with it.
+
 `autostart/harness_settings.js` applies `-harness-settings=JSON` (the
 `-S` settings) on top of the public autostart command line. The engine
 loads every file of `autostart/` in name order, so it wraps the public
@@ -344,6 +358,126 @@ paired delta and the paired t-test p-value. Besides `score` it compares
 `win_min` (the minutes to victory above), `concluded` (the share of
 games won before the limit), `dec_min` and `decided` (the minutes until a
 game is decided on the field and the share of games that are).
+
+### identity.py — the identity set
+
+```sh
+tools/identity.py play OUTDIR [-H HOSTS] [-m strategos=SOURCE]   # OUTDIR must not exist
+tools/identity.py compare BASE_DIR NEW_DIR    # exit 1: a game differs or is unfit; 2: not comparable
+tools/identity.py coverage DIR [--bot MOD_DIR]
+```
+
+A refactoring of the bot is right when it plays the games the commit
+before it played. `tools/identity.jsonl` is the list of those games: 19
+complete match specs (map, size, biome, placement, victory, every game
+setting, players each as `AI/DIFF/BEHAVIOR:CIV:TEAM` — `play` and `compare`
+refuse a list with a line that leaves anything to a default or to a draw,
+a player's difficulty, behaviour and team included), all played at one
+in-game limit (`LIMIT_MINUTES` in `identity.py`, 14) with the harness
+resignation at 0.1 and the command log on.
+
+| Games | What they are there for |
+|---|---|
+| `duel-9601..9603` | 1v1 against Petra/5 on mainland, 300 resources |
+| `two-9601`, `two-9602` | one against two allied Petra/4 |
+| `aegean_sea-2001` ... `migration-2137` (8) | naval maps against Petra/5: docks, fishing, warships, transports, landings |
+| `regicide-4301` | regicide, 3000 resources: the hero's guard; Rome's upgrades of soldiers to centurions; healers |
+| `relic-4302` | capture the relic, 3000 resources, Strategos as player 2: the relic squad |
+| `wonder-sele-4303`, `wonder-kush-4303` | wonder, 50000 resources: a wonder ordered before minute 6, a hero, champions and rams trained (sele), a stalled foundation abandoned (kush) |
+| `nomad-4304` | nomad start with 100 resources and treasures enabled: the treasures collected, the civic centre founded |
+| `team-4305` | five players on 256 tiles, 3000 resources: two Strategos and a Petra/5 against two Petra/5; attacks, captures, razing, rams |
+
+The five-player game is the first line, so that the longest game starts
+first when there are fewer slots than games. On boobynator alone (19 games
+on its 20 slots, the other hosts unused) a play takes 105 to 110 s of
+wall time.
+
+`play` runs the list through `run.py` into a new directory (`-H` and `-m`
+are passed on, e.g. `-m strategos=tmp/variant/bot`), then checks that
+every game is fit — finished with exit code 0 and statistics, at least one
+`[HARNESS] cmd` line, no `ERROR` or `WARNING` line in its log, the settings
+applied as asked, the spec played equal to the line of the list. It prints
+the wall time and each unfit game with the reason, then the coverage
+table, and exits 1 when a game is unfit or the coverage table cannot be
+trusted (below). It never writes into an existing directory, so a base
+cannot be overwritten.
+
+A base is the play of a commit, kept in `tmp/ident/<commit>`
+(`tmp/ident/d1c8f01` is the first one). `tmp/` is untracked: a base exists
+only on the machine that played it, and is played again when it is lost or
+when the list has changed since (`compare` refuses a play that is not a
+play of the present list). The base of any commit is rebuilt from the
+repository root with the bot of that commit and the present tools:
+
+```sh
+tools/identity.py play tmp/ident/d1c8f01 -m strategos=.@d1c8f01
+```
+
+(`-m strategos=GIT_DIR@REV` is `run.py`'s: the `bot/` of that revision,
+archived by git, whatever the working tree holds; `batch.json` records the
+commit and the content hash of the bot played.)
+
+`compare` first checks that both directories are plays of the committed
+list — the same matches in the same order, at `LIMIT_MINUTES`, with the
+command lines — and exits 2 otherwise. It prints what it compares: for
+each play the commit and content hash of the bot and the content hash of
+the harness recorded in its `batch.json`, then whether the two plays ran
+the same bot content (a play made with the base's bot by mistake compares
+as identical: this line is where it shows) and the same harness content.
+It applies the fitness checks of `play` to both plays, then reads them
+game by game and prints one line each:
+
+- **hash** — the statistics of every player at the end of the game
+  (`analyze.py`);
+- **commands** — every command of every player, turn by turn (the
+  `[HARNESS] cmd` lines), and the replay's `commands.txt` from its first
+  turn on (the turns, and the commands of human players if there were
+  any);
+- **telemetry** — the bot's own lines (`[TAG] {"p":...`) other than
+  `[PERF]`, which carries wall-clock times.
+
+For a game that differs it prints the two hashes with the outcomes, the
+first differing command of each play with its turn and player, and the
+first differing telemetry line; for a game that is unfit, `UNFIT` on its
+line and, below, the play, the game and the reason. A game is identical
+when its hash and its commands are the same and it is fit in both plays:
+`compare` refuses a play with an error — an exit code, an `ERROR` or
+`WARNING` line, a setting not applied, a game not played, a game without
+a command line — however equal the two plays are. The exit status is 1
+when a game is not identical. Telemetry is reported apart and does not
+change the status: a refactoring may change telemetry on purpose. Status
+2 means the directories cannot be compared (one is not a play of the
+committed list at its limit, or was played without `--commands`).
+
+`coverage` (also printed at the end of `play`) reads the `[ALLOC]` ledgers
+of a play: per kind of request (`source/action`, the production tier's
+`!` dropped) the times it was granted and denied and the games granting
+it, then the kinds the bot's code can emit that the play never granted,
+each as never requested or as requested and denied. The kinds of the code
+are read from the bot the play snapshotted (`DIR/mods/strategos`, or
+`--bot`): every action literal (`{ "type": "..."`) of a class that has a
+`requests(` method and names its `"source"`, plus the actions that a
+module without such a class (`tactics.js`) builds for the classes calling
+it. What a kind is made of is known to two functions only, `ledger_kind`
+(the key of the ledger) and `source_kinds` (the code).
+
+The table is worth what that reading is worth, so `coverage` says when it
+is not whole and exits 1: a class with a `requests(` method from which no
+kind is read (its `"source"` is not a string literal, or it has no action
+literal), a kind of the ledgers that no class read emits, or an `[ALLOC]`
+line that cannot be parsed (reported with its file and line number). The
+kinds such a class emits would otherwise be missing from the list of those
+never granted.
+
+The set grants 40 of the 44 kinds. Never granted within 14 minutes:
+`trade/train`, `trade/trading-goods` and `trade/trade-route` (traders are
+trained once two finished land markets, one of ours and another of ours or
+of an ally, make a route that pays 0.5 a second, 0.3 when stone or metal
+runs out at home; in the three team games tried with 3000 resources the
+second market was missing or the route paid 0.43, and recorded 30-minute
+games set their first route around minute 27), and `offense/garrison`
+(soldiers garrisoned in a captured structure to hold it: the earliest
+grant in recorded games is in the ledger of minute 14.2).
 
 ### league.py — the bot against a set of opponents
 
