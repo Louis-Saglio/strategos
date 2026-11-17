@@ -13,10 +13,12 @@ Development tooling for Strategos. Not part of the bot.
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `duel.py` | check the core of the combat forecast against the duels of the duel scenario; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
+| `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
 | `mapview.py` | top-down map pictures from the harness map snapshots (no GPU) |
 | `check_bot.py` | bot code rules: JS parses, no comments |
+| `constants.py` | count the numbers written in the bot's code, by file and kind |
 | `install-local.sh` | install a commit's `bot/` into the local 0 A.D. |
 | `gamedata/` | game data loader and per-civ doc generator |
 
@@ -452,6 +454,25 @@ listed — the technologies never researched, the buildings never built,
 the units never trained, the orders never given; `--civ` adds the per-civ
 split.
 
+### timeline.py — when and how each game was decided
+
+```sh
+tools/timeline.py [--at 8,12,16,20,25,30,40] [--player N] BATCHDIR...
+```
+
+One block per game, for any number of players and teams: the outcome as
+`analyze.py` reads it, civs, size and biome, the phases player N
+researched (default 1), then at each minute of `--at` the population and
+the resources gathered of every player and the military value of every
+team (`[HARNESS] eco` and `standing`), and player N's attack launches and
+returns with army size and reason (`[ATTACK]` lines of the bot). It is
+the reading of the games of one Strategos against two allied Petra:
+
+```sh
+tools/run.sh -l 40 -p 'strategos:*:1' -p 'petra/4:*:2' -p 'petra/4:*:2' -b '*' -s 192,256 tmp/one-two 9501-9508
+tools/timeline.py tmp/one-two
+```
+
 ## Seeing a match
 
 ### viz.py + vizmod/ — visual replay with a camera director
@@ -508,11 +529,18 @@ terrain line draws on a plain background.
 
 ```sh
 tools/check_bot.py [MOD_DIR]        # default bot/
+tools/constants.py [--list] [MOD_DIR]
 tools/install-local.sh [COMMIT]     # default HEAD
 ```
 
 `check_bot.py` fails when a bot JS file does not parse or contains a
-comment. `install-local.sh` copies a commit's `bot/` to
+comment. `constants.py [--list] [MOD_DIR]` counts the numbers written in
+the bot: the numeric literals of the module-level `const NAME = ...`
+declarations (every numeric leaf of a table such as `OPENING`) and the
+other numeric literals of the code apart from 0, 1 and 2, per file, with
+the declared ones grouped by a kind guessed from their name and the names
+declared in several files. A commit that removes or adds constants gives
+the count before and after. `install-local.sh` copies a commit's `bot/` to
 `~/.local/share/0ad/mods/strategos` (recording the commit) and enables the
 mod, so Strategos appears in the game setup's AI list; it refuses while
 the game is running.
