@@ -54,6 +54,15 @@
  *     OnPlayerCommand trigger event, with the templates of train / construct
  *     / research commands and the names of formation / stance commands.
  *     Commands the engine later refuses are counted too. Read-only.
+ *   [HARNESS] cmd {"turn": n, "p": player, "c": {<the command>}}
+ *     only when HARNESS_COMMANDS is set (run.py --commands): every command
+ *     of every player as the simulation receives it, in order, from the same
+ *     trigger event. The replay (commands.txt) records the commands of human
+ *     players only, so this is the one place where the orders of the AIs can
+ *     be read turn by turn; tools/identity.py compares two plays on it.
+ *     "turn" is the replay's turn number (simulation time / HARNESS_TURN_MS:
+ *     commands are flushed before the turn's update advances the timer).
+ *     Read-only.
  *   per-player statistics JSON blocks (as the public script), at game end.
  *
  * Map snapshot codes: kind 1 worker, 2 soldier, 3 cavalry, 4 siege,
@@ -76,6 +85,8 @@ const HARNESS_KILLS_INTERVAL_MS = 30000;
 const HARNESS_STANDING_INTERVAL_MS = 30000;
 const HARNESS_RESIGN_RATIO = 0;
 const HARNESS_RESIGN_HOLD_MS = 120000;
+const HARNESS_COMMANDS = 0;
+const HARNESS_TURN_MS = 200;
 const HARNESS_MILITARY_CLASSES = ["Soldier", "Siege", "Ship"];
 
 const HARNESS_KINDS = [
@@ -108,6 +119,11 @@ Trigger.prototype.HarnessCommand = function(data)
 	const cmd = data.cmd;
 	if (!cmd || !cmd.type)
 		return;
+	if (HARNESS_COMMANDS)
+		print("[HARNESS] cmd " + JSON.stringify({
+			"turn": Math.round(Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / HARNESS_TURN_MS),
+			"p": data.player, "c": cmd
+		}) + "\n");
 	const entry = this.harnessCensus[data.player] = this.harnessCensus[data.player] ||
 		{ "commands": {}, "train": {}, "construct": {}, "research": {}, "detail": {} };
 	entry.commands[cmd.type] = (entry.commands[cmd.type] || 0) + 1;
