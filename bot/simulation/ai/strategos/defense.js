@@ -1,15 +1,21 @@
-import { REACH_S } from "simulation/ai/strategos/cadence.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
-import { CONTACT_RADIUS, COVER_MARGIN, atWork } from "simulation/ai/strategos/forecast.js";
+import { COVER_MARGIN, atWork } from "simulation/ai/strategos/forecast.js";
 import { balance, centroid, coveringHolders, skirmish } from "simulation/ai/strategos/tactics.js";
 
+const ENGAGE_RADIUS = 160;
 const DANGER_RADIUS = 30;
+const SHELTER_RADIUS = 90;
 const RELEASE_DELAY_MS = 8000;
 const COVER_RADIUS = 55;
 const OUTNUMBERED_ENTER = 1;
 const OUTNUMBERED_EXIT = 0.6;
+const SAFE_RADIUS = 70;
 const REPORT_PERIOD_MS = 10000;
+const APPROACH_RADIUS = 80;
 const RESPONSE_MARGIN = 2;
+const BATTLE_RADIUS = 60;
+const RETREAT_RADIUS = 90;
+const WARNING_RADIUS = 100;
 const LINE_FRONT = 14;
 const LINE_BACK = 3;
 const LINE_SPACING = 2.5;
@@ -34,7 +40,6 @@ export class Defense
 		this.hostiles = world.threats.filter(threat => world.ownSide(threat.position)).concat(world.wild, this.approaching(world));
 		if (this.hostiles.length)
 			this.lastThreatTime = world.time;
-		this.pace = this.fastest(world);
 		if (!this.hostiles.length)
 		{
 			this.outnumbered = false;
@@ -67,24 +72,6 @@ export class Defense
 			});
 		}
 		return requests;
-	}
-
-	stride(unit, owner)
-	{
-		return this.catalog.combat(unit.template, owner).speed * REACH_S;
-	}
-
-	fastest(world)
-	{
-		const known = new Map(this.foes.map(foe => [foe.id, foe]));
-		let pace = 0;
-		for (const hostile of this.hostiles)
-			if (known.has(hostile.id))
-				pace = Math.max(pace, this.stride(known.get(hostile.id), known.get(hostile.id).owner));
-		if (!(pace > 0))
-			for (const fighter of world.fighters)
-				pace = Math.max(pace, this.stride(fighter));
-		return pace;
 	}
 
 	nearestThreat(world, position)
@@ -138,18 +125,15 @@ export class Defense
 		const territory = world.grids.territory;
 		const player = world.player;
 		const sentinels = world.fighters.filter(fighter => territoryAt(territory, fighter.position[0], fighter.position[1]).owner === player);
+		const limit = WARNING_RADIUS * WARNING_RADIUS;
 		const inside = new Set(world.threats.map(threat => threat.id));
-		return world.enemyFighters.filter(enemy => {
-			if (inside.has(enemy.id) || atWork(enemy) || !world.ownSide(enemy.position))
-				return false;
-			const limit = this.stride(enemy, enemy.owner) * this.stride(enemy, enemy.owner);
-			return sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit);
-		});
+		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !atWork(enemy) &&
+			world.ownSide(enemy.position) && sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit));
 	}
 
 	hostileGroup(world)
 	{
-		const limit = this.pace * this.pace;
+		const limit = APPROACH_RADIUS * APPROACH_RADIUS;
 		const ids = new Set(this.hostiles.map(threat => threat.id));
 		return this.foes.filter(enemy => ids.has(enemy.id) ||
 			this.hostiles.some(threat => squareDistance(threat.position, enemy.position) <= limit));
@@ -173,7 +157,7 @@ export class Defense
 		const centre = guard.group.length ? guard.centre : centroid(group.length ? group : this.hostiles);
 		const near = world.fighters
 			.map(fighter => ({ fighter, "distance": this.nearestThreat(world, fighter.position).distance }))
-			.filter(entry => entry.distance <= this.stride(entry.fighter) + this.pace)
+			.filter(entry => entry.distance <= ENGAGE_RADIUS)
 			.sort((a, b) => a.distance - b.distance || a.fighter.id - b.fighter.id);
 		this.guarding = guard.group.length ? guard.needed.length : 0;
 		if (guard.group.length)
@@ -210,7 +194,7 @@ export class Defense
 
 	fight(world, priorities, free, units)
 	{
-		const limit = CONTACT_RADIUS * CONTACT_RADIUS;
+		const limit = BATTLE_RADIUS * BATTLE_RADIUS;
 		const enemies = this.foes.filter(enemy => world.ownSide(enemy.position) &&
 			units.some(unit => squareDistance(unit.position, enemy.position) <= limit));
 		const allowed = new Set(enemies.map(enemy => enemy.id));
@@ -218,7 +202,7 @@ export class Defense
 			allowed.add(hostile.id);
 		const home = world.centres[0];
 		const retreat = unit => {
-			const holder = this.nearestHolder(world, unit, free, candidate => candidate.heal > 0, this.stride(unit));
+			const holder = this.nearestHolder(world, unit, free, candidate => candidate.heal > 0, RETREAT_RADIUS);
 			if (holder)
 			{
 				free.set(holder.id, free.get(holder.id) - 1);
@@ -257,7 +241,7 @@ export class Defense
 			if (this.outnumbered)
 			{
 				const holder = this.nearestHolder(world, fighter, free,
-					candidate => candidate.arrows && this.nearestThreat(world, candidate.position).distance <= COVER_RADIUS, this.stride(fighter) + this.pace);
+					candidate => candidate.arrows && this.nearestThreat(world, candidate.position).distance <= COVER_RADIUS, ENGAGE_RADIUS);
 				if (holder)
 				{
 					requests.push(this.garrison(fighter, holder, free, priorities.values.defend, 1));
@@ -339,8 +323,8 @@ export class Defense
 			const { distance } = this.nearestThreat(world, worker.position);
 			if (distance > DANGER_RADIUS)
 				continue;
-			const holder = this.outnumbered && this.nearestHolder(world, worker, free, unarmed, worker.profile.speed * REACH_S) ||
-				this.nearestHolder(world, worker, free, any, worker.profile.speed * REACH_S);
+			const holder = this.outnumbered && this.nearestHolder(world, worker, free, unarmed, SHELTER_RADIUS) ||
+				this.nearestHolder(world, worker, free, any, SHELTER_RADIUS);
 			if (holder)
 				requests.push(this.garrison(worker, holder, free, priorities.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
 		}
@@ -354,7 +338,7 @@ export class Defense
 		{
 			if (!holder.garrisoned || holder.forward)
 				continue;
-			const safe = this.nearestThreat(world, holder.position).distance > this.pace;
+			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
 			const units = holder.units.filter(id => safe || !this.outnumbered && holder.soldiers.includes(id) && !(holder.heal > 0 && holder.hurt.includes(id)));
 			if (units.length)
 				requests.push({
