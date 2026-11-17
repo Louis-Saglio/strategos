@@ -1,3 +1,4 @@
+import { collect, gatherRequest, inTier, orderRequest, reserving, trainRequest } from "simulation/ai/strategos/requests.js";
 import { HERO_EDGE, TRAINING_BATCH, heroWorth, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
@@ -44,14 +45,8 @@ export class Economy
 				return [];
 			if (world.codes.every(code => world.resources[code] >= (cost[code] || 0)))
 				this.heroOrdered = world.time;
-			return [{
-				"source": "economy",
-				"action": { "type": "train", "trainer": trainer.id, "template": best.name, "count": 1 },
-				"claims": { "resources": cost, "population": this.catalog.population(best.name), "slots": [trainer.id] },
-				"value": priorities.values.research,
-				"urgency": 1,
-				"reserve": true
-			}];
+			return [reserving(trainRequest("economy", "hero", trainer.id, best.name, 1, cost, this.catalog.population(best.name),
+				priorities.values.research, 1))];
 		}
 		return [];
 	}
@@ -72,7 +67,8 @@ export class Economy
 				continue;
 			if (!civilian && soldiers.length && !context)
 				context = this.unitContext(world, priorities);
-			const template = civilian || !soldiers.length ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
+			const labour = civilian || !soldiers.length;
+			const template = labour ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
 			if (!template)
 				continue;
 			const count = this.batchSize(world, template);
@@ -80,18 +76,9 @@ export class Economy
 			const cost = {};
 			for (const code of world.codes)
 				cost[code] = unitCost[code] * count;
-			requests.push({
-				"source": "economy",
-				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": count },
-				"claims": {
-					"resources": cost,
-					"population": this.catalog.population(template) * count,
-					"slots": [trainer.id]
-				},
-				"value": priorities.values.trainWorker,
-				"urgency": 1,
-				"tier": trainer.queueLength === 0 ? "production" : "investment"
-			});
+			const tier = trainer.queueLength === 0 ? "production" : "investment";
+			requests.push(inTier(trainRequest("economy", labour ? "workers" : "soldiers", trainer.id, template, count, cost,
+				this.catalog.population(template) * count, priorities.values.trainWorker, 1), tier));
 		}
 		return requests;
 	}
@@ -195,13 +182,7 @@ export class Economy
 			if (!best)
 				continue;
 			taken.add(best.id);
-			requests.push({
-				"source": "economy",
-				"action": { "type": "collect", "unit": best.id, "target": treasure.id },
-				"claims": { "workers": [best.id] },
-				"value": priorities.values.treasure,
-				"urgency": 1
-			});
+			requests.push(orderRequest("economy", "treasure", best.id, collect(treasure.id), priorities.values.treasure, 1));
 		}
 		return requests;
 	}
@@ -231,13 +212,8 @@ export class Economy
 					continue;
 				reserved.set(site.id, (reserved.get(site.id) || 0) + 1);
 				assigned[code] += 1;
-				requests.push({
-					"source": "economy",
-					"action": { "type": "gather", "worker": worker.id, "target": site.id, "resource": code },
-					"claims": { "workers": [worker.id] },
-					"value": priorities.values.assignIdleWorker,
-					"urgency": 1 + Math.max(0, deficit) / Math.max(1, total)
-				});
+				requests.push(gatherRequest("economy", "gather", worker.id, site.id, code, priorities.values.assignIdleWorker,
+					1 + Math.max(0, deficit) / Math.max(1, total)));
 				break;
 			}
 		}
@@ -296,13 +272,7 @@ export class Economy
 			reserved.set(best.site.id, (reserved.get(best.site.id) || 0) + 1);
 			assigned[surplus] -= 1;
 			assigned[deficit] += 1;
-			requests.push({
-				"source": "economy",
-				"action": { "type": "gather", "worker": best.worker.id, "target": best.site.id, "resource": deficit },
-				"claims": { "workers": [best.worker.id] },
-				"value": priorities.values.rebalance,
-				"urgency": 1
-			});
+			requests.push(gatherRequest("economy", "rebalance", best.worker.id, best.site.id, deficit, priorities.values.rebalance, 1));
 		}
 		return requests;
 	}

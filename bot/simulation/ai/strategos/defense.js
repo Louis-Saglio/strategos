@@ -1,3 +1,4 @@
+import { attack, garrisonIn, hold, orderRequest, unloadAllRequest, unloadRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 import { COVER_MARGIN, atWork } from "simulation/ai/strategos/forecast.js";
 import { balance, centroid, coveringHolders, skirmish } from "simulation/ai/strategos/tactics.js";
@@ -108,16 +109,10 @@ export class Defense
 		return best;
 	}
 
-	garrison(unit, holder, free, value, urgency)
+	garrison(purpose, unit, holder, free, value, urgency)
 	{
 		free.set(holder.id, free.get(holder.id) - 1);
-		return {
-			"source": "defense",
-			"action": { "type": "garrison", "unit": unit.id, "target": holder.id },
-			"claims": { "workers": [unit.id] },
-			"value": value,
-			"urgency": urgency
-		};
+		return orderRequest("defense", purpose, unit.id, garrisonIn(holder.id), value, urgency);
 	}
 
 	approaching(world)
@@ -139,15 +134,9 @@ export class Defense
 			this.hostiles.some(threat => squareDistance(threat.position, enemy.position) <= limit));
 	}
 
-	order(fighter, action, priorities, urgency)
+	order(purpose, fighter, action, priorities, urgency)
 	{
-		return {
-			"source": "defense",
-			"action": Object.assign({ "unit": fighter.id }, action),
-			"claims": { "workers": [fighter.id] },
-			"value": priorities.values.defend,
-			"urgency": urgency || 1
-		};
+		return orderRequest("defense", purpose, fighter.id, action, priorities.values.defend, urgency || 1);
 	}
 
 	engageRequests(world, priorities, free)
@@ -201,14 +190,16 @@ export class Defense
 		for (const hostile of this.hostiles)
 			allowed.add(hostile.id);
 		const home = world.centres[0];
+		const retreating = new Set();
 		const retreat = unit => {
+			retreating.add(unit.id);
 			const holder = this.nearestHolder(world, unit, free, candidate => candidate.heal > 0, RETREAT_RADIUS);
 			if (holder)
 			{
 				free.set(holder.id, free.get(holder.id) - 1);
-				return { "type": "garrison", "target": holder.id };
+				return garrisonIn(holder.id);
 			}
-			return home ? { "type": "walk", "x": home.position[0], "z": home.position[1] } : { "type": "hold" };
+			return home ? walkTo(home.position[0], home.position[1]) : hold();
 		};
 		const actions = skirmish(this.catalog, units, enemies, retreat);
 		const requests = [];
@@ -218,9 +209,9 @@ export class Defense
 			if (!action)
 			{
 				const { threat } = this.nearestThreat(world, unit.position);
-				action = unit.state.includes("COMBAT") && allowed.has(unit.target) || !threat ? { "type": "hold" } : { "type": "attack", "target": threat.id };
+				action = unit.state.includes("COMBAT") && allowed.has(unit.target) || !threat ? hold() : attack(threat.id);
 			}
-			requests.push(this.order(unit, action, priorities));
+			requests.push(this.order(retreating.has(unit.id) ? "retreat" : "engage", unit, action, priorities));
 		}
 		return requests;
 	}
@@ -244,7 +235,7 @@ export class Defense
 					candidate => candidate.arrows && this.nearestThreat(world, candidate.position).distance <= COVER_RADIUS, ENGAGE_RADIUS);
 				if (holder)
 				{
-					requests.push(this.garrison(fighter, holder, free, priorities.values.defend, 1));
+					requests.push(this.garrison("man", fighter, holder, free, priorities.values.defend, 1));
 					continue;
 				}
 			}
@@ -257,10 +248,10 @@ export class Defense
 			}
 			if (squareDistance(fighter.position, slot) <= SLOT_TOLERANCE * SLOT_TOLERANCE || fighter.state.includes("WALKING"))
 			{
-				requests.push(this.order(fighter, { "type": "hold" }, priorities));
+				requests.push(this.order("line", fighter, hold(), priorities));
 				continue;
 			}
-			requests.push(this.order(fighter, { "type": "walk", "x": slot[0], "z": slot[1] }, priorities));
+			requests.push(this.order("line", fighter, walkTo(slot[0], slot[1]), priorities));
 		}
 		return requests.concat(this.fight(world, priorities, free, defenders));
 	}
@@ -326,7 +317,7 @@ export class Defense
 			const holder = this.outnumbered && this.nearestHolder(world, worker, free, unarmed, SHELTER_RADIUS) ||
 				this.nearestHolder(world, worker, free, any, SHELTER_RADIUS);
 			if (holder)
-				requests.push(this.garrison(worker, holder, free, priorities.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
+				requests.push(this.garrison("shelter", worker, holder, free, priorities.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
 		}
 		return requests;
 	}
@@ -341,13 +332,7 @@ export class Defense
 			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
 			const units = holder.units.filter(id => safe || !this.outnumbered && holder.soldiers.includes(id) && !(holder.heal > 0 && holder.hurt.includes(id)));
 			if (units.length)
-				requests.push({
-					"source": "defense",
-					"action": { "type": "unload", "holder": holder.id, "units": units },
-					"claims": { "slots": ["garrison-" + holder.id] },
-					"value": priorities.values.defend,
-					"urgency": 1
-				});
+				requests.push(unloadRequest("defense", "unload", holder.id, units, priorities.values.defend, 1));
 		}
 		return requests;
 	}
@@ -356,12 +341,6 @@ export class Defense
 	{
 		return world.holders
 			.filter(holder => holder.garrisoned > 0 && !holder.forward)
-			.map(holder => ({
-				"source": "defense",
-				"action": { "type": "unload-all", "holder": holder.id },
-				"claims": { "slots": ["garrison-" + holder.id] },
-				"value": priorities.values.shelter,
-				"urgency": 1
-			}));
+			.map(holder => unloadAllRequest("defense", "release", holder.id, priorities.values.shelter, 1));
 	}
 }

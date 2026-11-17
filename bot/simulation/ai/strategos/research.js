@@ -1,3 +1,4 @@
+import { inTier, researchRequest, reserving } from "simulation/ai/strategos/requests.js";
 import { TECH_HORIZON_S, enemyProfile, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 
 const PAYBACK_LIMIT_S = 180;
@@ -60,14 +61,9 @@ export class Research
 			chosen.add(best.tech);
 			if (this.catalog.technology(best.tech).sibling)
 				chosen.add(this.catalog.technology(best.tech).sibling);
-			requests.push({
-				"source": "research",
-				"action": { "type": "research", "researcher": researcher.id, "tech": best.tech, "payback": Math.round(best.payback) },
-				"claims": { "resources": best.cost, "slots": [researcher.id] },
-				"value": priorities.values.research,
-				"urgency": 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S,
-				"tier": best.payback <= PRODUCTION_PAYBACK_S ? "production" : "investment"
-			});
+			const tier = best.payback <= PRODUCTION_PAYBACK_S ? "production" : "investment";
+			requests.push(inTier(researchRequest("research", "technology", researcher.id, best.tech, Math.round(best.payback), best.cost,
+				priorities.values.research, 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S), tier));
 		}
 		return requests;
 	}
@@ -103,14 +99,8 @@ export class Research
 		}
 		if (!best || world.codes.some(code => world.resources[code] < UNLOCK_STOCK * best.cost[code]))
 			return null;
-		return {
-			"source": "research",
-			"action": { "type": "research", "researcher": best.researcher.id, "tech": best.tech, "payback": 0 },
-			"claims": { "resources": best.cost, "slots": [best.researcher.id] },
-			"value": priorities.values.research,
-			"urgency": 1,
-			"tier": "investment"
-		};
+		return inTier(researchRequest("research", "unlock", best.researcher.id, best.tech, 0, best.cost, priorities.values.research, 1),
+			"investment");
 	}
 
 	phaseRequest(world, priorities)
@@ -123,14 +113,7 @@ export class Research
 			.sort((a, b) => a.queueLength - b.queueLength || a.id - b.id)[0];
 		if (!researcher)
 			return null;
-		return {
-			"source": "research",
-			"action": { "type": "research", "researcher": researcher.id, "tech": tech, "payback": 0 },
-			"claims": { "resources": this.catalog.techCost(tech, researcher.template), "slots": [researcher.id] },
-			"value": priorities.values.phase,
-			"urgency": 1,
-			"reserve": true,
-			"tier": "production"
-		};
+		return inTier(reserving(researchRequest("research", "phase", researcher.id, tech, 0, this.catalog.techCost(tech, researcher.template),
+			priorities.values.phase, 1)), "production");
 	}
 }

@@ -1,3 +1,4 @@
+import { orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const SAFE_RADIUS = 35;
@@ -39,13 +40,8 @@ export class Medics
 			if (!this.trained)
 				this.telemetry.line("MEDIC", world.time, { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length });
 			this.trained += 1;
-			return [{
-				"source": "medics",
-				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
-				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-				"value": priorities.values.support,
-				"urgency": 1
-			}];
+			return [trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),
+				priorities.values.support, 1)];
 		}
 		return [];
 	}
@@ -103,13 +99,7 @@ export class Medics
 			}
 			if (!goal || squareDistance(goal, healer.position) <= REACH * REACH || healer.state.includes("WALKING"))
 				continue;
-			requests.push({
-				"source": "medics",
-				"action": { "type": "walk", "unit": healer.id, "x": goal[0], "z": goal[1] },
-				"claims": { "workers": [healer.id] },
-				"value": priorities.values.support,
-				"urgency": 1
-			});
+			requests.push(orderRequest("medics", "follow", healer.id, walkTo(goal[0], goal[1]), priorities.values.support, 1));
 		}
 		return requests;
 	}
