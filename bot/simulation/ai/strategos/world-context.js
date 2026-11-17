@@ -26,7 +26,7 @@ function techCost(gameState, codes, tech)
 	return Object.freeze(cost);
 }
 
-export function contextSection(gameState, catalog, seas, pendingConstructions, demand)
+export function contextSection(gameState, catalog, seas, pendingConstructions, demand, assignments)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const victory = Object.freeze(Array.from(gameState.getVictoryConditions()).sort());
@@ -56,7 +56,8 @@ export function contextSection(gameState, catalog, seas, pendingConstructions, d
 		},
 		"later": {
 			"nextPhaseCost": () => techCost(gameState, catalog.codes, nextPhase),
-			"phaseNeeds": () => Object.freeze(phaseNeeds(gameState, nextPhase))
+			"phaseNeeds": () => Object.freeze(phaseNeeds(gameState, nextPhase)),
+			"assignments": assignments
 		}
 	};
 }

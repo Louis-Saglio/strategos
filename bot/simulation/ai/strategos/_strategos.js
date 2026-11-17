@@ -67,7 +67,7 @@ StrategosBot.prototype.decide = function()
 	const stopwatch = new Stopwatch();
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
 	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, this.musterIndex, pending,
-		this.allocator.demand(), stopwatch);
+		this.allocator.demand(), this.allocator.assignments(), stopwatch);
 	stopwatch.lap("world");
 	this.battleLog.observe(world);
 	stopwatch.lap("BattleLog");
