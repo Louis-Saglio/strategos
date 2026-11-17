@@ -9,7 +9,7 @@ how many it removed or added:
 
 - declared: numeric literals inside the module-level `const NAME = ...;`
   declarations, exported or not (one for `const REACH = 150;`, every numeric leaf of a
-  table such as `OPENING` in strategy.js), with the number of such
+  table such as `BASE` in strategy.js), with the number of such
   declarations and of those holding no number (class names, template
   paths, state lists);
 - inline: numeric literals anywhere else in the code, other than 0, 1 and
@@ -42,7 +42,7 @@ KINDS = [
     ("compute budget", r"KEPT|TRIED|CANDIDATES|PER_DECISION|COUNTED|EXPOSED|tried"),
     ("switch threshold", r"ENTER|EXIT|EDGE|SUPERIORITY|QUORUM|ABORT|ENGAGE|enter|exit|superiority|edge"),
     ("population threshold", r"[Pp]opulation|civilian|Trainer|settlers|founders|builders"),
-    ("priority", r"^OPENING\.values\."),
+    ("priority", r"^(?:BASE|OPENING)\.values\."),
     ("weight or price", r"WEIGHT|SHARE|GAIN|PRICE|VALUE|CREDIT|RATE|BASE$|SMOOTHING|WORTH|SCALE|FRACTION|MULTIPLIER"
                         r"|BONUS|RETURN|RATIO|LOSS|FLOOR|BUFFER|KEEP$|STOCK|SURPLUS|URGENCY|[Ss]hare|[Ww]eight|[Ww]ealth"
                         r"|Rate|cost|Cost"),

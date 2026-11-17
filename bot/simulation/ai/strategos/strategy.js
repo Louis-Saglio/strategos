@@ -2,7 +2,7 @@ import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuati
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 import { arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
-const OPENING = {
+const BASE = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "dropsite": 12, "laboratory": 12, "expansion": 12, "dock": 12, "transport": 12, "production": 11, "siege": 11, "market": 11, "medic": 11, "caravan": 11, "upgrade": 12, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"housing": { "base": 3, "perTrainer": 4 },
@@ -30,14 +30,26 @@ const OPENING = {
 		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4, "phasePopulation": 50 },
 	"forward": { "settlers": 15, "builders": 20, "reach": 120, "clearance": 250, "shore": 120, "retryMs": 60000 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
-		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] }
+		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] },
+	"protectHero": false,
+	"seekRelics": false,
+	"raiseWonder": false
 };
 
-const PLANS = {
-	"regicide": world => world.victory.includes("regicide"),
-	"relics": world => world.victory.includes("capture_the_relic"),
-	"wonder": world => world.victory.includes("wonder")
-};
+const PLANS = [
+	{ "name": "regicide", "applies": context => context.victory.includes("regicide"), "set": { "protectHero": true } },
+	{ "name": "relics", "applies": context => context.victory.includes("capture_the_relic"), "set": { "seekRelics": true } },
+	{ "name": "wonder", "applies": context => context.victory.includes("wonder"), "set": { "raiseWonder": true } }
+];
+
+function overlay(base, set)
+{
+	const result = Object.assign({}, base);
+	for (const key in set)
+		result[key] = set[key] !== null && typeof set[key] === "object" && !Array.isArray(set[key]) && base[key] !== undefined ?
+			overlay(base[key], set[key]) : set[key];
+	return Object.freeze(result);
+}
 
 const NO_GUARD = Object.freeze({ "group": Object.freeze([]), "needed": Object.freeze([]), "ids": new Set(), "ratio": Infinity, "holds": true, "value": 0 });
 const FAR = 1e6;
@@ -55,9 +67,11 @@ export class Strategy
 	{
 		this.codes = codes;
 		this.catalog = catalog;
+		this.table = BASE;
+		this.plans = Object.freeze([]);
 		this.shares = {};
 		for (const code of codes)
-			this.shares[code] = OPENING.gatherShares[code] || 0;
+			this.shares[code] = BASE.gatherShares[code] || 0;
 		this.reported = Object.assign({}, this.shares);
 		this.started = false;
 		this.phaseWanted = 0;
@@ -68,7 +82,7 @@ export class Strategy
 
 	labour(world)
 	{
-		const plan = OPENING.labour;
+		const plan = this.table.labour;
 		const total = world.labour;
 		for (const code of this.codes)
 			this.gap[code] += plan.smoothing * (this.shares[code] * total - world.gatherers[code] - this.gap[code]);
@@ -89,7 +103,7 @@ export class Strategy
 
 	ferry(world, labour)
 	{
-		const plan = OPENING.labour;
+		const plan = this.table.labour;
 		if (!world.centres.length || !labour.starved.length)
 			return null;
 		const ports = world.regions.filter(region => region.anchors > 0 && region.docks > 0);
@@ -127,26 +141,26 @@ export class Strategy
 		const next = world.phase + 1;
 		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
 			return true;
-		if (world.phase === 1 && world.population >= OPENING.colony.phasePopulation && world.regions.some(region =>
-			region.id !== world.homeRegion && region.docks > 0 && !region.centres && world.regionArea(region.id) >= OPENING.colony.centreArea))
+		if (world.phase === 1 && world.population >= this.table.colony.phasePopulation && world.regions.some(region =>
+			region.id !== world.homeRegion && region.docks > 0 && !region.centres && world.regionArea(region.id) >= this.table.colony.centreArea))
 		{
 			this.phaseWanted = next;
 			return true;
 		}
-		const housed = world.population + world.queuedPopulation >= world.populationLimit - OPENING.blockedGrowth.room &&
+		const housed = world.population + world.queuedPopulation >= world.populationLimit - this.table.blockedGrowth.room &&
 			world.populationLimit < world.populationMax && !world.foundations.some(foundation => foundation.populationBonus > 0) &&
 			!world.pendingConstructions.some(pending => this.catalog.populationBonus(pending.template) > 0);
 		if (!housed)
 			this.blockedSince = undefined;
 		else if (this.blockedSince === undefined)
 			this.blockedSince = world.time;
-		const byBlockedGrowth = housed && world.time - this.blockedSince >= OPENING.blockedGrowth.afterMs && !!world.nextPhaseTech &&
+		const byBlockedGrowth = housed && world.time - this.blockedSince >= this.table.blockedGrowth.afterMs && !!world.nextPhaseTech &&
 			world.codes.every(code => world.resources[code] >= world.nextPhaseCost[code]);
 		if (byBlockedGrowth)
 			this.phaseWanted = next;
-		const byPopulation = byBlockedGrowth || world.population >= (OPENING.phaseUpPopulation[next] || Infinity);
+		const byPopulation = byBlockedGrowth || world.population >= (this.table.phaseUpPopulation[next] || Infinity);
 		const { surplus } = exchangeOutlook(world);
-		const bySurplus = next >= OPENING.surplusPhaseFrom && !!world.nextPhaseTech &&
+		const bySurplus = next >= this.table.surplusPhaseFrom && !!world.nextPhaseTech &&
 			world.codes.every(code => surplus[code] >= world.nextPhaseCost[code]);
 		if (bySurplus)
 			this.phaseWanted = next;
@@ -155,7 +169,7 @@ export class Strategy
 
 	colony(world, labour, ferry)
 	{
-		const plan = OPENING.colony;
+		const plan = this.table.colony;
 		const starved = ferry ? null : labour.short[0] || null;
 		const outposts = world.regions.filter(region => region.id !== world.homeRegion && (region.docks > 0 || region.centres > 0)).length;
 		if (!world.centres.length || !world.seas.length || outposts >= plan.max ||
@@ -187,7 +201,7 @@ export class Strategy
 
 	forward(world)
 	{
-		const plan = OPENING.forward;
+		const plan = this.table.forward;
 		const crossing = world.crossing;
 		if (!crossing || !world.offered.some(name => this.catalog.isSettlement(name)) ||
 		    world.regions.some(region => region.id === crossing.region && region.centres > 0))
@@ -223,14 +237,14 @@ export class Strategy
 
 	colonyOpen(world, position, region)
 	{
-		const plan = OPENING.colony;
+		const plan = this.table.colony;
 		return !world.regions.some(entry => entry.id === region && (entry.docks > 0 || entry.centres > 0 || entry.enemyStructures > 0)) &&
 			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.enemyClearance * plan.enemyClearance);
 	}
 
 	findColony(world, starved)
 	{
-		const plan = OPENING.colony;
+		const plan = this.table.colony;
 		const grid = world.wealth;
 		if (!world.codes.every(code => grid.totals[code]))
 			return null;
@@ -271,7 +285,7 @@ export class Strategy
 
 	threatened(world)
 	{
-		const plan = OPENING.military.threat;
+		const plan = this.table.military.threat;
 		const home = world.centres[0];
 		const ready = world.enemyFighters.filter(unit => !atWork(unit));
 		if (!home || ready.length < plan.minEnemy)
@@ -290,7 +304,7 @@ export class Strategy
 
 	military(world)
 	{
-		const plan = OPENING.military;
+		const plan = this.table.military;
 		const level = this.plenty ? plan.plenty.exit : plan.plenty.enter;
 		this.plenty = world.codes.every(code => world.resources[code] >= level);
 		const target = this.plenty ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
@@ -309,7 +323,7 @@ export class Strategy
 
 	guard(world)
 	{
-		const plan = OPENING.guard;
+		const plan = this.table.guard;
 		const inside = new Set(world.threats.filter(threat => world.ownSide(threat.position)).map(threat => threat.id));
 		for (const unit of world.wild)
 			inside.add(unit.id);
@@ -377,7 +391,7 @@ export class Strategy
 
 	scarce(world)
 	{
-		const plan = OPENING.trade;
+		const plan = this.table.trade;
 		const codes = world.centres.length && world.codes.every(code => world.wealth.regions[code]) ?
 			plan.scarceCodes.filter(code => this.codes.includes(code) &&
 				world.regionWealth(world.homeRegion, code) + world.resources[code] < plan.scarceWealth) : [];
@@ -391,15 +405,21 @@ export class Strategy
 		return this.scarceCodes;
 	}
 
-	plans(world)
+	select(world)
 	{
-		return Object.keys(PLANS).filter(name => PLANS[name](world));
+		const plans = PLANS.filter(plan => plan.applies(world.context));
+		if (plans.length === this.plans.length && plans.every((plan, index) => plan.name === this.plans[index]))
+			return;
+		this.plans = Object.freeze(plans.map(plan => plan.name));
+		this.table = plans.reduce((table, plan) => overlay(table, plan.set), BASE);
+		this.changed = true;
 	}
 
 	update(world)
 	{
 		this.changed = !this.started;
 		this.started = true;
+		this.select(world);
 		if (world.demand.observed)
 			this.adaptShares(world);
 		const labour = this.labour(world);
@@ -409,27 +429,27 @@ export class Strategy
 		this.ferried = ferry;
 		this.shortCode = labour.short[0] || null;
 		this.priorities = Object.freeze({
-			"phase": "opening",
+			"plans": this.plans,
 			"gatherShares": Object.freeze(Object.assign({}, this.shares)),
-			"values": OPENING.values,
-			"housing": OPENING.housing,
+			"values": this.table.values,
+			"housing": this.table.housing,
 			"military": this.military(world),
-			"offense": OPENING.offense,
+			"offense": this.table.offense,
 			"guard": this.guard(world),
-			"guardPlan": OPENING.guard,
-			"expansion": OPENING.expansion,
-			"medics": OPENING.medics,
-			"trade": OPENING.trade,
+			"guardPlan": this.table.guard,
+			"expansion": this.table.expansion,
+			"medics": this.table.medics,
+			"trade": this.table.trade,
 			"scarce": this.scarce(world),
-			"naval": OPENING.naval,
-			"protectHero": this.plans(world).includes("regicide"),
-			"seekRelics": this.plans(world).includes("relics"),
-			"raiseWonder": this.plans(world).includes("wonder"),
+			"naval": this.table.naval,
+			"protectHero": this.table.protectHero,
+			"seekRelics": this.table.seekRelics,
+			"raiseWonder": this.table.raiseWonder,
 			"colony": this.colony(world, labour, ferry),
-			"colonyPlan": OPENING.colony,
+			"colonyPlan": this.table.colony,
 			"ferry": ferry,
 			"forward": this.forward(world),
-			"forwardPlan": OPENING.forward,
+			"forwardPlan": this.table.forward,
 			"starved": Object.freeze(labour.starved),
 			"short": Object.freeze(labour.short),
 			"advancePhase": this.wantsPhase(world)

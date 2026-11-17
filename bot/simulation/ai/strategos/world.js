@@ -1144,6 +1144,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		for (const name of worker.buildable)
 			offered.add(name);
 	const seas = accessibility.regionLinks[homeRegion] || [];
+	const victory = Object.freeze(Array.from(gameState.getVictoryConditions()).sort());
 	const objectives = enemyCentres.length ? enemyCentres : enemyCritical.length || enemyStructures.length ?
 		enemyCritical.map(ent => enemyTarget(gameState, catalog, ent, ent.owner(), player)) :
 		stragglers.map(ent => Object.freeze({
@@ -1194,7 +1195,15 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"markets": Object.freeze(markets),
 		"losses": lossIndex.flush(gameState.getTimeElapsed()),
 		"homeRegion": homeRegion,
-		"victory": Object.freeze(Array.from(gameState.getVictoryConditions()).sort()),
+		"victory": victory,
+		"context": Object.freeze({
+			"victory": victory,
+			"populationMax": gameState.getPopulationMax(),
+			"mapSize": accessibility.width * accessibility.cellSize,
+			"enemies": gameState.getNumPlayerEnemies(),
+			"allies": gameState.getExclusiveAllies().filter(ally => gameState.sharedScript.playersData[ally].state !== "defeated").length,
+			"sea": seas.length > 0
+		}),
 		"heroes": Object.freeze(heroes),
 		"locked": Object.freeze(locked),
 		"relics": Object.freeze(relics.sort((a, b) => a.id - b.id)),

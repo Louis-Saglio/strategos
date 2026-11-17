@@ -357,8 +357,8 @@ tools/league.py --table tmp/league-NAME                         # the table agai
 `tools/league.json` names the members: `"player"` is an AI the runner
 knows (`petra/5/aggressive`, `brennus`); `"bot"` is a commit of this
 repository, the bot as it was then; `"bot"` with `"set"` is that commit
-with values of its strategy table overridden (dotted paths into `OPENING`
-of `strategy.js`), a plan variant. Commits are pinned so a member stays
+with values of its strategy table overridden (dotted paths into `BASE`
+of `strategy.js`, named `OPENING` in older commits), a plan variant. Commits are pinned so a member stays
 the same opponent whatever the working tree becomes; a member that no
 longer moves when the bot changes can be dropped, a new one is one entry.
 `"civ"` and `"biome"` pin what a member needs (Brennus plays gaul on
@@ -536,7 +536,7 @@ tools/install-local.sh [COMMIT]     # default HEAD
 `check_bot.py` fails when a bot JS file does not parse or contains a
 comment. `constants.py [--list] [MOD_DIR]` counts the numbers written in
 the bot: the numeric literals of the module-level `const NAME = ...`
-declarations (every numeric leaf of a table such as `OPENING`) and the
+declarations (every numeric leaf of a table such as `BASE`) and the
 other numeric literals of the code apart from 0, 1 and 2, per file, with
 the declared ones grouped by a kind guessed from their name and the names
 declared in several files. A commit that removes or adds constants gives

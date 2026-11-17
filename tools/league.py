@@ -13,7 +13,7 @@ opponents that do:
   civ and team (`petra/5/aggressive`, `brennus`);
 - "bot": a commit of this repository — the bot as it was then;
 - "bot" + "set": that commit with values of its strategy table changed
-  (`OPENING` in strategy.js; a dotted path, `military.civilianTarget`): a
+  (`BASE` in strategy.js, `OPENING` before the plans; a dotted path, `military.civilianTarget`): a
   plan variant. The commit is pinned, so a member stays the same opponent
   whatever the working tree becomes.
 
@@ -58,7 +58,7 @@ REPO = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 import analyze  # noqa: E402
 
-TABLE_RE = re.compile(r"(const OPENING = )(\{.*?\n\})(;)", re.S)
+TABLE_RE = re.compile(r"(const (?:BASE|OPENING) = )(\{.*?\n\})(;)", re.S)
 
 
 def die(msg):
@@ -90,7 +90,7 @@ def build(member, spec, dest):
             text = fh.read()
         m = TABLE_RE.search(text)
         if not m:
-            die(f"member {member}: no `const OPENING = {{...}};` table in strategy.js at {spec['bot']}")
+            die(f"member {member}: no `const BASE = {{...}};` table in strategy.js at {spec['bot']}")
         table = json.loads(m.group(2))
         for dotted, value in spec["set"].items():
             node = table
