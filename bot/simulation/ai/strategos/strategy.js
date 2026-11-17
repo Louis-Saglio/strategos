@@ -1,7 +1,9 @@
 import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
+import { centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
+import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
-import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
-import { REACH_RADIUS, arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { territoryAt } from "simulation/ai/strategos/world.js";
+import { REACH_RADIUS, arriving, atWork, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const BASE = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -79,6 +81,11 @@ export class Strategy
 		this.gap = {};
 		for (const code of codes)
 			this.gap[code] = 0;
+		this.plenty = new Hysteresis(false);
+		this.underThreat = new Hysteresis(false);
+		this.held = new Hysteresis(true);
+		this.colonySearched = new Retry();
+		this.frontSearched = new Retry();
 	}
 
 	labour(world)
@@ -140,7 +147,7 @@ export class Strategy
 	wantsPhase(world)
 	{
 		const next = world.phase + 1;
-		if (this.phaseWanted === next || this.plenty && !!world.nextPhaseTech)
+		if (this.phaseWanted === next || this.plenty.on && !!world.nextPhaseTech)
 			return true;
 		if (world.phase === 1 && world.population >= this.table.colony.phasePopulation && world.regions.some(region =>
 			region.id !== world.homeRegion && region.docks > 0 && !region.centres && world.regionArea(region.id) >= this.table.colony.centreArea))
@@ -189,9 +196,8 @@ export class Strategy
 			}
 			return this.colonySite;
 		}
-		if (this.colonySearched !== undefined && world.time - this.colonySearched < RETRY_MS)
+		if (!this.colonySearched.attempt(world.time, RETRY_MS))
 			return null;
-		this.colonySearched = world.time;
 		const found = this.findColony(world, starved);
 		this.colonySite = found && Object.freeze(Object.assign({}, found, {
 			"starved": starved, "kind": settlement && world.regionArea(found.region) >= plan.centreArea ? "centre" : "dock"
@@ -211,9 +217,8 @@ export class Strategy
 			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.clearance * plan.clearance);
 		if (this.front && this.front.region === crossing.region && clear(this.front.position))
 			return this.front;
-		if (this.frontSearched !== undefined && world.time - this.frontSearched < RETRY_MS)
+		if (!this.frontSearched.attempt(world.time, RETRY_MS))
 			return null;
-		this.frontSearched = world.time;
 		const grid = world.wealth;
 		let best = null;
 		for (let j = 0; j < grid.height; ++j)
@@ -277,7 +282,7 @@ export class Strategy
 					if (code === starved && !total)
 						wealth = -Infinity;
 				}
-				const score = wealth / (1 + Math.sqrt(squareDistance(position, home)) / plan.distanceScale);
+				const score = wealth / (1 + distanceBetween(position, home) / plan.distanceScale);
 				if (score > 0 && (!best || score > best.score))
 					best = { "position": position, "region": region, "sea": sea, "score": score };
 			}
@@ -291,7 +296,7 @@ export class Strategy
 		const ready = world.enemyFighters.filter(unit => !atWork(unit));
 		if (!home || ready.length < plan.minEnemy)
 		{
-			this.underThreat = false;
+			this.underThreat.on = false;
 			return false;
 		}
 		const ours = world.fighters.filter(fighter => fighter.region === world.homeRegion);
@@ -299,24 +304,23 @@ export class Strategy
 		const outlook = forecast(engagement(this.catalog, ours, ready, cover, [], [], [], true),
 			{ "horizonS": plan.horizonS, "joinScale": 0 });
 		const ratio = outlook.theirs.value / Math.max(1, outlook.ours.value);
-		this.underThreat = this.underThreat ? ratio < plan.exit : ratio < plan.enter;
-		return this.underThreat;
+		return this.underThreat.below(ratio, plan.enter, plan.exit);
 	}
 
 	military(world)
 	{
 		const plan = this.table.military;
-		const level = this.plenty ? plan.plenty.exit : plan.plenty.enter;
-		this.plenty = world.codes.every(code => world.resources[code] >= level);
-		const target = this.plenty ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
+		const level = this.plenty.threshold(plan.plenty.enter, plan.plenty.exit);
+		this.plenty.on = world.codes.every(code => world.resources[code] >= level);
+		const target = this.plenty.on ? plan.civilianFloor : Math.min(plan.civilianTarget, Math.round(plan.civilianShare * world.populationMax));
 		const hostiles = world.threats.length + world.wild.length;
 		if (hostiles >= plan.raid.hostiles && hostiles >= plan.raid.share * (world.fighters.length + world.garrisonedSoldiers))
 			this.raidedAt = world.time;
 		const raided = this.raidedAt !== undefined && world.time - this.raidedAt < plan.raid.memoryMs || this.threatened(world);
-		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty ||
+		if (!this.militaryPlan || this.militaryPlan.civilianTarget !== target || this.militaryPlan.plentiful !== this.plenty.on ||
 		    this.militaryPlan.raided !== raided)
 		{
-			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target, "plentiful": this.plenty, "raided": raided }));
+			this.militaryPlan = Object.freeze(Object.assign({}, plan, { "civilianTarget": target, "plentiful": this.plenty.on, "raided": raided }));
 			this.changed = true;
 		}
 		return this.militaryPlan;
@@ -333,7 +337,7 @@ export class Strategy
 		if (!seeds.length)
 		{
 			this.guards = new Set();
-			this.held = true;
+			this.held.on = true;
 			return NO_GUARD;
 		}
 		const near = plan.near * plan.near;
@@ -385,9 +389,9 @@ export class Strategy
 		for (const entry of opposing)
 			value += this.catalog.costSum(entry.unit.template);
 		this.guards = new Set(needed.map(fighter => fighter.id));
-		this.held = this.held === false ? whole >= plan.enter : whole >= plan.exit;
+		this.held.atLeast(whole, plan.enter, plan.exit);
 		return Object.freeze({ "group": Object.freeze(group), "centre": Object.freeze(centre), "needed": Object.freeze(needed), "ids": this.guards,
-			"ratio": whole, "holds": this.held, "value": value });
+			"ratio": whole, "holds": this.held.on, "value": value });
 	}
 
 	scarce(world)

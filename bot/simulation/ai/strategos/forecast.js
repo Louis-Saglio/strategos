@@ -1,3 +1,4 @@
+import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 
 export const CONTACT_RADIUS = 60;
@@ -229,26 +230,10 @@ export function engagement(catalog, units, opponents, cover, opposingCover, arri
 	};
 }
 
-function apart(a, b)
-{
-	return (a[0] - b[0]) * (a[0] - b[0]) + (a[1] - b[1]) * (a[1] - b[1]);
-}
-
-export function centroid(units)
-{
-	const centre = [0, 0];
-	for (const unit of units)
-	{
-		centre[0] += unit.position[0] / units.length;
-		centre[1] += unit.position[1] / units.length;
-	}
-	return centre;
-}
-
 export function within(units, centre, taken)
 {
 	const limit = CONTACT_RADIUS * CONTACT_RADIUS;
-	return units.filter(unit => !(taken && taken.has(unit.id)) && apart(unit.position, centre) <= limit);
+	return units.filter(unit => !(taken && taken.has(unit.id)) && squareDistance(unit.position, centre) <= limit);
 }
 
 export function atWork(unit)
@@ -265,7 +250,7 @@ export function arriving(catalog, units, centre, present, working, reach, fighti
 		if (present.has(unit.id) || !fighting && unit.state.includes("COMBAT") ||
 		    working && atWork(unit))
 			continue;
-		const distance = apart(unit.position, centre);
+		const distance = squareDistance(unit.position, centre);
 		if (distance > limit)
 			continue;
 		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template, unit.owner).speed)) });
@@ -280,7 +265,7 @@ export function covering(structures, centre, side)
 		if (!(structure.fire.arrows > 0))
 			return false;
 		const reach = (structure.range + COVER_MARGIN) * (structure.range + COVER_MARGIN);
-		return apart(structure.position, centre) <= reach || apart(structure.position, stand) <= reach;
+		return squareDistance(structure.position, centre) <= reach || squareDistance(structure.position, stand) <= reach;
 	});
 }
 
@@ -288,7 +273,7 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 {
 	const seen = within(enemies, centre);
 	const preyReach = plan.preyReach || plan.reach;
-	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= preyReach * preyReach);
+	const prey = (plan.prey || []).filter(unit => squareDistance(unit.position, centre) <= preyReach * preyReach);
 	const lead = plan.lead || 0;
 	const mustered = [];
 	const recruited = [];

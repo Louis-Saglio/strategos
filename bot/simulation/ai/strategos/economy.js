@@ -1,6 +1,7 @@
+import { distanceBetween, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { collect, gatherRequest, inTier, orderRequest, reserving, trainRequest } from "simulation/ai/strategos/requests.js";
+import { Retry } from "simulation/ai/strategos/switches.js";
 import { HERO_EDGE, TRAINING_BATCH, heroWorth, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
@@ -15,6 +16,7 @@ export class Economy
 	constructor(catalog)
 	{
 		this.catalog = catalog;
+		this.heroOrdered = new Retry();
 	}
 
 	requests(world, priorities)
@@ -29,7 +31,7 @@ export class Economy
 
 	heroRequests(world, priorities)
 	{
-		if (world.heroes.length || this.heroOrdered !== undefined && world.time - this.heroOrdered < HERO_RETRY_MS)
+		if (world.heroes.length || !this.heroOrdered.due(world.time, HERO_RETRY_MS))
 			return [];
 		for (const trainer of world.trainers)
 		{
@@ -44,7 +46,7 @@ export class Economy
 			if (!stocked && best.worth < HERO_EDGE * world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0))
 				return [];
 			if (world.codes.every(code => world.resources[code] >= (cost[code] || 0)))
-				this.heroOrdered = world.time;
+				this.heroOrdered.record(world.time);
 			return [reserving(trainRequest("economy", "hero", trainer.id, best.name, 1, cost, this.catalog.population(best.name),
 				priorities.values.research, 1))];
 		}
@@ -165,20 +167,8 @@ export class Economy
 		{
 			if (collected.has(treasure.id))
 				continue;
-			let best = null;
-			let bestDistance = Infinity;
-			for (const worker of world.workers)
-			{
-				if (!worker.collector || taken.has(worker.id) ||
-				    !(worker.idle || worker.state.includes("GATHER") || worker.state.includes("RETURNRESOURCE")))
-					continue;
-				const distance = squareDistance(worker.position, treasure.position);
-				if (distance < bestDistance || (distance === bestDistance && worker.id < best.id))
-				{
-					best = worker;
-					bestDistance = distance;
-				}
-			}
+			const best = nearest(world.workers, treasure.position, lowerId, worker => worker.collector && !taken.has(worker.id) &&
+				(worker.idle || worker.state.includes("GATHER") || worker.state.includes("RETURNRESOURCE"))).item;
 			if (!best)
 				continue;
 			taken.add(best.id);
@@ -287,7 +277,7 @@ export class Economy
 			    site.region >= 2 && site.region !== worker.region || site.armed && !worker.soldier ||
 			    site.prey && worker.profile.rates[site.kind] < HUNTER_RATE)
 				continue;
-			const distance = Math.sqrt(squareDistance(site.position, worker.position)) + 2 * site.anchorDistance;
+			const distance = distanceBetween(site.position, worker.position) + 2 * site.anchorDistance;
 			if (distance < bestDistance)
 			{
 				best = site;

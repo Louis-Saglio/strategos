@@ -1,6 +1,7 @@
 import { capture, hold, orderRequest, stance, walkTo } from "simulation/ai/strategos/requests.js";
 import { CONTACT_RADIUS } from "simulation/ai/strategos/forecast.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
+import { awayFrom, firstListed, nearest, squareDistance, toward } from "simulation/ai/strategos/geometry.js";
+import { Change, Hysteresis } from "simulation/ai/strategos/switches.js";
 import { balance } from "simulation/ai/strategos/tactics.js";
 
 const POST_CLEARANCE = 12;
@@ -27,41 +28,16 @@ export class Guard
 				requests.push(this.order("hero-stance", hero, stance("passive"), priorities));
 				continue;
 			}
-			const centre = this.nearest(world.centres, hero.position);
-			const danger = this.nearest(world.enemyFighters.filter(enemy =>
-				squareDistance(enemy.position, centre.position) <= DANGER_RADIUS * DANGER_RADIUS), centre.position) ||
-				this.nearest(world.enemyTargets, centre.position);
-			const post = this.post(centre, danger ? danger.position : hero.position);
+			const centre = nearest(world.centres, hero.position, firstListed).item;
+			const danger = nearest(world.enemyFighters.filter(enemy =>
+				squareDistance(enemy.position, centre.position) <= DANGER_RADIUS * DANGER_RADIUS), centre.position, firstListed).item ||
+				nearest(world.enemyTargets, centre.position, firstListed).item;
+			const post = awayFrom(centre.position, danger ? danger.position : hero.position, centre.radius + POST_CLEARANCE);
 			const away = squareDistance(hero.position, post) > POST_TOLERANCE * POST_TOLERANCE;
 			requests.push(this.order("hero-post", hero, away && !hero.state.includes("WALKING") ?
 				walkTo(post[0], post[1]) : hold(), priorities));
 		}
 		return requests;
-	}
-
-	nearest(items, position)
-	{
-		let best = null;
-		let bestDistance = Infinity;
-		for (const item of items)
-		{
-			const distance = squareDistance(item.position, position);
-			if (distance < bestDistance)
-			{
-				best = item;
-				bestDistance = distance;
-			}
-		}
-		return best;
-	}
-
-	post(centre, danger)
-	{
-		const dx = centre.position[0] - danger[0];
-		const dz = centre.position[1] - danger[1];
-		const length = Math.sqrt(dx * dx + dz * dz) || 1;
-		const reach = centre.radius + POST_CLEARANCE;
-		return [centre.position[0] + dx / length * reach, centre.position[1] + dz / length * reach];
 	}
 
 	order(purpose, hero, action, priorities)
@@ -84,8 +60,8 @@ export class Relics
 		this.catalog = catalog;
 		this.telemetry = telemetry;
 		this.squad = new Set();
-		this.target = null;
-		this.contested = false;
+		this.target = new Change(null);
+		this.contested = new Hysteresis(false);
 	}
 
 	requests(world, priorities)
@@ -98,11 +74,7 @@ export class Relics
 		{
 			if (relic.owner !== world.player)
 				continue;
-			const dx = relic.position[0] - home.position[0];
-			const dz = relic.position[1] - home.position[1];
-			const length = Math.sqrt(dx * dx + dz * dz) || 1;
-			const reach = home.radius + RELIC_POST_CLEARANCE;
-			const post = [home.position[0] + dx / length * reach, home.position[1] + dz / length * reach];
+			const post = toward(home.position, relic.position, home.radius + RELIC_POST_CLEARANCE);
 			const away = squareDistance(relic.position, post) > RELIC_POST_TOLERANCE * RELIC_POST_TOLERANCE;
 			requests.push(this.order("relic-post", relic.id, away && !relic.state.includes("WALKING") ?
 				walkTo(post[0], post[1]) : hold(), priorities));
@@ -117,14 +89,11 @@ export class Relics
 		if (!wanted || world.threats.length >= RELIC_HOME_THREATS)
 		{
 			this.squad = new Set();
-			this.target = null;
+			this.target.to(null);
 			return requests;
 		}
-		if (this.target !== wanted.id)
-		{
-			this.target = wanted.id;
+		if (this.target.to(wanted.id))
 			this.telemetry.line("RELIC", world.time, { "seek": wanted.id, "owner": wanted.owner, "x": Math.round(wanted.position[0]), "z": Math.round(wanted.position[1]) });
-		}
 		const members = world.fighters.filter(fighter => this.squad.has(fighter.id));
 		const spare = world.fighters
 			.filter(fighter => !this.squad.has(fighter.id) && fighter.region === world.homeRegion && !fighter.state.includes("COMBAT"))
@@ -136,8 +105,7 @@ export class Relics
 		const guards = world.enemyFighters.concat(world.wild)
 			.filter(enemy => squareDistance(enemy.position, wanted.position) <= CONTACT_RADIUS * CONTACT_RADIUS);
 		const ratio = guards.length ? balance(this.catalog, squad, guards, []) : Infinity;
-		this.contested = this.contested ? ratio < priorities.margin : ratio < 1 / priorities.margin;
-		if (this.contested)
+		if (this.contested.below(ratio, 1 / priorities.margin, priorities.margin))
 		{
 			this.squad = new Set();
 			return requests;

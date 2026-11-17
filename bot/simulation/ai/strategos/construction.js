@@ -1,8 +1,10 @@
 import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
+import { awayFrom, centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { buildRequest, deleteRequest, fundRequest, inTier, pressing, repairRequest } from "simulation/ai/strategos/requests.js";
+import { Change, Retry } from "simulation/ai/strategos/switches.js";
 import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
-import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
 const TIGHT_MARGIN = 1;
@@ -71,8 +73,10 @@ export class Construction
 		this.catalog = catalog;
 		this.player = player;
 		this.telemetry = telemetry;
-		this.noSiteReported = new Map();
-		this.noSiteTime = new Map();
+		this.noSiteReported = new Retry();
+		this.noSiteTime = new Retry();
+		this.works = new Change();
+		this.relieved = new Change();
 		this.dockSite = null;
 		this.dockRefused = new Set();
 		this.stalled = new Map();
@@ -81,19 +85,14 @@ export class Construction
 
 	searchable(world, template)
 	{
-		const failed = this.noSiteTime.get(template);
-		return failed === undefined || world.time - failed >= RETRY_MS;
+		return this.noSiteTime.due(world.time, RETRY_MS, template);
 	}
 
 	noSite(world, template)
 	{
-		this.noSiteTime.set(template, world.time);
-		const last = this.noSiteReported.get(template);
-		if (last === undefined || world.time - last >= REPORT_MS)
-		{
-			this.noSiteReported.set(template, world.time);
+		this.noSiteTime.record(world.time, template);
+		if (this.noSiteReported.attempt(world.time, REPORT_MS, template))
 			this.telemetry.line("BUILD", world.time, { "noSite": template });
-		}
 		return null;
 	}
 
@@ -583,9 +582,7 @@ export class Construction
 			const owner = territoryAt(world.grids.territory, shore.land[0], shore.land[1]).owner;
 			if (owner !== 0 && owner !== this.player)
 				continue;
-			const out = [shore.water[0] - shore.land[0], shore.water[1] - shore.land[1]];
-			const length = Math.sqrt(out[0] * out[0] + out[1] * out[1]) || 1;
-			const offing = [shore.water[0] + out[0] / length * DOCK_OFFING, shore.water[1] + out[1] / length * DOCK_OFFING];
+			const offing = awayFrom(shore.water, shore.land, DOCK_OFFING);
 			if (!world.openWater(offing, sea, DOCK_SEA_ROOM) ||
 			    world.docks.some(dock => squareDistance(dock.position, shore.land) <
 				Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0) * Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0)))
@@ -593,7 +590,7 @@ export class Construction
 			const reach = world.fishRadius * world.fishRadius;
 			const schools = spacing ? 0 :
 				Math.min(DOCK_SCHOOLS_COUNTED, world.schools.filter(school => squareDistance(school, shore.water) <= reach).length);
-			const distance = Math.max(0, Math.sqrt(squareDistance(shore.land, origin)) - DOCK_SCHOOL_BONUS * schools);
+			const distance = Math.max(0, distanceBetween(shore.land, origin) - DOCK_SCHOOL_BONUS * schools);
 			shores.push({ shore, index, "distance": distance });
 		}
 		shores.sort((a, b) => a.distance - b.distance || a.index - b.index);
@@ -633,12 +630,7 @@ export class Construction
 		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.includes("REPAIR"));
 		if (!builders.length)
 			return this.colonyHold(world, priorities, colony);
-		const origin = [0, 0];
-		for (const settler of builders)
-		{
-			origin[0] += settler.position[0] / builders.length;
-			origin[1] += settler.position[1] / builders.length;
-		}
+		const origin = centroid(builders);
 		const ids = builders.map(settler => settler.id);
 		const isSettlement = name => this.catalog.isSettlement(name);
 		const template = colony.kind === "centre" && builders[0].buildable.filter(isSettlement)
@@ -724,13 +716,7 @@ export class Construction
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
-		const origin = [0, 0];
-		for (const worker of world.workers)
-		{
-			origin[0] += worker.position[0] / world.workers.length;
-			origin[1] += worker.position[1] / world.workers.length;
-		}
-		return this.settlementRequest(world, "founding", template, origin, FOUNDING_MAX_DISTANCE, priorities.values.founding, undefined, null);
+		return this.settlementRequest(world, "founding", template, centroid(world.workers), FOUNDING_MAX_DISTANCE, priorities.values.founding, undefined, null);
 	}
 
 	settlementRequest(world, purpose, template, home, reach, value, region, builders, key)
@@ -744,11 +730,11 @@ export class Construction
 			for (let i = 0; i < grid.width; ++i)
 			{
 				const position = [(i + 0.5) * grid.cellSize, (j + 0.5) * grid.cellSize];
-				const fromHome = Math.sqrt(squareDistance(position, home));
+				const fromHome = distanceBetween(position, home);
 				if (fromHome > reach || region !== undefined && world.regionOf(position) !== region ||
 				    spaced.some(footprint => squareDistance(footprint.position, position) < minimum * minimum))
 					continue;
-				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => Math.sqrt(squareDistance(centre.position, position))));
+				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => distanceBetween(centre.position, position)));
 				if (fromEnemy < SETTLEMENT_ENEMY_CLEARANCE || fromEnemy <= fromHome)
 					continue;
 				const owner = territoryAt(world.grids.territory, position[0], position[1]).owner;
@@ -917,11 +903,8 @@ export class Construction
 		}
 		if (!best)
 			return null;
-		if (this.works !== best.name)
-		{
-			this.works = best.name;
+		if (this.works.to(best.name))
 			this.telemetry.line("BUILD", world.time, { "works": best.name, "ratio": Math.round(best.ratio * 100) / 100 });
-		}
 		return this.nearCentreRequest(world, placement, "works", best.name, priorities.values.investment);
 	}
 
@@ -940,8 +923,8 @@ export class Construction
 		{
 			if (world.regionOf(centre.position) !== world.homeRegion)
 				continue;
-			const nearest = Math.min(...world.markets.map(market => Math.sqrt(squareDistance(market.position, centre.position))));
-			const longest = Math.max(...world.markets.map(market => Math.sqrt(squareDistance(market.position, centre.position))));
+			const nearest = Math.min(...world.markets.map(market => distanceBetween(market.position, centre.position)));
+			const longest = Math.max(...world.markets.map(market => distanceBetween(market.position, centre.position)));
 			if (nearest >= TRADE_POST_CLEARANCE && longest > reach)
 			{
 				far = centre;
@@ -1032,12 +1015,9 @@ export class Construction
 			return null;
 		const request = this.production(this.constructRequest(world, "haul-dropsite", best.template, best.site, priorities.values.investment,
 			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN)));
-		if (request && this.relieved !== best.site.x + "," + best.site.z)
-		{
-			this.relieved = best.site.x + "," + best.site.z;
+		if (request && this.relieved.to(best.site.x + "," + best.site.z))
 			this.telemetry.line("BUILD", world.time, { "haul": best.template, "x": Math.round(best.site.x), "z": Math.round(best.site.z),
 				"gatherers": best.gatherers, "gain": Math.round(best.gain * 100) / 100, "payback": Math.round(best.payback * 100) / 100 });
-		}
 		return request;
 	}
 
@@ -1064,7 +1044,7 @@ export class Construction
 		let gatherers = 0;
 		for (const hauler of haulers)
 		{
-			const next = Math.max(0, Math.sqrt(squareDistance(hauler.target, position)) - radius);
+			const next = Math.max(0, distanceBetween(hauler.target, position) - radius);
 			if (next >= hauler.haul)
 				continue;
 			const working = distance => hauler.fill / (hauler.fill + 2 * distance / hauler.speed);
@@ -1158,7 +1138,7 @@ export class Construction
 			if (!(amount > 0))
 				continue;
 			const position = [weighted[2 * index] / amount, weighted[2 * index + 1] / amount];
-			const distance = Math.sqrt(squareDistance(position, home));
+			const distance = distanceBetween(position, home);
 			if (distance > DROPSITE_SEARCH || territoryAt(world.grids.territory, position[0], position[1]).owner !== this.player ||
 			    served.some(anchor => squareDistance(anchor.position, position) <= DROPSITE_REACH * DROPSITE_REACH))
 				continue;

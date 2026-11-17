@@ -1,4 +1,5 @@
 import { byClass, isTreasure } from "simulation/ai/common-api/filters.js";
+import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { TERRITORY_BLINKING_MASK, TERRITORY_OWNER_MASK } from "simulation/ai/strategos/rules.js";
 
 const SITE_RADIUS = 110;
@@ -179,7 +180,7 @@ export class ResourceIndex
 				continue;
 			let nearest = Infinity;
 			for (const point of points)
-				nearest = Math.min(nearest, Math.sqrt(squareDistance(point.position, position)));
+				nearest = Math.min(nearest, distanceBetween(point.position, position));
 			const type = ent.resourceSupplyType();
 			const alive = !!ent.get("UnitAI") && ent.hitpoints() > 0;
 			sites.push(Object.freeze({
@@ -579,15 +580,8 @@ function anchorDistance(anchors, code, position)
 	let best = Infinity;
 	for (const anchor of anchors)
 		if (anchor.types.includes(code))
-			best = Math.min(best, Math.max(0, Math.sqrt(squareDistance(anchor.position, position)) - anchor.radius));
+			best = Math.min(best, Math.max(0, distanceBetween(anchor.position, position) - anchor.radius));
 	return best;
-}
-
-export function squareDistance(a, b)
-{
-	const dx = a[0] - b[0];
-	const dz = a[1] - b[1];
-	return dx * dx + dz * dz;
 }
 
 export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand)

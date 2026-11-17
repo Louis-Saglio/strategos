@@ -1,6 +1,6 @@
+import { awayFrom, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { attack, hold, walkTo } from "simulation/ai/strategos/requests.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 export const ARROW_HIT_SHARE = 0.5;
 
@@ -63,17 +63,6 @@ export function balance(catalog, units, opponents, holders)
 	return theirs.value > 0 ? ours.value / theirs.value : Infinity;
 }
 
-export function centroid(units)
-{
-	const centre = [0, 0];
-	for (const unit of units)
-	{
-		centre[0] += unit.position[0] / units.length;
-		centre[1] += unit.position[1] / units.length;
-	}
-	return centre;
-}
-
 export function coveringHolders(holders, position, margin)
 {
 	return holders.filter(holder => holder.fire.arrows > 0 &&
@@ -90,22 +79,10 @@ const GUARD_REACH = 30;
 const WOUNDED_SHARE = 0.3;
 const WOUNDED_DANGER = 25;
 
-function nearest(units, position, accept)
+function closest(units, position, accept)
 {
-	let best = null;
-	let bestDistance = Infinity;
-	for (const unit of units)
-	{
-		if (accept && !accept(unit))
-			continue;
-		const distance = squareDistance(unit.position, position);
-		if (distance < bestDistance || distance === bestDistance && best && unit.id < best.id)
-		{
-			best = unit;
-			bestDistance = distance;
-		}
-	}
-	return { "unit": best, "distance": Math.sqrt(bestDistance) };
+	const found = nearest(units, position, lowerId, accept);
+	return { "unit": found.item, "distance": Math.sqrt(found.squareDistance) };
 }
 
 export function skirmish(catalog, ours, enemies, retreat)
@@ -126,7 +103,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 	const fighting = [];
 	for (const unit of ours)
 	{
-		const near = nearest(enemies, unit.position);
+		const near = closest(enemies, unit.position);
 		if (retreat && unit.hitpoints < WOUNDED_SHARE * unit.maxHitpoints && near.distance <= WOUNDED_DANGER)
 		{
 			actions.set(unit.id, retreat(unit));
@@ -139,13 +116,11 @@ export function skirmish(catalog, ours, enemies, retreat)
 	for (const unit of ranged)
 	{
 		const profile = catalog.combat(unit.template);
-		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
+		const chaser = closest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
 		if (chaser.unit && chaser.distance <= KITE_RADIUS && profile.speed > catalog.combat(chaser.unit.template, chaser.unit.owner).speed)
 		{
-			const dx = unit.position[0] - chaser.unit.position[0];
-			const dz = unit.position[1] - chaser.unit.position[1];
-			const length = Math.sqrt(dx * dx + dz * dz) || 1;
-			actions.set(unit.id, walkTo(unit.position[0] + dx / length * KITE_STEP, unit.position[1] + dz / length * KITE_STEP));
+			const refuge = awayFrom(unit.position, chaser.unit.position, KITE_STEP);
+			actions.set(unit.id, walkTo(refuge[0], refuge[1]));
 			continue;
 		}
 		const reach = (profile.range + FOCUS_SLACK) * (profile.range + FOCUS_SLACK);
@@ -170,8 +145,8 @@ export function skirmish(catalog, ours, enemies, retreat)
 		const chosen = keep ? enemies.find(enemy => enemy.id === unit.target) : best;
 		if (!chosen)
 		{
-			const closest = nearest(enemies, unit.position).unit;
-			actions.set(unit.id, unit.state.includes("COMBAT") ? hold() : attack(closest.id));
+			const foe = closest(enemies, unit.position).unit;
+			actions.set(unit.id, unit.state.includes("COMBAT") ? hold() : attack(foe.id));
 			continue;
 		}
 		pending.set(chosen.id, (pending.get(chosen.id) || 0) + FOCUS_HORIZON_S * catalog.hitRate(unit.template, chosen.template, unit.owner, chosen.owner));
@@ -180,10 +155,10 @@ export function skirmish(catalog, ours, enemies, retreat)
 	const guarded = new Set();
 	for (const unit of ranged)
 	{
-		const chaser = nearest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
+		const chaser = closest(enemies, unit.position, enemy => !catalog.combat(enemy.template, enemy.owner).ranged);
 		if (!chaser.unit || chaser.distance > GUARD_RADIUS || guarded.has(chaser.unit.id))
 			continue;
-		const guard = nearest(melee, chaser.unit.position, candidate => !actions.has(candidate.id));
+		const guard = closest(melee, chaser.unit.position, candidate => !actions.has(candidate.id));
 		if (!guard.unit || guard.distance > GUARD_REACH)
 			continue;
 		guarded.add(chaser.unit.id);
@@ -198,7 +173,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 			actions.set(unit.id, hold());
 			continue;
 		}
-		actions.set(unit.id, attack(nearest(enemies, unit.position).unit.id));
+		actions.set(unit.id, attack(closest(enemies, unit.position).unit.id));
 	}
 	return actions;
 }
