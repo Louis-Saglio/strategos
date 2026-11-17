@@ -3,6 +3,7 @@ const CONTACT_RADIUS = 60;
 const REACH_RADIUS = 150;
 const COVER_MARGIN = 5;
 const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
+const RECRUIT_WAVE_S = 20;
 
 export const FORECAST = {
 	"stepS": 1,
@@ -174,8 +175,8 @@ function grouped(units, opponents, arriving, committed, passive)
 			entry(unit, 0).engaged += 1;
 		else
 			entry(unit, 0);
-	for (const { unit, seconds } of arriving || [])
-		entry(unit, 1).at += seconds;
+	for (const { unit, seconds, wave } of arriving || [])
+		entry(unit, wave || 1).at += seconds;
 	for (const group of groups.values())
 		group.at = group.at > 0 ? Math.max(1, group.at / group.count) : 0;
 	return [...groups.values()].sort((a, b) => a.key < b.key ? -1 : 1);
@@ -296,7 +297,7 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 			if (k / group.rate <= lead)
 				mustered.push(unit);
 			else
-				recruited.push({ "unit": unit, "seconds": k / group.rate - lead });
+				recruited.push({ "unit": unit, "seconds": k / group.rate - lead, "wave": 2 + Math.floor((k / group.rate - lead) / RECRUIT_WAVE_S) });
 		}
 	}
 	const present = seen.concat(plan.hidden || [], mustered, prey);
