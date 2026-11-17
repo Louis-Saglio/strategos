@@ -163,7 +163,7 @@ export class ResourceIndex
 	live(gameState, code, anchors, enemyStructures)
 	{
 		const batteries = enemyStructures.filter(structure => structure.fire.arrows);
-		const points = anchors.filter(anchor => anchor.types.includes(code)).map(anchor => anchor.position);
+		const points = anchors.filter(anchor => anchor.types.includes(code));
 		const sites = [];
 		for (const id of this.sites.get(code))
 		{
@@ -176,7 +176,7 @@ export class ResourceIndex
 				continue;
 			let nearest = Infinity;
 			for (const point of points)
-				nearest = Math.min(nearest, squareDistance(point, position));
+				nearest = Math.min(nearest, Math.max(0, Math.sqrt(squareDistance(point.position, position)) - point.radius));
 			const type = ent.resourceSupplyType();
 			const alive = !!ent.get("UnitAI") && ent.hitpoints() > 0;
 			sites.push(Object.freeze({
@@ -189,7 +189,7 @@ export class ResourceIndex
 				"capacity": ent.maxGatherers() || 1,
 				"armed": alive && !!ent.get("Attack"),
 				"prey": alive && !ent.hasClass("Domestic"),
-				"anchorDistance": Math.sqrt(nearest)
+				"anchorDistance": nearest
 			}));
 			if (sites.length >= SITES_EXPOSED)
 				break;
@@ -528,8 +528,8 @@ function anchorDistance(anchors, code, position)
 	let best = Infinity;
 	for (const anchor of anchors)
 		if (anchor.types.includes(code))
-			best = Math.min(best, squareDistance(anchor.position, position));
-	return Math.sqrt(best);
+			best = Math.min(best, Math.max(0, Math.sqrt(squareDistance(anchor.position, position)) - anchor.radius));
+	return best;
 }
 
 export function squareDistance(a, b)

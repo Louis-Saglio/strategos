@@ -238,7 +238,8 @@ export class Catalog
 				capacities[code] = +(template.get("ResourceGatherer/Capacities/" + code) || 0);
 			this.gatherProfiles.set(name, Object.freeze({
 				"rates": Object.freeze(template.resourceGatherRates() || {}),
-				"capacities": Object.freeze(capacities)
+				"capacities": Object.freeze(capacities),
+				"speed": template.walkSpeed() || 0
 			}));
 		}
 		return this.gatherProfiles.get(name);

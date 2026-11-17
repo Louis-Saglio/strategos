@@ -23,6 +23,13 @@ const CLUSTER_RADIUS = 20;
 const DROPSITE_SEARCH = 160;
 const DROPSITE_DISTANCE_BIAS = 40;
 const DROPSITE_CELLS_TRIED = 4;
+const HAUL_CELL = 16;
+const HAUL_FAR = 50;
+const HAUL_SITES_TRIED = 4;
+const HAUL_SEARCH = 40;
+const HAUL_HORIZON_S = 240;
+const HAUL_RETURN = 1.5;
+const HAUL_MAX_URGENCY = 3;
 const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 const PRODUCTION_STOCK_BASE = 300;
 const PRODUCTION_STOCK_PER_TRAINER = 300;
@@ -1049,19 +1056,23 @@ export class Construction
 	dropsiteRequest(world, priorities, placement)
 	{
 		const total = world.workers.length;
+		let best = null;
 		for (const code of world.codes)
 		{
-			if (priorities.gatherShares[code] * total < DROPSITE_MIN_GATHERERS)
-				continue;
-			const sites = world.sites[code].filter(site => isFinite(site.amount));
-			if (!sites.length || Math.min(...sites.map(site => site.anchorDistance)) <= DROPSITE_REACH)
-				continue;
 			const serves = name => this.catalog.dropsiteTypes(name).includes(code) && !this.catalog.isFarm(name);
 			if (world.pendingConstructions.some(pending => serves(pending.template)) ||
 			    world.foundations.some(foundation => serves(foundation.template)))
 				continue;
 			const template = this.cheapest(world, serves);
 			if (!template)
+				continue;
+			const relief = this.haulRelief(world, placement, code, template);
+			if (relief && (!best || relief.payback > best.payback))
+				best = relief;
+			if (relief || priorities.gatherShares[code] * total < DROPSITE_MIN_GATHERERS)
+				continue;
+			const sites = world.sites[code].filter(site => isFinite(site.amount));
+			if (!sites.length || Math.min(...sites.map(site => site.anchorDistance)) <= DROPSITE_REACH)
 				continue;
 			const half = this.halfSize(template);
 			const zones = this.resourceZones(world, code).concat(this.farmBelts(world));
@@ -1073,6 +1084,117 @@ export class Construction
 				if (site)
 					return this.constructRequest(world, template, site, priorities.values.dropsite, 1);
 			}
+		}
+		if (!best)
+			return null;
+		const request = this.production(this.constructRequest(world, best.template, best.site, priorities.values.dropsite,
+			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN)));
+		if (request && this.relieved !== best.site.x + "," + best.site.z)
+		{
+			this.relieved = best.site.x + "," + best.site.z;
+			this.telemetry.line("BUILD", world.time, { "haul": best.template, "x": Math.round(best.site.x), "z": Math.round(best.site.z),
+				"gatherers": best.gatherers, "gain": Math.round(best.gain * 100) / 100, "payback": Math.round(best.payback * 100) / 100 });
+		}
+		return request;
+	}
+
+	haulers(world, code)
+	{
+		const haulers = [];
+		for (const worker of world.workers)
+		{
+			if (worker.gathering !== code || !worker.targetPosition || !(worker.haul > HAUL_FAR))
+				continue;
+			const rate = worker.profile.rates[worker.kind] || 0;
+			const capacity = worker.profile.capacities[code] || 0;
+			if (rate > 0 && capacity > 0 && worker.profile.speed > 0)
+				haulers.push({ "target": worker.targetPosition, "haul": worker.haul, "rate": rate, "fill": capacity / rate,
+					"speed": worker.profile.speed });
+		}
+		return haulers;
+	}
+
+	haulGain(haulers, position, radius)
+	{
+		let gain = 0;
+		let output = 0;
+		let gatherers = 0;
+		for (const hauler of haulers)
+		{
+			const next = Math.max(0, Math.sqrt(squareDistance(hauler.target, position)) - radius);
+			if (next >= hauler.haul)
+				continue;
+			const working = distance => hauler.fill / (hauler.fill + 2 * distance / hauler.speed);
+			gain += hauler.rate * (working(next) - working(hauler.haul));
+			output += hauler.rate * working(next);
+			gatherers += 1;
+		}
+		return { gain, output, gatherers };
+	}
+
+	wealthNear(world, code, position)
+	{
+		const grid = world.wealth;
+		const totals = grid.totals[code];
+		const weighted = grid.weighted[code];
+		if (!totals || !weighted)
+			return 0;
+		const reach = (HAUL_SEARCH + DROPSITE_REACH) * (HAUL_SEARCH + DROPSITE_REACH);
+		const i0 = Math.floor(position[0] / grid.cellSize);
+		const j0 = Math.floor(position[1] / grid.cellSize);
+		let wealth = 0;
+		for (let j = Math.max(0, j0 - 2); j <= Math.min(grid.height - 1, j0 + 2); ++j)
+			for (let i = Math.max(0, i0 - 2); i <= Math.min(grid.width - 1, i0 + 2); ++i)
+			{
+				const index = i + j * grid.width;
+				const amount = totals[index];
+				if (amount > 0 && squareDistance([weighted[2 * index] / amount, weighted[2 * index + 1] / amount], position) <= reach)
+					wealth += amount;
+			}
+		return wealth;
+	}
+
+	haulRelief(world, placement, code, template)
+	{
+		const haulers = this.haulers(world, code);
+		if (!haulers.length)
+			return null;
+		const cells = new Map();
+		for (const hauler of haulers)
+		{
+			const key = Math.floor(hauler.target[0] / HAUL_CELL) + "," + Math.floor(hauler.target[1] / HAUL_CELL);
+			if (!cells.has(key))
+				cells.set(key, { "x": 0, "z": 0, "count": 0 });
+			const cell = cells.get(key);
+			cell.x += hauler.target[0];
+			cell.z += hauler.target[1];
+			cell.count += 1;
+		}
+		const cost = this.catalog.costSum(template);
+		const centres = [...cells.values()]
+			.map((cell, index) => {
+				const position = [cell.x / cell.count, cell.z / cell.count];
+				return { position, index, "gain": this.haulGain(haulers, position, 0).gain };
+			})
+			.filter(centre => centre.gain * HAUL_HORIZON_S >= HAUL_RETURN * cost)
+			.sort((a, b) => b.gain - a.gain || a.index - b.index)
+			.slice(0, HAUL_SITES_TRIED);
+		if (!centres.length)
+			return null;
+		const half = this.halfSize(template);
+		const zones = this.resourceZones(world, code);
+		const reserved = this.reservedBoxes(world);
+		for (const centre of centres)
+		{
+			const site = placement.around(centre.position, half + SAME_TYPE_KEEP_AWAY, half + HAUL_SEARCH,
+				this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
+			if (!site)
+				continue;
+			const { gain, output, gatherers } = this.haulGain(haulers, [site.x, site.z], half);
+			const lasting = Math.min(HAUL_HORIZON_S, this.wealthNear(world, code, [site.x, site.z]) / Math.max(0.1, output));
+			const payback = gain * lasting / cost;
+			if (payback >= HAUL_RETURN)
+				return { template, site, gain, payback, gatherers };
 		}
 		return null;
 	}
