@@ -1,7 +1,7 @@
 import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { awayFrom, centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { buildRequest, deleteRequest, fundRequest, inTier, pressing, repairRequest } from "simulation/ai/strategos/requests.js";
+import { buildRequest, deleteRequest, fundRequest, inTier, noting, pressing, repairRequest } from "simulation/ai/strategos/requests.js";
 import { Change, Retry } from "simulation/ai/strategos/switches.js";
 import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { territoryAt } from "simulation/ai/strategos/world.js";
@@ -163,15 +163,31 @@ export class Construction
 			if (world.time - entry.since < STALLED_MS)
 				continue;
 			const footprint = this.catalog.footprint(foundation.template);
-			this.abandoned.push({ "x": foundation.position[0], "z": foundation.position[1], "halfWidth": footprint.width / 2,
-				"halfDepth": footprint.depth / 2, "until": world.time + ABANDONED_MEMORY_MS });
-			this.telemetry.line("BUILD", world.time, { "abandoned": foundation.template, "x": Math.round(foundation.position[0]),
-				"z": Math.round(foundation.position[1]) });
-			requests.push(deleteRequest("construction", "abandon", foundation.id, priorities.values.build, 1));
+			requests.push(noting(deleteRequest("construction", "abandon", foundation.id, priorities.values.build, 1), { "abandoned": {
+				"box": { "x": foundation.position[0], "z": foundation.position[1], "halfWidth": footprint.width / 2,
+					"halfDepth": footprint.depth / 2, "until": world.time + ABANDONED_MEMORY_MS },
+				"report": { "abandoned": foundation.template, "x": Math.round(foundation.position[0]), "z": Math.round(foundation.position[1]) }
+			} }));
 		}
 		this.stalled = watched;
 		this.abandoned = this.abandoned.filter(box => box.until > world.time);
 		return requests;
+	}
+
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
+		{
+			if (!issued || !request.note)
+				continue;
+			if (request.note.dockSite)
+				this.dockSite = request.note.dockSite;
+			if (request.note.abandoned)
+			{
+				this.abandoned.push(request.note.abandoned.box);
+				this.telemetry.line("BUILD", world.time, request.note.abandoned.report);
+			}
+		}
 	}
 
 	offered(world)
@@ -616,7 +632,7 @@ export class Construction
 					buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), priorities.values.investment, urgency) :
 					this.constructRequest(world, purpose, template, site, priorities.values.investment, urgency);
 				if (request)
-					this.dockSite = { key, template, x, z, region, "seen": false };
+					noting(request, { "dockSite": { key, template, x, z, region, "seen": false } });
 				return urgent ? this.production(request) : request;
 			}
 		return this.noSite(world, template);

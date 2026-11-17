@@ -1,5 +1,5 @@
 import { distanceBetween } from "simulation/ai/strategos/geometry.js";
-import { barterRequest, goodsRequest, orderRequest, tradeRoute, trainRequest } from "simulation/ai/strategos/requests.js";
+import { barterRequest, goodsRequest, noting, orderRequest, tradeRoute, trainRequest } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 
@@ -78,19 +78,29 @@ export class Trade
 		const key = goods.join(",");
 		if (key !== this.goods)
 		{
-			this.goods = key;
 			const shares = {};
 			for (const code of world.codes)
 				shares[code] = 0;
 			goods.forEach((code, index) => { shares[code] = Math.floor(100 / goods.length) + (index < 100 % goods.length ? 1 : 0); });
-			this.telemetry.line("TRADE", world.time, { "route": Math.round(route.distance), "gain": Math.round(route.gain * 10) / 10,
-				"goods": shares, "traders": world.traders.length });
-			requests.push(goodsRequest("trade", "goods", shares, priorities.values.support, 1));
+			requests.push(noting(goodsRequest("trade", "goods", shares, priorities.values.support, 1), { "goods": key, "report": {
+				"route": Math.round(route.distance), "gain": Math.round(route.gain * 10) / 10, "goods": shares, "traders": world.traders.length
+			} }));
 		}
 		for (const trader of world.traders)
 			if (trader.idle || !trader.state.trading)
 				requests.push(orderRequest("trade", "route", trader.id, tradeRoute(route.to.id, route.from.id), priorities.values.support, 1));
 		return requests;
+	}
+
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
+		{
+			if (!issued || request.purpose !== "goods")
+				continue;
+			this.goods = request.note.goods;
+			this.telemetry.line("TRADE", world.time, request.note.report);
+		}
 	}
 
 	barterRequests(world, priorities)

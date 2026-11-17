@@ -1,6 +1,9 @@
 const SPEND_SMOOTHING = 0.05;
 const ORDER_MEMORY_S = 180;
 const ORDER_TYPES = ["train", "construct"];
+const RESERVATION = "reserve";
+
+export const GRANTED = "granted";
 
 export class Allocator
 {
@@ -100,7 +103,7 @@ export class Allocator
 			}
 			earmarked.set(request, part);
 		}
-		const grants = [];
+		const outcomes = [];
 		const spent = {};
 		const unmet = {};
 		const paid = {};
@@ -117,7 +120,8 @@ export class Allocator
 				for (const code of this.codes)
 					budget.earmark[code] -= own[code];
 			const reason = this.denial(request, budget);
-			this.record(request, reason || "granted");
+			this.record(request, reason || GRANTED);
+			outcomes.push({ "request": request, "outcome": reason || GRANTED, "issued": false });
 			if (reason)
 			{
 				if (reason.startsWith("resources"))
@@ -137,12 +141,11 @@ export class Allocator
 					spent[code] += amount;
 			}
 			this.commit(request, budget);
-			if (ORDER_TYPES.includes(request.action.type))
+			if (request.action && ORDER_TYPES.includes(request.action.type))
 				this.ordered.set(request.action.template, (this.ordered.get(request.action.template) || 0) + (request.action.count || 1));
-			grants.push(request);
 		}
 		this.observe(world, spent, unmet, paid);
-		return grants;
+		return outcomes;
 	}
 
 	denial(request, budget)
@@ -191,7 +194,8 @@ export class Allocator
 
 	record(request, outcome)
 	{
-		const key = request.source + "/" + request.purpose + "/" + request.action.type + (request.tier === "production" ? "!" : "") + ":" + outcome;
+		const key = request.source + "/" + request.purpose + "/" + (request.action ? request.action.type : RESERVATION) +
+			(request.tier === "production" ? "!" : "") + ":" + outcome;
 		this.ledger.set(key, (this.ledger.get(key) || 0) + 1);
 	}
 

@@ -24,7 +24,6 @@ export class Guard
 		{
 			if (!this.passive.has(hero.id))
 			{
-				this.passive.add(hero.id);
 				requests.push(this.order("hero-stance", hero, stance("passive"), priorities));
 				continue;
 			}
@@ -38,6 +37,13 @@ export class Guard
 				walkTo(post[0], post[1]) : hold(), priorities));
 		}
 		return requests;
+	}
+
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
+			if (issued && request.purpose === "hero-stance")
+				this.passive.add(request.action.unit);
 	}
 
 	order(purpose, hero, action, priorities)

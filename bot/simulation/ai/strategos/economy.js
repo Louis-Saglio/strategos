@@ -45,12 +45,16 @@ export class Economy
 			const stocked = world.codes.every(code => world.resources[code] >= HERO_STOCK * (cost[code] || 0));
 			if (!stocked && best.worth < HERO_EDGE * world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0))
 				return [];
-			if (world.codes.every(code => world.resources[code] >= (cost[code] || 0)))
-				this.heroOrdered.record(world.time);
 			return [reserving(trainRequest("economy", "hero", trainer.id, best.name, 1, cost, this.catalog.population(best.name),
 				priorities.values.research, 1))];
 		}
 		return [];
+	}
+
+	settle(world, outcomes)
+	{
+		if (outcomes.some(entry => entry.issued && entry.request.purpose === "hero"))
+			this.heroOrdered.record(world.time);
 	}
 
 	trainingRequests(world, priorities)
