@@ -482,7 +482,7 @@ snapshotted (`DIR/mods/strategos`, or `--bot`): every `.js` file under
 builder of `requests.js` (an exported function whose first parameters are
 `source, purpose`); a class names its source as the first argument of the
 builders it calls, and a purpose as the second, or as the `purpose`
-argument of one of its own methods that hands it on (`this.order("rally",
+argument of one of its own methods that hands it on (`this.order("stray",
 ...)`). A purpose is read when it is a string literal or a choice between
 two (`yard ? "shipyard" : "dock"`). A subsystem may be composed of parts,
 each a class in a file of its own that builds its requests under the
