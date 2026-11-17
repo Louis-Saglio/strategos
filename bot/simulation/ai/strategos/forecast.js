@@ -250,6 +250,11 @@ export function within(units, centre, taken)
 	return units.filter(unit => !(taken && taken.has(unit.id)) && apart(unit.position, centre) <= limit);
 }
 
+export function atWork(unit)
+{
+	return WORKING_STATES.some(state => unit.state.includes(state));
+}
+
 export function arriving(catalog, units, centre, present, working, reach, fighting)
 {
 	const limit = (reach || REACH_RADIUS) * (reach || REACH_RADIUS);
@@ -257,7 +262,7 @@ export function arriving(catalog, units, centre, present, working, reach, fighti
 	for (const unit of units)
 	{
 		if (present.has(unit.id) || !fighting && unit.state.includes("COMBAT") ||
-		    working && WORKING_STATES.some(state => unit.state.includes(state)))
+		    working && atWork(unit))
 			continue;
 		const distance = apart(unit.position, centre);
 		if (distance > limit)

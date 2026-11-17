@@ -1,6 +1,6 @@
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
-import { arriving, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const OPENING = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -273,14 +273,15 @@ export class Strategy
 	{
 		const plan = OPENING.military.threat;
 		const home = world.centres[0];
-		if (!home || world.enemyFighters.length < plan.minEnemy)
+		const ready = world.enemyFighters.filter(unit => !atWork(unit));
+		if (!home || ready.length < plan.minEnemy)
 		{
 			this.underThreat = false;
 			return false;
 		}
 		const ours = world.fighters.filter(fighter => fighter.region === world.homeRegion);
 		const cover = covering(world.holders, home.position, []);
-		const outlook = forecast(engagement(this.catalog, ours, world.enemyFighters, cover, [], [], [], true),
+		const outlook = forecast(engagement(this.catalog, ours, ready, cover, [], [], [], true),
 			{ "horizonS": plan.horizonS, "joinScale": 0 });
 		const ratio = outlook.theirs.value / Math.max(1, outlook.ours.value);
 		this.underThreat = this.underThreat ? ratio < plan.exit : ratio < plan.enter;
