@@ -1,6 +1,6 @@
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
-import { NO_STATE } from "simulation/ai/strategos/world.js";
+import { NO_STATE } from "simulation/ai/strategos/unitstate.js";
 
 export const CONTACT_RADIUS = 60;
 export const REACH_RADIUS = 150;

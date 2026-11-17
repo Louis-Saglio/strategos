@@ -1,5 +1,6 @@
 import { TERRITORY_BLINKING_MASK } from "simulation/ai/strategos/rules.js";
-import { FIRE_MARGIN, territoryCell } from "simulation/ai/strategos/world.js";
+import { territoryCell } from "simulation/ai/strategos/terrain.js";
+import { FIRE_MARGIN } from "simulation/ai/strategos/world-memory.js";
 
 const RING_STEP = 4;
 const ARC_STEP = 4;

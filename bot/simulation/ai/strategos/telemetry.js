@@ -1,5 +1,42 @@
 import { Retry } from "simulation/ai/strategos/switches.js";
 
+export class Stopwatch
+{
+	constructor()
+	{
+		this.started = Date.now();
+		this.mark = this.started;
+		this.stages = {};
+		this.sections = {};
+	}
+
+	lap(stage)
+	{
+		const now = Date.now();
+		this.stages[stage] = (this.stages[stage] || 0) + now - this.mark;
+		this.mark = now;
+	}
+
+	section(name, read)
+	{
+		const outer = this.mark;
+		const began = Date.now();
+		this.mark = began;
+		const value = read();
+		const ended = Date.now();
+		const spent = ended - this.mark;
+		this.sections[name] = (this.sections[name] || 0) + spent;
+		this.stages.world = (this.stages.world || 0) + spent;
+		this.mark = outer + ended - began;
+		return value;
+	}
+
+	total()
+	{
+		return this.mark - this.started;
+	}
+}
+
 export class Telemetry
 {
 	constructor(player)
@@ -11,6 +48,8 @@ export class Telemetry
 		this.maxMs = 0;
 		this.stageMaxMs = {};
 		this.stageTotalMs = {};
+		this.worldMaxMs = {};
+		this.worldTotalMs = {};
 		this.production = new Map();
 	}
 
@@ -43,15 +82,21 @@ export class Telemetry
 		return this.lastLine.attempt(timeMs, periodMs, tag);
 	}
 
-	recordDecision(ms, stages)
+	recordDecision(stopwatch)
 	{
+		const ms = stopwatch.total();
 		this.decisions += 1;
 		this.totalMs += ms;
 		this.maxMs = Math.max(this.maxMs, ms);
-		for (const stage in stages)
+		for (const stage in stopwatch.stages)
 		{
-			this.stageMaxMs[stage] = Math.max(this.stageMaxMs[stage] || 0, stages[stage]);
-			this.stageTotalMs[stage] = (this.stageTotalMs[stage] || 0) + stages[stage];
+			this.stageMaxMs[stage] = Math.max(this.stageMaxMs[stage] || 0, stopwatch.stages[stage]);
+			this.stageTotalMs[stage] = (this.stageTotalMs[stage] || 0) + stopwatch.stages[stage];
+		}
+		for (const section in stopwatch.sections)
+		{
+			this.worldMaxMs[section] = Math.max(this.worldMaxMs[section] || 0, stopwatch.sections[section]);
+			this.worldTotalMs[section] = (this.worldTotalMs[section] || 0) + stopwatch.sections[section];
 		}
 	}
 
@@ -64,13 +109,21 @@ export class Telemetry
 			"meanMs": Math.round(this.totalMs / this.decisions * 100) / 100,
 			"maxMs": this.maxMs,
 			"stageMaxMs": this.stageMaxMs,
-			"stageMeanMs": Object.fromEntries(Object.keys(this.stageTotalMs).map(stage =>
-				[stage, Math.round(this.stageTotalMs[stage] / this.decisions * 100) / 100]))
+			"stageMeanMs": this.means(this.stageTotalMs),
+			"worldMaxMs": this.worldMaxMs,
+			"worldMeanMs": this.means(this.worldTotalMs)
 		});
 		this.decisions = 0;
 		this.totalMs = 0;
 		this.maxMs = 0;
 		this.stageMaxMs = {};
 		this.stageTotalMs = {};
+		this.worldMaxMs = {};
+		this.worldTotalMs = {};
+	}
+
+	means(totals)
+	{
+		return Object.fromEntries(Object.keys(totals).map(name => [name, Math.round(totals[name] / this.decisions * 100) / 100]));
 	}
 }

@@ -1,6 +1,6 @@
 import { centroid, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { noting, orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
-import { territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
 const SAFE_RADIUS = 35;
 const FLEE_RADIUS = 22;
