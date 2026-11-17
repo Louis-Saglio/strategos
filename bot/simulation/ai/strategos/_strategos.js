@@ -15,7 +15,7 @@ import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
 import { Upgrades } from "simulation/ai/strategos/upgrades.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
-import { LossIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
+import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
@@ -37,6 +37,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
 	this.shoreIndex = new ShoreIndex();
 	this.lossIndex = new LossIndex(this.player);
+	this.musterIndex = new MusterIndex();
 	this.battleLog = new BattleLog(this.catalog, this.telemetry);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
 	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
@@ -54,6 +55,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 StrategosBot.prototype.OnUpdate = function()
 {
 	this.lossIndex.record(this.events, this.catalog);
+	this.musterIndex.record(this.events);
 	if (this.gameState.playerData.state === "active" && (this.turn + this.player) % DECISION_PERIOD === DECISION_PHASE)
 		this.decide();
 	this.turn += 1;
@@ -70,7 +72,8 @@ StrategosBot.prototype.decide = function()
 		mark = now;
 	};
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, pending, this.allocator.demand());
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, this.musterIndex, pending,
+		this.allocator.demand());
 	lap("world");
 	this.battleLog.observe(world);
 	lap("BattleLog");

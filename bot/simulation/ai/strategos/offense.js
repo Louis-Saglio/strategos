@@ -390,7 +390,8 @@ export class Offense
 		const walk = distance / forgone.speed;
 		const outlook = prospect(this.catalog, members, target.position, world.enemyFighters, world.enemyStructures,
 			Object.assign(this.plan(priorities, exchange.reach.launch + distance),
-				{ "prey": world.enemyCivilians, "preyReach": exchange.reach.launch, "lead": walk, "handicap": exchange.handicap }));
+				{ "prey": world.enemyCivilians, "preyReach": exchange.reach.launch, "lead": walk, "handicap": exchange.handicap,
+					"muster": world.enemyMuster }));
 		outlook.prize = this.prize(world, priorities, members, target);
 		outlook.trip = forgone.income * 2 * walk;
 		outlook.army = this.armyValue(members);
@@ -405,7 +406,8 @@ export class Offense
 	described(outlook)
 	{
 		return {
-			"defenders": outlook.defenders, "prey": outlook.prey, "coming": outlook.coming, "cost": Math.round(outlook.cost || 0),
+			"defenders": outlook.defenders, "prey": outlook.prey, "coming": outlook.coming, "recruits": outlook.recruits,
+			"cost": Math.round(outlook.cost || 0),
 			"gain": Math.round(outlook.gain || 0),
 			"prize": Math.round(outlook.prize || 0), "trip": Math.round(outlook.trip || 0), "dominant": !!outlook.dominant,
 			"attrition": outlook.attrition === undefined ? undefined : Math.round(outlook.attrition * 100) / 100,

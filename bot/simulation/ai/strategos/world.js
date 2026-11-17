@@ -10,6 +10,8 @@ const FISH_RADIUS = 160;
 const FISH_KEPT = 24;
 const FISHER_WORTH = 3;
 const STRAGGLERS_KEPT = 24;
+const MUSTER_WINDOW_MS = 120000;
+const MUSTER_MIN_S = 30;
 
 export class ResourceIndex
 {
@@ -284,6 +286,56 @@ export class LossIndex
 const SHORE_SPACING = 12;
 const YARD_BLOCKED_MS = 150000;
 
+export class MusterIndex
+{
+	constructor()
+	{
+		this.known = null;
+		this.since = undefined;
+		this.recruits = [];
+		this.renamed = new Set();
+	}
+
+	record(events)
+	{
+		for (const evt of events && events.EntityRenamed || [])
+			this.renamed.add(evt.newentity);
+	}
+
+	observe(time, soldiers)
+	{
+		const current = new Set();
+		for (const soldier of soldiers)
+		{
+			current.add(soldier.id);
+			if (this.known && !this.known.has(soldier.id) && !this.renamed.has(soldier.id))
+				this.recruits.push({ "time": time, "template": soldier.template, "owner": soldier.owner });
+		}
+		this.renamed.clear();
+		if (!this.known)
+			this.since = time;
+		this.known = current;
+		this.recruits = this.recruits.filter(recruit => time - recruit.time <= MUSTER_WINDOW_MS);
+	}
+
+	rates(time)
+	{
+		const seconds = Math.min(MUSTER_WINDOW_MS, time - this.since) / 1000;
+		if (!(seconds >= MUSTER_MIN_S))
+			return Object.freeze([]);
+		const groups = new Map();
+		for (const recruit of this.recruits)
+		{
+			const key = recruit.template + "|" + recruit.owner;
+			if (!groups.has(key))
+				groups.set(key, { "key": key, "template": recruit.template, "owner": recruit.owner, "count": 0 });
+			groups.get(key).count += 1;
+		}
+		return Object.freeze([...groups.values()].sort((a, b) => a.key < b.key ? -1 : 1)
+			.map(group => Object.freeze({ "template": group.template, "owner": group.owner, "rate": group.count / seconds })));
+	}
+}
+
 export class ShoreIndex
 {
 	constructor()
@@ -539,7 +591,7 @@ export function squareDistance(a, b)
 	return dx * dx + dz * dz;
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, pendingConstructions, demand)
+export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const playerData = gameState.playerData;
@@ -816,6 +868,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	let enemySoldiers = 0;
 	const enemyFighters = [];
 	const enemyHidden = [];
+	const enemyRoll = [];
 	const enemyCivilians = [];
 	let enemyGatherers = 0;
 	const enemyDamage = {};
@@ -864,6 +917,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			if (ent.hasClass("Soldier"))
 			{
 				enemySoldiers += 1;
+				enemyRoll.push({ "id": ent.id(), "template": ent.templateName(), "owner": enemy });
 				const kind = ent.templateName() + "|" + enemy;
 				if (!enemyTemplates.has(kind))
 					enemyTemplates.set(kind, { "kind": kind, "template": ent.templateName(), "owner": enemy, "count": 0 });
@@ -978,6 +1032,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			"radius": Math.max(footprint.width, footprint.depth) / 2
 		}));
 	}
+
+	musterIndex.observe(gameState.getTimeElapsed(), enemyRoll);
 
 	const gatherers = {};
 	const hauls = {};
@@ -1212,6 +1268,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"enemySoldiers": enemySoldiers,
 		"enemyFighters": Object.freeze(enemyFighters),
 		"enemyHidden": Object.freeze(enemyHidden),
+		"enemyMuster": musterIndex.rates(gameState.getTimeElapsed()),
 		"enemyCivilians": Object.freeze(enemyCivilians),
 		"enemyGatherers": enemyGatherers,
 		"enemyCentres": Object.freeze(enemyCentres),

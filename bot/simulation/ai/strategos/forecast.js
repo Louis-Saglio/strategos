@@ -282,9 +282,27 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 	const seen = within(enemies, centre);
 	const preyReach = plan.preyReach || plan.reach;
 	const prey = (plan.prey || []).filter(unit => apart(unit.position, centre) <= preyReach * preyReach);
-	const present = seen.concat(plan.hidden || [], prey);
+	const lead = plan.lead || 0;
+	const mustered = [];
+	const recruited = [];
+	for (const group of plan.muster || [])
+	{
+		const hitpoints = catalog.combat(group.template, group.owner).hp;
+		const count = Math.floor(group.rate * (lead + (plan.horizonS || FORECAST.horizonS)));
+		for (let k = 1; k <= count; ++k)
+		{
+			const unit = { "id": -(mustered.length + recruited.length + 1), "template": group.template, "owner": group.owner, "hitpoints": hitpoints,
+				"state": "" };
+			if (k / group.rate <= lead)
+				mustered.push(unit);
+			else
+				recruited.push({ "unit": unit, "seconds": k / group.rate - lead });
+		}
+	}
+	const present = seen.concat(plan.hidden || [], mustered, prey);
 	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
-		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - (plan.lead || 0)) }));
+		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - lead) }))
+		.concat(recruited);
 	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true,
 		new Set(prey.map(unit => unit.id))),
 		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction, "handicap": plan.handicap || 1 },
@@ -299,9 +317,10 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 		"gain": outlook.theirs.value,
 		"lost": outlook.ours.lost,
 		"killed": outlook.theirs.lost,
-		"defenders": present.length - prey.length,
+		"defenders": present.length - prey.length - mustered.length,
 		"prey": prey.length,
-		"coming": coming.length,
+		"coming": coming.length - recruited.length,
+		"recruits": mustered.length + recruited.length,
 		"opposing": opposing
 	};
 }
