@@ -460,6 +460,22 @@ CARRIER_RE = re.compile(r"^\t(\w+)\(([^()\n]*\bpurpose\b[^()\n]*)\)$", re.M)
 LITERAL_RE = re.compile(rf'"({NAME})"\Z')
 CHOICE_RE = re.compile(rf'[^"?:]+\?\s*"({NAME})"\s*:\s*"({NAME})"\Z')
 WRITTEN_RE = re.compile(r'"(?:claims|purpose)"\s*:')
+# The one record with a key "purpose" outside requests.js: an assignment of
+# the allocator (which request a unit was granted to), which copies the
+# source and the purpose of that request, side by side and as they are:
+# `"source": request.source, "purpose": request.purpose,`. The pair is the
+# kind of a request a builder built, where it is read, so the record names no
+# kind of its own. Let through in ALLOCATOR_MODULE only, in that form only
+# (the name `request`, both fields, nothing computed): anywhere else a
+# purpose written is a request rewritten.
+ALLOCATOR_MODULE = "allocator.js"
+COPIED_RE = re.compile(r'"source"\s*:\s*request\.source\s*,\s*("purpose"\s*:)\s*request\.purpose\s*[,}]')
+
+
+def copied(name, text):
+    """The offsets, in a text of the file `name`, of the keys `"purpose":` it may write: those of COPIED_RE, in
+    allocator.js; none in any other file."""
+    return {m.start(1) for m in COPIED_RE.finditer(text)} if name == ALLOCATOR_MODULE else set()
 
 
 def regions(text, pattern):
@@ -509,9 +525,9 @@ def literals(argument):
     return None
 
 
-def class_kinds(where, body, builders, above=0):
-    """(the sources named, the purposes named, what could not be read) in the text of one class, which starts
-    `above` lines down its file.
+def class_kinds(name, where, body, builders, above=0):
+    """(the sources named, the purposes named, what could not be read) in the text of one class of the file
+    `name`, which starts `above` lines down that file and is reported as `where`.
 
     A purpose is named where a request is built: as the second argument of a
     builder, or as the `purpose` argument of a method of the class that hands
@@ -522,7 +538,9 @@ def class_kinds(where, body, builders, above=0):
     Anything else that these positions hold, a carrier used otherwise than
     called as `this.NAME(`, and any other use of the word `purpose` (a
     variable, a field written) is something this reading cannot follow: it
-    is returned as unread."""
+    is returned as unread. What is let through: the purpose of a request read
+    as a field (`request.purpose`, compared or read, never assigned), and the
+    keys that `copied` allows the file."""
     sources, purposes, unread, followed = set(), set(), [], set()
 
     def line(offset):
@@ -560,9 +578,10 @@ def class_kinds(where, body, builders, above=0):
                           "neither a string literal nor a choice between two")
         else:
             purposes.update(named)
+    copies = copied(name, body)
     for m in re.finditer(r"\bpurpose\b", body):
         field_read = body[m.start() - 1:m.start()] == "." and not re.match(r"\s*=[^=]", body[m.end():])
-        if m.start() not in followed and not field_read:
+        if m.start() not in followed and m.start() - 1 not in copies and not field_read:
             unread.append(f"{line(m.start())}: `purpose` is used where no request is built")
     return sources, purposes, unread
 
@@ -673,8 +692,9 @@ def source_kinds(bot_dir):
     names this reading does not know), a builder named otherwise than called
     by its own name (handed to a variable, called on an object), a builder
     called or a purpose named outside a class, a request written by hand
-    outside requests.js (`"claims":`), a class with purposes and no source, a
-    class with a `requests(` method and no kind."""
+    outside requests.js (`"claims":`, or `"purpose":` anywhere but in an
+    assignment of allocator.js, COPIED_RE), a class with purposes and no
+    source, a class with a `requests(` method and no kind."""
     root = os.path.join(bot_dir, "simulation/ai/strategos")
     texts = {}
     for name in sorted(os.listdir(root)):
@@ -687,7 +707,10 @@ def source_kinds(bot_dir):
     builders, unread = module_builders(module)
     kinds = set()
     for name, text in texts.items():
+        copies = copied(name, text)
         for m in WRITTEN_RE.finditer(text):
+            if m.start() in copies:
+                continue
             unread.append(f"{name} line {text.count(chr(10), 0, m.start()) + 1}: {m.group(0)} a request is written "
                           f"outside {REQUESTS_MODULE}")
         # The lines of the plain imports, where a builder is named without being called, and the lines already
@@ -708,12 +731,12 @@ def source_kinds(bot_dir):
         classes = regions(text, CLASS_RE)
         first = CLASS_RE.search(text)
         outside = text[:first.start()] if first else text
-        sources, purposes, faults = class_kinds(name, outside, builders)
+        sources, purposes, faults = class_kinds(name, name, outside, builders)
         unread += faults
         if sources or purposes:
             unread.append(f"{name}: a request is built outside a class ({', '.join(sorted(sources | purposes))})")
         for cls, body, above in classes:
-            sources, purposes, faults = class_kinds(f"{name}: class {cls},", body, builders, above)
+            sources, purposes, faults = class_kinds(name, f"{name}: class {cls},", body, builders, above)
             unread += faults
             if len(sources) > 1:
                 die(f"{name}: class {cls} names {len(sources)} sources ({', '.join(sorted(sources))}): "

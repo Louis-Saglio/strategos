@@ -494,8 +494,11 @@ is not whole and exits 1:
   the word `purpose` used where no request is built (a variable, a field
   written), a method taking a purpose that is used otherwise than called
   as `this.NAME(`, a request built outside a class or written by hand
-  outside `requests.js` (`"claims":`), a class with a `requests(` method
-  that names no purpose;
+  outside `requests.js` (`"claims":` or `"purpose":`; one record is let
+  through, in `allocator.js` only and in this form only: an assignment,
+  which copies the kind of the request a unit was granted to, `"source":
+  request.source, "purpose": request.purpose,`, and names none of its
+  own), a class with a `requests(` method that names no purpose;
 - between a subsystem and `requests.js`: the module named otherwise than
   in `import { NAME, ... } from "simulation/ai/strategos/requests.js";` (a
   namespace import, an alias, a re-export, a dynamic import), or a builder

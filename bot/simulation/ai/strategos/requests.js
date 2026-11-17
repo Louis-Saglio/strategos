@@ -63,6 +63,11 @@ export function orderRequest(source, purpose, unit, action, value, urgency)
 	return compose(source, purpose, Object.assign({ "unit": unit }, action), { "units": [unit] }, value, urgency);
 }
 
+export function memberRequest(source, purpose, unit, engaged, order, value, urgency)
+{
+	return orderRequest(source, purpose, unit, engaged ? hold() : order, value, urgency);
+}
+
 export function stanceRequest(source, purpose, unit, name, value, urgency)
 {
 	return compose(source, purpose, Object.assign({ "unit": unit }, stance(name)), {}, value, urgency);

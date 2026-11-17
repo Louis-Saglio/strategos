@@ -51,7 +51,7 @@ function assemble(gameState, stopwatch, sections)
 	return Object.freeze(world);
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, stopwatch)
+export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, assignments, stopwatch)
 {
 	const anchors = stopwatch.section("economy", () => {
 		const found = dropsites(gameState, catalog);
@@ -78,6 +78,6 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"enemyCentres": enemies.now.enemyCentres,
 		"enemyTargets": enemies.now.enemyTargets
 	}));
-	const context = stopwatch.section("context", () => contextSection(gameState, catalog, map.now.seas, pendingConstructions, demand));
+	const context = stopwatch.section("context", () => contextSection(gameState, catalog, map.now.seas, pendingConstructions, demand, assignments));
 	return assemble(gameState, stopwatch, { context, economy, production, military, enemies, players, sea, map });
 }

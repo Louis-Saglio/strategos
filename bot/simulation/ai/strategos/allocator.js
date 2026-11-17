@@ -28,6 +28,7 @@ export class Allocator
 		this.orders = new Map();
 		this.ordered = new Map();
 		this.held = {};
+		this.assigned = [];
 		this.allocations = 0;
 		for (const code of codes)
 			this.held[code] = 0;
@@ -42,6 +43,22 @@ export class Allocator
 			"orders": Object.freeze(Object.fromEntries(this.orders)),
 			"unmet": Object.freeze(Object.assign({}, this.unmet))
 		});
+	}
+
+	assignments()
+	{
+		const assigned = this.assigned;
+		return () => {
+			const assignments = {};
+			for (const request of assigned)
+			{
+				const assignment = Object.freeze({ "source": request.source, "purpose": request.purpose,
+					"operation": "operation" in request ? request.operation : null, "value": request.value });
+				for (const id of request.claims.units)
+					assignments[id] = assignment;
+			}
+			return Object.freeze(assignments);
+		};
 	}
 
 	observe(world, spent, unmet, paid)
@@ -103,6 +120,7 @@ export class Allocator
 			}
 			earmarked.set(request, part);
 		}
+		this.assigned = [];
 		const outcomes = [];
 		const spent = {};
 		const unmet = {};
@@ -170,6 +188,8 @@ export class Allocator
 		const claims = request.claims;
 		for (const id of claims.units || [])
 			budget.units.add(id);
+		if (claims.units && claims.units.length)
+			this.assigned.push(request);
 		for (const id of claims.slots || [])
 			budget.slots.add(id);
 		budget.population -= claims.population || 0;
