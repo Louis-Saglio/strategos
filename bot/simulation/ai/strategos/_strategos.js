@@ -1,5 +1,5 @@
 import { BaseAI } from "simulation/ai/common-api/baseAI.js";
-import { Allocator } from "simulation/ai/strategos/allocator.js";
+import { Allocator, GRANTED } from "simulation/ai/strategos/allocator.js";
 import { BattleLog } from "simulation/ai/strategos/battles.js";
 import { Catalog } from "simulation/ai/strategos/catalog.js";
 import { Construction } from "simulation/ai/strategos/construction.js";
@@ -79,19 +79,34 @@ StrategosBot.prototype.decide = function()
 	lap("BattleLog");
 	const priorities = this.strategy.update(world);
 	const requests = [];
+	const emitted = [];
 	for (const subsystem of this.subsystems)
 	{
-		requests.push(...subsystem.requests(world, priorities));
+		const own = subsystem.requests(world, priorities);
+		emitted.push(own);
+		requests.push(...own);
 		lap(subsystem.constructor.name);
 	}
-	const grants = this.allocator.allocate(world, requests);
-	this.executor.execute(world, grants);
+	const outcomes = this.allocator.allocate(world, requests);
+	this.executor.execute(world, outcomes.filter(entry => entry.outcome === GRANTED && entry.request.action));
+	this.settle(world, emitted, outcomes);
 	lap("allocateExecute");
 	this.telemetry.recordDecision(Date.now() - started, stages);
 	for (const trainer of world.trainers)
 		this.telemetry.recordProduction(trainer.trainable.some(name => this.catalog.isCivilian(name)) ? "civilian" :
 			trainer.trainable.some(name => this.catalog.isFighter(name)) ? "military" : "other", trainer.queueLength === 0);
 	this.report(world, priorities);
+};
+
+StrategosBot.prototype.settle = function(world, emitted, outcomes)
+{
+	const outcomeOf = new Map();
+	for (const entry of outcomes)
+		outcomeOf.set(entry.request, entry);
+	this.subsystems.forEach((subsystem, index) => {
+		if (subsystem.settle)
+			subsystem.settle(world, emitted[index].map(request => outcomeOf.get(request)));
+	});
 };
 
 StrategosBot.prototype.report = function(world, priorities)

@@ -73,6 +73,19 @@ export class Naval
 		return requests.concat(this.stationRequests(world, priorities, requests));
 	}
 
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
+		{
+			if (!issued)
+				continue;
+			if (request.purpose === "raid-stance")
+				this.steady.add(request.action.unit);
+			if (request.purpose === "station")
+				this.stations.get(request.action.unit).ordered.record(world.time);
+		}
+	}
+
 	report(world, priorities)
 	{
 		if (!this.telemetry.due("SEA", world.time, REPORT_MS))
@@ -810,10 +823,7 @@ export class Naval
 		const posture = [];
 		for (const ship of raiders)
 			if (!this.steady.has(ship.id))
-			{
-				this.steady.add(ship.id);
 				posture.push(stanceRequest("naval", "raid-stance", ship.id, "standground", priorities.values.ferry, 1));
-			}
 		return posture.concat(raiders.map(ship => squareDistance(ship.position, point) <= near || !ship.idle ?
 			this.order("raid", ship.id, hold(), priorities) :
 			this.order("raid", ship.id, attackWalkTo(point[0], point[1], RAID_CLASSES), priorities)));
@@ -971,7 +981,6 @@ export class Naval
 			if (!ship.idle || !station.ordered.due(world.time, ANCHOR_RETRY_MS) ||
 			    squareDistance(ship.position, point) <= ANCHOR_TOLERANCE * ANCHOR_TOLERANCE)
 				continue;
-			station.ordered.record(world.time);
 			requests.push(this.order("station", ship.id, walkTo(point[0], point[1]), priorities));
 		}
 		return requests;

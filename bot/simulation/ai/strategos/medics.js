@@ -1,5 +1,5 @@
 import { centroid, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { noting, orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { territoryAt } from "simulation/ai/strategos/world.js";
 
 const SAFE_RADIUS = 35;
@@ -38,13 +38,22 @@ export class Medics
 				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 			if (!template)
 				continue;
-			if (!this.trained)
-				this.telemetry.line("MEDIC", world.time, { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length });
-			this.trained += 1;
-			return [trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),
-				priorities.values.support, 1)];
+			return [noting(trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),
+				priorities.values.support, 1), { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length })];
 		}
 		return [];
+	}
+
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
+		{
+			if (!issued || request.purpose !== "healer")
+				continue;
+			if (!this.trained)
+				this.telemetry.line("MEDIC", world.time, request.note);
+			this.trained += 1;
+		}
 	}
 
 	followRequests(world, priorities, wounded)

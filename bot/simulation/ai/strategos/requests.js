@@ -3,6 +3,11 @@ function compose(source, purpose, action, claims, value, urgency)
 	return { "source": source, "purpose": purpose, "action": action, "claims": claims, "value": value, "urgency": urgency };
 }
 
+function reservation(source, purpose, claims, value, urgency)
+{
+	return { "source": source, "purpose": purpose, "claims": claims, "value": value, "urgency": urgency };
+}
+
 function garrisonSlot(holder)
 {
 	return "garrison-" + holder;
@@ -132,12 +137,12 @@ export function unloadAllRequest(source, purpose, holder, value, urgency)
 
 export function fundRequest(source, purpose, cost, value, urgency)
 {
-	return converting(reserving(compose(source, purpose, hold(), { "resources": cost }, value, urgency)));
+	return converting(reserving(reservation(source, purpose, { "resources": cost }, value, urgency)));
 }
 
 export function roomRequest(source, purpose, population, value, urgency)
 {
-	return compose(source, purpose, hold(), { "population": population }, value, urgency);
+	return reservation(source, purpose, { "population": population }, value, urgency);
 }
 
 export function reserving(request)
@@ -153,6 +158,11 @@ export function inTier(request, tier)
 export function pressing(request, urgency)
 {
 	return Object.assign(request, { "urgency": urgency });
+}
+
+export function noting(request, note)
+{
+	return Object.assign(request, { "note": note });
 }
 
 function converting(request)

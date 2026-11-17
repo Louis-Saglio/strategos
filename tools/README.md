@@ -459,9 +459,11 @@ A key is `source/purpose/action:outcome`:
 - `purpose` — what the request is for (a house is not a dropsite, a
   soldier is not a worker);
 - `action` — the type of the request's action (`train`, `construct`,
-  `walk`, `hold`, `attack-walk`...; `hold` is also the action of a request
-  that only holds resources or population), followed by `!` when the
-  request is of the production tier;
+  `walk`, `hold`, `attack-walk`...), or `reserve` for a reservation: a
+  request that claims resources or population and orders nothing, so it
+  has no action and never reaches the executor (`construction/colony-fund`,
+  `naval/ship-room`); followed by `!` when the request is of the production
+  tier;
 - `outcome` — `granted`, or the reason of the denial (`unit-taken`,
   `slot-taken`, `population`, `resources-CODE`).
 

@@ -63,14 +63,11 @@ export class Executor
 		return pending.map(order => Object.freeze(Object.assign({}, order)));
 	}
 
-	execute(world, grants)
+	execute(world, orders)
 	{
 		this.time = world.time;
-		let issued = 0;
-		for (const grant of grants)
-			if (this.handlers[grant.action.type](grant.action))
-				issued += 1;
-		return issued;
+		for (const order of orders)
+			order.issued = this.handlers[order.request.action.type](order.request.action);
 	}
 
 	train(action)

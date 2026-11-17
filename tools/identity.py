@@ -431,7 +431,8 @@ def ledger_kind(key):
     """A key of the `outcomes` of an [ALLOC] line -> (kind of request, action, outcome).
 
     The allocator (allocator.js, record) writes `source/purpose/action:outcome`,
-    the action followed by `!` when the request is of the production tier. The
+    the action followed by `!` when the request is of the production tier; a
+    reservation has no action and `reserve` is written in its place. The
     kind is `source/purpose`: the table sums over the actions and the tiers of
     a kind, and names them beside it. A key of another form (a ledger written
     before requests had a purpose) is a ValueError: the line is then reported

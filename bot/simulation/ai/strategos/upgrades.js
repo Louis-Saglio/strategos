@@ -1,5 +1,5 @@
 import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
-import { upgradeRequest } from "simulation/ai/strategos/requests.js";
+import { noting, upgradeRequest } from "simulation/ai/strategos/requests.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
 import { TECH_HORIZON_S, auraBenefit, resourcePrices } from "simulation/ai/strategos/valuation.js";
 
@@ -46,14 +46,20 @@ export class Upgrades
 		}
 		if (!best)
 			return [];
-		const affordable = world.codes.every(code => world.resources[code] >= (best.option.cost[code] || 0));
-		if (affordable)
+		return [noting(upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, priorities.values.investment, 1),
+			{ "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) })];
+	}
+
+	settle(world, outcomes)
+	{
+		for (const { request, issued } of outcomes)
 		{
-			this.ordered.record(world.time, best.entity.id);
+			if (!issued)
+				continue;
+			this.ordered.record(world.time, request.action.entity);
 			this.last.record(world.time);
-			this.telemetry.line("UPGRADE", world.time, { "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) });
+			this.telemetry.line("UPGRADE", world.time, request.note);
 		}
-		return [upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, priorities.values.investment, 1)];
 	}
 
 	worth(world, name, weights, mobile)
