@@ -1,9 +1,11 @@
+import { Retry } from "simulation/ai/strategos/switches.js";
+
 export class Telemetry
 {
 	constructor(player)
 	{
 		this.player = player;
-		this.lastLine = new Map();
+		this.lastLine = new Retry();
 		this.decisions = 0;
 		this.totalMs = 0;
 		this.maxMs = 0;
@@ -38,11 +40,7 @@ export class Telemetry
 
 	due(tag, timeMs, periodMs)
 	{
-		const last = this.lastLine.get(tag);
-		if (last !== undefined && timeMs - last < periodMs)
-			return false;
-		this.lastLine.set(tag, timeMs);
-		return true;
+		return this.lastLine.attempt(timeMs, periodMs, tag);
 	}
 
 	recordDecision(ms, stages)

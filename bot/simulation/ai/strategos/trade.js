@@ -1,7 +1,7 @@
+import { distanceBetween } from "simulation/ai/strategos/geometry.js";
 import { barterRequest, goodsRequest, orderRequest, tradeRoute, trainRequest } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const DEAL_AMOUNT = 100;
 const MIN_RATE = 0.65;
@@ -26,7 +26,7 @@ function bestRoute(world, caravan)
 				continue;
 			if (!a.own && !b.own)
 				continue;
-			const distance = Math.sqrt(squareDistance(a.position, b.position));
+			const distance = distanceBetween(a.position, b.position);
 			const gain = routeGain(distance, world.mapSize, caravan.gain) * (a.own && b.own ? 1 : 1 + Math.max(a.bonus, b.bonus));
 			const rate = gain / Math.max(1, distance / Math.max(1, caravan.speed));
 			if (!best || rate > best.rate || rate === best.rate && a.id + b.id < best.from.id + best.to.id)

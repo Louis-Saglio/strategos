@@ -1,6 +1,6 @@
+import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 import { ARROW_HIT_SHARE } from "simulation/ai/strategos/tactics.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 export const TECH_HORIZON_S = 180;
 export const GATHER_EFFICIENCY = 0.6;

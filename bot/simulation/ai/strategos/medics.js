@@ -1,5 +1,6 @@
+import { centroid, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
-import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/world.js";
 
 const SAFE_RADIUS = 35;
 const FLEE_RADIUS = 22;
@@ -56,25 +57,9 @@ export class Medics
 		const abroad = world.fighters.filter(fighter =>
 			territoryAt(world.grids.territory, fighter.position[0], fighter.position[1]).owner !== world.player);
 		let post = home ? [home.position[0], home.position[1] + home.radius + HOME_CLEARANCE] : null;
-		if (abroad.length >= FIELD_ARMY)
-		{
-			const centre = [0, 0];
-			for (const fighter of abroad)
-			{
-				centre[0] += fighter.position[0] / abroad.length;
-				centre[1] += fighter.position[1] / abroad.length;
-			}
-			let nearest = Infinity;
-			for (const fighter of abroad)
-			{
-				const distance = squareDistance(fighter.position, centre);
-				if (distance < nearest)
-				{
-					nearest = distance;
-					post = fighter.position;
-				}
-			}
-		}
+		const front = abroad.length >= FIELD_ARMY ? nearest(abroad, centroid(abroad), firstListed).item : null;
+		if (front)
+			post = front.position;
 		const requests = [];
 		for (const healer of world.healers)
 		{
@@ -86,16 +71,9 @@ export class Medics
 				goal = home ? home.position : null;
 			else
 			{
-				let nearest = Infinity;
-				for (const fighter of calm)
-				{
-					const distance = squareDistance(fighter.position, healer.position);
-					if (fighter.region === healer.region && distance < nearest)
-					{
-						nearest = distance;
-						goal = fighter.position;
-					}
-				}
+				const patient = nearest(calm, healer.position, firstListed, fighter => fighter.region === healer.region).item;
+				if (patient)
+					goal = patient.position;
 			}
 			if (!goal || squareDistance(goal, healer.position) <= REACH * REACH || healer.state.includes("WALKING"))
 				continue;

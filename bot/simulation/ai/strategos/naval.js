@@ -1,8 +1,9 @@
 import { PATIENCE_MS, REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
+import { awayFrom, centroid, distanceBetween, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { attack, attackWalkTo, garrisonIn, gatherRequest, hold, inTier, orderRequest, reserving, roomRequest, stanceRequest, trainRequest,
 	unloadAllRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { Retry } from "simulation/ai/strategos/switches.js";
 import { resourcePrices } from "simulation/ai/strategos/valuation.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const HOME_CALM_THREATS = 3;
 const BERTH_REACH = 35;
@@ -43,7 +44,7 @@ export class Naval
 		this.telemetry = telemetry;
 		this.convoys = [];
 		this.serial = 0;
-		this.tried = new Map();
+		this.tried = new Retry();
 		this.anchorages = new Map();
 		this.stations = new Map();
 		this.steady = new Set();
@@ -111,15 +112,6 @@ export class Naval
 		return units;
 	}
 
-	due(world, key)
-	{
-		const last = this.tried.get(key);
-		if (last !== undefined && world.time - last < RETRY_MS)
-			return false;
-		this.tried.set(key, world.time);
-		return true;
-	}
-
 	engaged(id)
 	{
 		return this.convoys.some(convoy => convoy.ships.includes(id));
@@ -141,20 +133,8 @@ export class Naval
 
 	shoreNear(world, region, sea, position, accept)
 	{
-		let best = null;
-		let nearest = Infinity;
-		for (const shore of world.shores)
-		{
-			if (shore.region !== region || shore.sea !== sea || accept && !accept(shore))
-				continue;
-			const distance = squareDistance(shore.land, position);
-			if (distance < nearest)
-			{
-				best = shore;
-				nearest = distance;
-			}
-		}
-		return best;
+		return nearest(world.shores, position, firstListed,
+			shore => shore.region === region && shore.sea === sea && (!accept || accept(shore)), shore => shore.land).item;
 	}
 
 	shorePoints(world, region, sea, position, count, accept)
@@ -184,13 +164,13 @@ export class Naval
 		{
 			if (shore.region !== region || shore.sea !== sea)
 				continue;
-			let nearest = Infinity;
+			let clearance = Infinity;
 			for (const structure of batteries)
-				nearest = Math.min(nearest, squareDistance(structure.position, shore.land));
-			if (nearest > farthest)
+				clearance = Math.min(clearance, squareDistance(structure.position, shore.land));
+			if (clearance > farthest)
 			{
 				best = shore;
-				farthest = nearest;
+				farthest = clearance;
 			}
 		}
 		return best;
@@ -210,23 +190,13 @@ export class Naval
 		const berths = new Map();
 		for (const unit of party)
 		{
-			let best = null;
-			let nearest = Infinity;
-			for (const ship of ships)
-			{
-				const distance = squareDistance(quay.get(ship.id).land, unit.position);
-				if (room.get(ship.id) > 0 && distance < nearest)
-				{
-					best = ship;
-					nearest = distance;
-				}
-			}
+			const best = nearest(ships, unit.position, firstListed, ship => room.get(ship.id) > 0, ship => quay.get(ship.id).land).item;
 			if (!best)
 				break;
 			room.set(best.id, room.get(best.id) - 1);
 			berths.set(unit.id, best.id);
 		}
-		const voyage = Math.max(...ships.map(ship => Math.sqrt(squareDistance(ship.position, quay.get(ship.id).water))));
+		const voyage = Math.max(...ships.map(ship => distanceBetween(ship.position, quay.get(ship.id).water)));
 		const convoy = {
 			"id": ++this.serial, "kind": kind, "ships": ships.map(ship => ship.id), "party": new Set(berths.keys()), "berths": berths,
 			"quay": quay, "beach": beach, "region": to.region, "quorum": quorum, "state": "berth", "since": world.time,
@@ -262,7 +232,7 @@ export class Naval
 			name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
 		const able = world.workers.filter(worker => worker.region === world.homeRegion && !this.enlisted(worker.id) &&
 			worker.buildable.some(structure));
-		if (!ship || able.length < MIN_SETTLERS || !this.due(world, "settle"))
+		if (!ship || able.length < MIN_SETTLERS || !this.tried.attempt(world.time, RETRY_MS, "settle"))
 			return;
 		const wanted = Math.max(MIN_SETTLERS, Math.min(colony.kind === "centre" ? priorities.naval.founders : priorities.naval.settlers,
 			Math.floor(able.length / SETTLER_SHARE)));
@@ -285,7 +255,7 @@ export class Naval
 		if (!dock || !arrival)
 			return;
 		const ship = this.freeTransports(world, ferry.sea, dock.position)[0];
-		if (!ship || !this.due(world, "ferry"))
+		if (!ship || !this.tried.attempt(world.time, RETRY_MS, "ferry"))
 			return;
 		const rank = worker => worker.idle ? -1 : ferry.excess.indexOf(worker.gathering);
 		const able = world.workers.filter(worker => worker.region === ferry.from && !this.enlisted(worker.id) &&
@@ -347,12 +317,7 @@ export class Naval
 			const group = groups.get(region);
 			if (present.has(region) && present.get(region).enemyStructures > 0)
 				continue;
-			const centre = [0, 0];
-			for (const fighter of group)
-			{
-				centre[0] += fighter.position[0] / group.length;
-				centre[1] += fighter.position[1] / group.length;
-			}
+			const centre = centroid(group);
 			const objective = this.objectiveFrom(world, region, region === world.homeRegion ? world.centres[0].position : centre);
 			const note = (why, details) => {
 				if (this.invasion.why === "no army" || region === world.homeRegion)
@@ -399,7 +364,7 @@ export class Naval
 				continue;
 			}
 			note("launch", state);
-			if (!this.due(world, "invade"))
+			if (!this.tried.attempt(world.time, RETRY_MS, "invade"))
 				return;
 			const sheltered = shore => !world.enemyStructures.some(structure => {
 				if (!structure.fire.arrows)
@@ -456,12 +421,7 @@ export class Naval
 				squareDistance(structure.position, enemy.position) <= structure.range * structure.range));
 			if (!prey.length || hunters.length < priorities.naval.huntSuperiority * prey.filter(enemy => enemy.warship).length)
 				continue;
-			const centre = [0, 0];
-			for (const ship of hunters)
-			{
-				centre[0] += ship.position[0] / hunters.length;
-				centre[1] += ship.position[1] / hunters.length;
-			}
+			const centre = centroid(hunters);
 			const kept = prey.find(enemy => enemy.id === this.hunted.get(sea));
 			const target = kept && (kept.warship || !prey.some(enemy => enemy.warship)) ? kept : prey
 				.map(enemy => ({ enemy, "distance": squareDistance(enemy.position, centre) }))
@@ -709,7 +669,7 @@ export class Naval
 	firingPoint(world, plan, structure, sea, range, from)
 	{
 		let best = null;
-		let nearest = Infinity;
+		let shortest = Infinity;
 		for (let k = 0; k < plan.bearings; ++k)
 		{
 			const angle = 2 * Math.PI * k / plan.bearings;
@@ -719,10 +679,10 @@ export class Naval
 				squareDistance(battery.position, point) <= (battery.range + plan.clearance) * (battery.range + plan.clearance)))
 				continue;
 			const distance = squareDistance(point, from);
-			if (distance < nearest)
+			if (distance < shortest)
 			{
 				best = point;
-				nearest = distance;
+				shortest = distance;
 			}
 		}
 		return best;
@@ -740,12 +700,7 @@ export class Naval
 		const sea = guns[0].sea;
 		const battery = guns.filter(ship => ship.sea === sea);
 		const range = Math.min(...battery.map(ship => this.catalog.combat(ship.template).range));
-		const centre = [0, 0];
-		for (const ship of battery)
-		{
-			centre[0] += ship.position[0] / battery.length;
-			centre[1] += ship.position[1] / battery.length;
-		}
+		const centre = centroid(battery);
 		const standing = this.bombardment && world.enemyStructures.some(structure => structure.id === this.bombardment.target);
 		if (!standing && (!this.bombardment || this.bombardment.target !== null || world.time - this.bombardment.since >= RETRY_MS))
 		{
@@ -898,20 +853,8 @@ export class Naval
 		{
 			if (hostile(boat.position))
 			{
-				let foe = null;
-				let closest = Infinity;
-				for (const enemy of foes)
-				{
-					const distance = squareDistance(enemy.position, boat.position);
-					if (distance < closest)
-					{
-						foe = enemy;
-						closest = distance;
-					}
-				}
-				const length = Math.sqrt(closest) || 1;
-				const away = [boat.position[0] + (boat.position[0] - foe.position[0]) / length * clearance.flight,
-					boat.position[1] + (boat.position[1] - foe.position[1]) / length * clearance.flight];
+				const foe = nearest(foes, boat.position, firstListed).item;
+				const away = awayFrom(boat.position, foe.position, clearance.flight);
 				if (world.openWater(away, boat.sea, clearance.berth))
 					requests.push(boat.state.includes("WALKING") ? this.order("flee", boat.id, hold(), priorities) :
 						this.order("flee", boat.id, walkTo(away[0], away[1]), priorities));
@@ -919,19 +862,8 @@ export class Naval
 			}
 			if (!boat.idle || boat.gathering)
 				continue;
-			let best = null;
-			let nearest = Infinity;
-			for (const fish of waters)
-			{
-				if (fish.sea !== boat.sea || fish.gatherers + (reserved.get(fish.id) || 0) >= fish.capacity)
-					continue;
-				const distance = squareDistance(fish.position, boat.position);
-				if (distance < nearest)
-				{
-					best = fish;
-					nearest = distance;
-				}
-			}
+			const best = nearest(waters, boat.position, firstListed,
+				fish => fish.sea === boat.sea && !(fish.gatherers + (reserved.get(fish.id) || 0) >= fish.capacity)).item;
 			if (!best)
 				continue;
 			reserved.set(best.id, (reserved.get(best.id) || 0) + 1);
@@ -947,20 +879,12 @@ export class Naval
 		{
 			if (!ship.cargo.length)
 				continue;
-			let shore = null;
-			let nearest = Infinity;
-			for (const candidate of world.shores)
-			{
-				const distance = squareDistance(candidate.water, ship.position);
-				if (distance < nearest && world.regionArea(candidate.region) >= CASTAWAY_MIN_AREA)
-				{
-					shore = candidate;
-					nearest = distance;
-				}
-			}
+			const found = nearest(world.shores, ship.position, firstListed,
+				candidate => world.regionArea(candidate.region) >= CASTAWAY_MIN_AREA, candidate => candidate.water);
+			const shore = found.item;
 			if (!shore)
 				continue;
-			if (nearest > LANDING_RADIUS * LANDING_RADIUS && ship.idle)
+			if (found.squareDistance > LANDING_RADIUS * LANDING_RADIUS && ship.idle)
 				requests.push(this.order("castaway", ship.id, walkTo(shore.land[0], shore.land[1]), priorities));
 			else if (ship.idle)
 				requests.push(unloadAllRequest("naval", "castaway", ship.id, priorities.values.founding, 1));
@@ -1039,15 +963,15 @@ export class Naval
 					slot += 1;
 				if (slot >= points.length)
 					continue;
-				station = { "dock": dock.id, "slot": slot, "ordered": -Infinity };
+				station = { "dock": dock.id, "slot": slot, "ordered": new Retry() };
 				this.stations.set(ship.id, station);
 				taken.add(dock.id + ":" + slot);
 			}
 			const point = this.anchorage(world, docks.get(station.dock))[station.slot];
-			if (!ship.idle || world.time - station.ordered < ANCHOR_RETRY_MS ||
+			if (!ship.idle || !station.ordered.due(world.time, ANCHOR_RETRY_MS) ||
 			    squareDistance(ship.position, point) <= ANCHOR_TOLERANCE * ANCHOR_TOLERANCE)
 				continue;
-			station.ordered = world.time;
+			station.ordered.record(world.time);
 			requests.push(this.order("station", ship.id, walkTo(point[0], point[1]), priorities));
 		}
 		return requests;

@@ -1,5 +1,6 @@
 import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { upgradeRequest } from "simulation/ai/strategos/requests.js";
+import { Retry } from "simulation/ai/strategos/switches.js";
 import { TECH_HORIZON_S, auraBenefit, resourcePrices } from "simulation/ai/strategos/valuation.js";
 
 const SWITCH_EDGE = 2;
@@ -11,13 +12,13 @@ export class Upgrades
 	{
 		this.catalog = catalog;
 		this.telemetry = telemetry;
-		this.ordered = new Map();
-		this.last = -Infinity;
+		this.ordered = new Retry();
+		this.last = new Retry();
 	}
 
 	requests(world, priorities)
 	{
-		if (!world.upgradable.length || world.time - this.last < RETRY_MS)
+		if (!world.upgradable.length || !this.last.due(world.time, RETRY_MS))
 			return [];
 		const prices = resourcePrices(world);
 		const priced = amounts => world.codes.reduce((sum, code) => sum + prices[code] * (amounts[code] || 0), 0);
@@ -29,8 +30,7 @@ export class Upgrades
 		let best = null;
 		for (const entity of world.upgradable)
 		{
-			const since = this.ordered.get(entity.id);
-			if (since !== undefined && world.time - since < RETRY_MS)
+			if (!this.ordered.due(world.time, RETRY_MS, entity.id))
 				continue;
 			const held = this.worth(world, entity.template, weights, entity.unit);
 			for (const option of entity.options)
@@ -49,8 +49,8 @@ export class Upgrades
 		const affordable = world.codes.every(code => world.resources[code] >= (best.option.cost[code] || 0));
 		if (affordable)
 		{
-			this.ordered.set(best.entity.id, world.time);
-			this.last = world.time;
+			this.ordered.record(world.time, best.entity.id);
+			this.last.record(world.time);
 			this.telemetry.line("UPGRADE", world.time, { "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) });
 		}
 		return [upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, priorities.values.investment, 1)];

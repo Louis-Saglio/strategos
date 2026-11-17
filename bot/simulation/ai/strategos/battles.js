@@ -1,6 +1,7 @@
-import { arriving, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
+import { Retry } from "simulation/ai/strategos/switches.js";
 import { balance } from "simulation/ai/strategos/tactics.js";
-import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const MIN_SIDE = 4;
 const SAME_BATTLE_RADIUS = 120;
@@ -75,14 +76,13 @@ export class BattleLog
 			if (!battle)
 			{
 				this.count += 1;
-				battle = { "id": this.count, "reports": 0, "reported": -Infinity };
+				battle = { "id": this.count, "reports": 0, "reported": new Retry() };
 				this.known.push(battle);
 			}
 			battle.centre = clash.centre;
 			battle.seen = world.time;
-			if (world.time - battle.reported < REPORT_PERIOD_MS)
+			if (!battle.reported.attempt(world.time, REPORT_PERIOD_MS))
 				continue;
-			battle.reported = world.time;
 			const cover = covering(world.holders, clash.centre, clash.units);
 			const present = new Set(clash.units.concat(clash.opponents).map(unit => unit.id));
 			const joining = arriving(this.catalog, world.fighters, clash.centre, present, false);
