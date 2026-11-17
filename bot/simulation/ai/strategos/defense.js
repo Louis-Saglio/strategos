@@ -12,8 +12,6 @@ const OUTNUMBERED_EXIT = 0.6;
 const SAFE_RADIUS = 70;
 const REPORT_PERIOD_MS = 10000;
 const APPROACH_RADIUS = 80;
-const ENGAGE_ENTER = 1.3;
-const ENGAGE_EXIT = 0.8;
 const RESPONSE_MARGIN = 2;
 const BATTLE_RADIUS = 60;
 const RETREAT_RADIUS = 90;
@@ -170,7 +168,7 @@ export class Defense
 		}
 		const cover = coveringHolders(world.holders, centre, COVER_MARGIN);
 		this.ratio = balance(this.catalog, near.map(entry => entry.fighter), group, cover);
-		this.engaged = this.engaged ? this.ratio >= ENGAGE_EXIT : this.ratio >= ENGAGE_ENTER;
+		this.engaged = this.engaged ? this.ratio >= 1 / priorities.margin : this.ratio >= priorities.margin;
 		return this.engaged ? this.respond(world, priorities, free, near, group, cover) : this.fallBack(world, priorities, free, near, centre);
 	}
 

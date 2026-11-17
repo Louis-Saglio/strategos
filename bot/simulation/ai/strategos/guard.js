@@ -81,8 +81,6 @@ const RELIC_POST_CLEARANCE = 14;
 const RELIC_POST_TOLERANCE = 10;
 const RELIC_GUARD_RADIUS = 60;
 const RELIC_ENEMY_CLEARANCE = 300;
-const RELIC_BALANCE_ENGAGE = 1.3;
-const RELIC_BALANCE_ABORT = 0.8;
 
 export class Relics
 {
@@ -143,7 +141,7 @@ export class Relics
 		const guards = world.enemyFighters.concat(world.wild)
 			.filter(enemy => squareDistance(enemy.position, wanted.position) <= RELIC_GUARD_RADIUS * RELIC_GUARD_RADIUS);
 		const ratio = guards.length ? balance(this.catalog, squad, guards, []) : Infinity;
-		this.contested = this.contested ? ratio < RELIC_BALANCE_ENGAGE : ratio < RELIC_BALANCE_ABORT;
+		this.contested = this.contested ? ratio < priorities.margin : ratio < 1 / priorities.margin;
 		if (this.contested)
 		{
 			this.squad = new Set();

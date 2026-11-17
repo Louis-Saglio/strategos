@@ -12,8 +12,7 @@ const BASE = {
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1, "afterMs": 60000 },
-	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, "capture": { "enter": 1.2, "exit": 0.8 },
-		"exchange": { "enter": 1.3, "exit": 0.8, "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
+	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, 		"exchange": { "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
 		"targetsTried": 6, "recall": 0.1, "reinforce": { "min": 20 },
 		"beachhead": { "superiority": 1, "reserve": 10 } },
@@ -31,6 +30,7 @@ const BASE = {
 	"forward": { "settlers": 15, "builders": 20, "reach": 120, "clearance": 250, "shore": 120, "retryMs": 60000 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
 		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] },
+	"margin": 1.25,
 	"protectHero": false,
 	"seekRelics": false,
 	"raiseWonder": false
@@ -430,6 +430,7 @@ export class Strategy
 		this.shortCode = labour.short[0] || null;
 		this.priorities = Object.freeze({
 			"plans": this.plans,
+			"margin": this.table.margin,
 			"gatherShares": Object.freeze(Object.assign({}, this.shares)),
 			"values": this.table.values,
 			"housing": this.table.housing,

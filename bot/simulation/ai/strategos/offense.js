@@ -397,9 +397,9 @@ export class Offense
 		outlook.army = this.armyValue(members);
 		outlook.attrition = this.attrition(world, priorities);
 		outlook.field = field;
-		outlook.dominant = field.ratio >= exchange.enter * outlook.attrition;
+		outlook.dominant = field.ratio >= priorities.margin * outlook.attrition;
 		outlook.worth = outlook.dominant && outlook.cost <= exchange.maxCost * outlook.army ||
-			outlook.gain + outlook.prize >= exchange.enter * outlook.attrition * (outlook.cost + outlook.trip);
+			outlook.gain + outlook.prize >= priorities.margin * outlook.attrition * (outlook.cost + outlook.trip);
 		return outlook;
 	}
 
@@ -426,7 +426,7 @@ export class Offense
 			world.enemyStructures, Object.assign(this.plan(priorities, exchange.reach.fight), { "prey": world.enemyCivilians }));
 		const prize = this.assaulting ? this.prize(world, priorities, members, this.target) : 0;
 		return outlook.cost >= exchange.minCost * this.armyValue(members) &&
-			outlook.gain + prize < exchange.exit * this.attrition(world, priorities) * outlook.cost ? outlook : null;
+			outlook.gain + prize < this.attrition(world, priorities) * outlook.cost / priorities.margin ? outlook : null;
 	}
 
 	chooseTarget(world, priorities, members, from, region, gated)
@@ -434,7 +434,7 @@ export class Offense
 		const ranked = [];
 		for (const target of world.enemyStructures)
 		{
-			if (target.region !== region || !this.feasible(world, priorities, members, target, priorities.offense.capture.enter))
+			if (target.region !== region || !this.feasible(world, priorities, members, target, priorities.margin))
 				continue;
 			const weight = target.centre ? TARGET_WEIGHTS.centre : target.fire.arrows ? TARGET_WEIGHTS.defensive : TARGET_WEIGHTS.other;
 			const score = weight * target.value / (1 + Math.sqrt(squareDistance(target.position, from)) / TARGET_DISTANCE_SCALE);
@@ -625,13 +625,12 @@ export class Offense
 			.filter(enemy => squareDistance(enemy.position, this.target.position) <= limit)
 			.map(enemy => enemy.id));
 		let target = world.enemyStructures.find(candidate => candidate.id === this.target.id) || this.target;
-		const margins = priorities.offense.capture;
 		if (target.fire && this.resistance)
 		{
 			this.resistance.regen = Math.max(this.resistance.regen, target.regen);
 			this.resistance.arrows = Math.max(this.resistance.arrows, target.fire.arrows);
 		}
-		let capturable = this.feasible(world, priorities, members, target, this.assaulting ? margins.exit : margins.enter);
+		let capturable = this.feasible(world, priorities, members, target, this.assaulting ? 1 / priorities.margin : priorities.margin);
 		if (!capturable && this.retarget(world, priorities, members))
 		{
 			target = this.target;
