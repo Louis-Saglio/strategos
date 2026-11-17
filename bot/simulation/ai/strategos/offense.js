@@ -347,13 +347,25 @@ export class Offense
 		return Math.min(plan.max, Math.max(plan.min, world.enemyGatherers / Math.max(1, gathering)));
 	}
 
+	gatherRate(worker)
+	{
+		const rates = worker.profile.rates;
+		if (worker.kind)
+			return rates[worker.kind] || 0;
+		let rate = Infinity;
+		for (const kind in rates)
+			if (kind.startsWith(worker.gathering + ".") && rates[kind] > 0)
+				rate = Math.min(rate, rates[kind]);
+		return isFinite(rate) ? rate : 0;
+	}
+
 	forgone(world, members)
 	{
 		const prices = resourcePrices(world);
 		const working = new Map();
 		for (const worker of world.workers)
 			if (worker.soldier && worker.gathering && prices[worker.gathering] !== undefined)
-				working.set(worker.id, GATHER_EFFICIENCY * worker.meanRates[worker.gathering] * prices[worker.gathering]);
+				working.set(worker.id, GATHER_EFFICIENCY * this.gatherRate(worker) * prices[worker.gathering]);
 		let income = 0;
 		let speed = 0;
 		for (const member of members)
