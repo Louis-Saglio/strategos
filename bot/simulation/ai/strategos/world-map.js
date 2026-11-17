@@ -3,12 +3,15 @@ import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { landRegionsOf } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
 
-export function homeRegionOf(gameState, centres)
+export function settledBases(gameState, centres)
 {
-	return centres.length ? gameState.sharedScript.accessibility.getAccessValue(centres[0].position) : 0;
+	const accessibility = gameState.sharedScript.accessibility;
+	const bases = centres.map(centre => Object.freeze(Object.assign({}, centre, { "region": accessibility.getAccessValue(centre.position) })));
+	const home = bases.length ? bases[0] : null;
+	return { "bases": Object.freeze(bases), "home": home, "homeRegion": home ? home.region : 0 };
 }
 
-function presence(accessibility, present)
+function presence(accessibility, bases, present)
 {
 	const regions = new Map();
 	const regionEntry = region => {
@@ -32,25 +35,24 @@ function presence(accessibility, present)
 		regionEntry(region).anchors += 1;
 	for (const dock of present.docks)
 		regionEntry(dock.region).docks += 1;
-	for (const centre of present.centres)
-		regionEntry(accessibility.getAccessValue(centre.position)).centres += 1;
+	for (const base of bases)
+		regionEntry(base.region).centres += 1;
 	for (const structure of present.enemyStructures)
 		regionEntry(structure.region).enemyStructures += 1;
 	return [...regions.values()].sort((a, b) => a.id - b.id).map(entry => Object.freeze(entry));
 }
 
-function seaCrossing(accessibility, homeRegion, seas, centres, objectives)
+function seaCrossing(accessibility, home, seas, objectives)
 {
 	let crossing = null;
-	if (centres.length && objectives.length && !objectives.some(target => target.region === homeRegion))
+	if (home && objectives.length && !objectives.some(target => target.region === home.region))
 	{
-		const home = centres[0].position;
 		for (const target of objectives)
 		{
 			const sea = seas.find(candidate => (accessibility.regionLinks[candidate] || []).includes(target.region));
 			if (sea === undefined)
 				continue;
-			const distance = squareDistance(target.position, home);
+			const distance = squareDistance(target.position, home.position);
 			if (!crossing || distance < crossing.distance || (distance === crossing.distance && target.id < crossing.target))
 				crossing = { "target": target.id, "position": target.position, "region": target.region, "sea": sea, "distance": distance };
 		}
@@ -74,10 +76,10 @@ function relicsSeen(gameState)
 	return relics.sort((a, b) => a.id - b.id);
 }
 
-export function mapSection(gameState, homeRegion, present)
+export function mapSection(gameState, settled, present)
 {
 	const accessibility = gameState.sharedScript.accessibility;
-	const seas = accessibility.regionLinks[homeRegion] || [];
+	const seas = accessibility.regionLinks[settled.homeRegion] || [];
 	return {
 		"now": {
 			"mapSize": accessibility.width * accessibility.cellSize,
@@ -87,22 +89,24 @@ export function mapSection(gameState, homeRegion, present)
 				"buildingLand": gameState.getPassabilityClassMask("building-land"),
 				"buildingShore": gameState.getPassabilityClassMask("building-shore")
 			}),
-			"homeRegion": homeRegion,
+			"bases": settled.bases,
+			"home": settled.home,
+			"homeRegion": settled.homeRegion,
 			"seas": Object.freeze(seas.slice()),
 			"regionLinks": accessibility.regionLinks,
 			"regionOf": position => accessibility.getAccessValue(position),
 			"regionArea": region => (accessibility.regionSize[region] || 0) * accessibility.cellSize * accessibility.cellSize,
-			"regions": Object.freeze(presence(accessibility, present)),
+			"regions": Object.freeze(presence(accessibility, settled.bases, present)),
 			"ownSide": position => {
 				let own = Infinity;
-				for (const centre of present.centres)
-					own = Math.min(own, squareDistance(centre.position, position));
+				for (const base of settled.bases)
+					own = Math.min(own, squareDistance(base.position, position));
 				let theirs = Infinity;
 				for (const centre of present.enemyCentres)
 					theirs = Math.min(theirs, squareDistance(centre.position, position));
 				return own <= theirs;
 			},
-			"crossing": seaCrossing(accessibility, homeRegion, seas, present.centres, present.enemyTargets)
+			"crossing": seaCrossing(accessibility, settled.home, seas, present.enemyTargets)
 		},
 		"later": {
 			"relics": () => Object.freeze(relicsSeen(gameState))

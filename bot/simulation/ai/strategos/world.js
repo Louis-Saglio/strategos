@@ -1,12 +1,13 @@
 import { contextSection } from "simulation/ai/strategos/world-context.js";
 import { dropsites, economySection } from "simulation/ai/strategos/world-economy.js";
 import { enemiesSection } from "simulation/ai/strategos/world-enemies.js";
-import { homeRegionOf, mapSection } from "simulation/ai/strategos/world-map.js";
+import { mapSection, settledBases } from "simulation/ai/strategos/world-map.js";
 import { militarySection } from "simulation/ai/strategos/world-military.js";
+import { playersSection } from "simulation/ai/strategos/world-players.js";
 import { productionSection } from "simulation/ai/strategos/world-production.js";
 import { seaSection } from "simulation/ai/strategos/world-sea.js";
 
-function once(gameState, stopwatch, section, field, read)
+function once(gameState, stopwatch, section, name, read)
 {
 	const time = gameState.getTimeElapsed();
 	let known = false;
@@ -15,7 +16,7 @@ function once(gameState, stopwatch, section, field, read)
 		if (!known)
 		{
 			if (gameState.getTimeElapsed() !== time)
-				throw new Error("world." + field + " is read after the decision it belongs to");
+				throw new Error(name + " is read after the decision it belongs to");
 			value = stopwatch.section(section, read);
 			known = true;
 		}
@@ -23,27 +24,30 @@ function once(gameState, stopwatch, section, field, read)
 	};
 }
 
+function attach(target, name, parts, deferred)
+{
+	const claim = field => {
+		if (field in target)
+			throw new Error(name + "." + field + " is built twice");
+	};
+	for (const field in parts.now)
+	{
+		claim(field);
+		target[field] = parts.now[field];
+	}
+	for (const field in parts.later)
+	{
+		claim(field);
+		Object.defineProperty(target, field, { "enumerable": true, "get": deferred(name + "." + field, parts.later[field]) });
+	}
+	return target;
+}
+
 function assemble(gameState, stopwatch, sections)
 {
 	const world = {};
-	const claim = field => {
-		if (field in world)
-			throw new Error("world." + field + " is built by two sections");
-	};
 	for (const section in sections)
-	{
-		for (const field in sections[section].now)
-		{
-			claim(field);
-			world[field] = sections[section].now[field];
-		}
-		for (const field in sections[section].later)
-		{
-			claim(field);
-			Object.defineProperty(world, field,
-				{ "enumerable": true, "get": once(gameState, stopwatch, section, field, sections[section].later[field]) });
-		}
-	}
+		attach(world, "world", sections[section], (name, read) => once(gameState, stopwatch, section, name, read));
 	return Object.freeze(world);
 }
 
@@ -55,23 +59,25 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		return found;
 	});
 	const production = stopwatch.section("production", () => productionSection(gameState, catalog));
-	const homeRegion = homeRegionOf(gameState, production.now.centres);
-	const sea = stopwatch.section("sea", () => seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion));
+	const settled = settledBases(gameState, production.now.centres);
+	const sea = stopwatch.section("sea", () => seaSection(gameState, catalog, resourceIndex, shoreIndex, settled.homeRegion));
 	const enemies = stopwatch.section("enemies", () => enemiesSection(gameState, catalog, musterIndex));
+	const record = parts => Object.freeze(attach({}, "world.players", parts,
+		(name, read) => once(gameState, stopwatch, "players", name, read)));
+	const players = playersSection(gameState, catalog, enemies.holdings, enemies.muster, settled.homeRegion, record);
 	const military = stopwatch.section("military", () => militarySection(gameState, catalog, lossIndex));
 	const economy = stopwatch.section("economy",
 		() => economySection(gameState, catalog, resourceIndex, anchors, enemies.now.batteries, sea.now.fishers));
-	const map = stopwatch.section("map", () => mapSection(gameState, homeRegion, {
+	const map = stopwatch.section("map", () => mapSection(gameState, settled, {
 		"workers": economy.now.workers,
 		"settlers": economy.now.settlers,
 		"anchors": anchors,
 		"fighters": military.now.fighters,
 		"docks": sea.now.docks,
-		"centres": production.now.centres,
 		"enemyStructures": enemies.now.enemyStructures,
 		"enemyCentres": enemies.now.enemyCentres,
 		"enemyTargets": enemies.now.enemyTargets
 	}));
 	const context = stopwatch.section("context", () => contextSection(gameState, catalog, map.now.seas, pendingConstructions, demand));
-	return assemble(gameState, stopwatch, { context, economy, production, military, enemies, sea, map });
+	return assemble(gameState, stopwatch, { context, economy, production, military, enemies, players, sea, map });
 }

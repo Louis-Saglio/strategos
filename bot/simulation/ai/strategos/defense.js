@@ -167,7 +167,7 @@ export class Defense
 		const allowed = new Set(enemies.map(enemy => enemy.id));
 		for (const hostile of this.hostiles)
 			allowed.add(hostile.id);
-		const home = world.centres[0];
+		const home = world.home;
 		const retreating = new Set();
 		const retreat = unit => {
 			retreating.add(unit.id);
@@ -197,7 +197,7 @@ export class Defense
 	fallBack(world, priorities, free, near, centre)
 	{
 		const requests = [];
-		const cover = this.nearestCover(world, centre) || world.centres[0];
+		const cover = this.nearestCover(world, centre) || world.home;
 		if (!cover)
 			return requests;
 		const reach = (cover.range || COVER_RADIUS) + COVER_MARGIN;

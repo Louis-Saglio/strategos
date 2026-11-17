@@ -331,7 +331,7 @@ export class Naval
 			if (present.has(region) && present.get(region).enemyStructures > 0)
 				continue;
 			const centre = centroid(group);
-			const objective = this.objectiveFrom(world, region, region === world.homeRegion ? world.centres[0].position : centre);
+			const objective = this.objectiveFrom(world, region, region === world.homeRegion ? world.home.position : centre);
 			const note = (why, details) => {
 				if (this.invasion.why === "no army" || region === world.homeRegion)
 					this.invasion = Object.assign({ "why": why, "from": region, "group": group.length }, details || {});
@@ -792,7 +792,7 @@ export class Naval
 	raidRequests(world, priorities, hunting)
 	{
 		const plan = priorities.naval.raid;
-		const objective = world.centres.length ? this.objectiveFrom(world, world.homeRegion, world.centres[0].position) : null;
+		const objective = world.centres.length ? this.objectiveFrom(world, world.homeRegion, world.home.position) : null;
 		if (!objective)
 			return [];
 		const claimed = new Set();
