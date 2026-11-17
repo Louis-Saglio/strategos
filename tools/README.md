@@ -477,28 +477,50 @@ alone when there is one, each with its count otherwise (`hold 491, walk
 action of that purpose granted. Then come the kinds the bot's code can
 emit that the play never granted, each as never requested or as requested
 and denied. The kinds of the code are read from the bot the play
-snapshotted (`DIR/mods/strategos`, or `--bot`). Every request is built by a
+snapshotted (`DIR/mods/strategos`, or `--bot`): every `.js` file under
+`simulation/ai/strategos`, in whatever subdirectory. Every request is built by a
 builder of `requests.js` (an exported function whose first parameters are
 `source, purpose`); a class names its source as the first argument of the
 builders it calls, and a purpose as the second, or as the `purpose`
 argument of one of its own methods that hands it on (`this.order("rally",
 ...)`). A purpose is read when it is a string literal or a choice between
-two (`yard ? "shipyard" : "dock"`). What a kind is made of is known to two
-functions only, `ledger_kind` (the key of the ledger) and `source_kinds`
-(the code).
+two (`yard ? "shipyard" : "dock"`). A subsystem may be composed of parts,
+each a class in a file of its own that builds its requests under the
+subsystem's source (`Naval` in `naval.js`: the shipyards, the fishing, the
+convoys, the hunt... in `naval-*.js`): every part is read as a class like
+any other, and the class that composes them builds no request and adds no
+kind. What a kind is made of is known to two functions only, `ledger_kind`
+(the key of the ledger) and `source_kinds` (the code).
 
 The table is worth what that reading is worth, so `coverage` says when it
 is not whole and exits 1:
 
 - in a subsystem: a source or a purpose that is neither of those forms,
   the word `purpose` used where no request is built (a variable, a field
-  written), a method taking a purpose that is used otherwise than called
-  as `this.NAME(`, a request built outside a class or written by hand
+  written), a request built outside a class or written by hand
   outside `requests.js` (`"claims":` or `"purpose":`; one record is let
   through, in `allocator.js` only and in this form only: an assignment,
   which copies the kind of the request a unit was granted to, `"source":
   request.source, "purpose": request.purpose,`, and names none of its
-  own), a class with a `requests(` method that names no purpose;
+  own), a class with a `requests(` method that names no purpose, unless it
+  is composed: it creates (`new NAME(`) at least one class of the bot that
+  names purposes, and those classes are each declared once and all name
+  the same source (a class handed its parts instead of creating them and
+  parts of two sources are refused);
+- between classes: a method that is handed a purpose is read where it is
+  called as `this.NAME(` in the class that declares it, and every other
+  call that names it is refused, in every file and on whatever object:
+  `this.tug.haul("tow", ...)` or `this.convoys.member(convoy, "tow", ...)`
+  written in `Naval`, `tug.haul(`, `tug["haul"](`, `haul(` on its own,
+  each of them through `.call(`, `.apply(` or `.bind(` too, and
+  `this.haul` otherwise than called in the class that declares it. The
+  purpose handed there would be in no list, and the reader does not know
+  of which class an object is, so it is the name that is refused: once a
+  class has a method `unload` that is handed a purpose, `.unload(` cannot
+  be written on any other object. One call is let through, `this.NAME(` in
+  a class that declares a method `NAME` of its own that takes no purpose
+  (`this.unload(action)` in `Executor`, beside `Convoys.unload`): it is a
+  call of that class's own method;
 - between a subsystem and `requests.js`: the module named otherwise than
   in `import { NAME, ... } from "simulation/ai/strategos/requests.js";` (a
   namespace import, an alias, a re-export, a dynamic import), or a builder
@@ -519,6 +541,20 @@ is not whole and exits 1:
   that cannot be parsed (reported with its file and line number). A play
   whose ledgers have another key is refused this way: that of a bot from
   before `requests.js` (`tmp/ident/d1c8f01`, `source/action:outcome`).
+
+Two things pass that reading without a word:
+
+- a method that is handed a purpose, taken from another object as a value
+  and called under another name (`const pull = tug.haul`,
+  `list.map(tug.haul)`, a destructuring that renames it), or reached under
+  a computed name (`tug[name](...)`). A name that is not called is not
+  looked at, because a record may have a field named as such a method is
+  (`worker.haul`); a purpose handed that way is in no list;
+- the one-source rule of a composed subsystem does not cross nesting. It
+  is checked on the classes the composing class creates, not on those a
+  part creates in turn: a part that names purposes and creates a class of
+  another source (`Hunt` creating a class that builds `"sea", "stray"`)
+  passes. That class is read as any other, so its kinds are in the table.
 
 The set grants 68 of the 84 kinds. Never in a ledger within 14 minutes:
 
