@@ -642,7 +642,7 @@ function forgoneGain(world, catalog, info)
 				places += Math.max(0, site.capacity - site.gatherers);
 		if (kind === FISH_KIND && world.centres.length)
 			for (const school of world.schools)
-				if (squareDistance(school, world.centres[0].position) <= FORGONE_FISH_REACH * FORGONE_FISH_REACH)
+				if (squareDistance(school, world.home.position) <= FORGONE_FISH_REACH * FORGONE_FISH_REACH)
 					places += 1;
 		if (!places)
 			continue;

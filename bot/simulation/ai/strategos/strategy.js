@@ -254,7 +254,7 @@ export class Strategy
 		const grid = world.wealth;
 		if (!world.codes.every(code => grid.totals[code]))
 			return null;
-		const home = world.centres[0].position;
+		const home = world.home.position;
 		let best = null;
 		for (let j = 0; j < grid.height; ++j)
 			for (let i = 0; i < grid.width; ++i)
@@ -292,7 +292,7 @@ export class Strategy
 	threatened(world)
 	{
 		const plan = this.table.military.threat;
-		const home = world.centres[0];
+		const home = world.home;
 		const ready = world.enemyFighters.filter(unit => !unit.state.working);
 		if (!home || ready.length < plan.minEnemy)
 		{

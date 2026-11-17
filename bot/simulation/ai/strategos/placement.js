@@ -18,7 +18,7 @@ export class Placement
 		this.regionOf = world.regionOf;
 		this.manned = new Set(world.workers.map(worker => worker.region));
 		this.player = player;
-		const home = world.centres[0];
+		const home = world.home;
 		this.angle = home && isFinite(home.angle) ? home.angle : DEFAULT_ANGLE;
 		this.u = [Math.cos(this.angle), -Math.sin(this.angle)];
 		this.v = [Math.sin(this.angle), Math.cos(this.angle)];

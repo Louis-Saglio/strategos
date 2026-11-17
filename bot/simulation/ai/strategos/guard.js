@@ -74,7 +74,7 @@ export class Relics
 	{
 		if (!priorities.seekRelics || !world.centres.length)
 			return [];
-		const home = world.centres[0];
+		const home = world.home;
 		const requests = [];
 		for (const relic of world.relics)
 		{

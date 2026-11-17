@@ -52,7 +52,7 @@ export class Offense
 
 	requests(world, priorities)
 	{
-		const home = world.centres[0];
+		const home = world.home;
 		if (!home)
 			return [];
 		if (!world.enemyStructures.length && world.enemyTargets.length)

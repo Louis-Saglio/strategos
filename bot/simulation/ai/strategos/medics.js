@@ -60,7 +60,7 @@ export class Medics
 	{
 		if (!world.healers.length)
 			return [];
-		const home = world.centres[0];
+		const home = world.home;
 		const safe = SAFE_RADIUS * SAFE_RADIUS;
 		const calm = wounded.filter(fighter => !world.enemyFighters.some(enemy => squareDistance(enemy.position, fighter.position) <= safe));
 		const abroad = world.fighters.filter(fighter =>

@@ -395,7 +395,7 @@ export class Construction
 		const template = this.cheapest(world, isFoodDropsite);
 		if (!template)
 			return null;
-		const centre = world.centres[0];
+		const centre = world.home;
 		if (!this.searchable(world, template))
 			return null;
 		const site = placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
@@ -486,7 +486,7 @@ export class Construction
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
-		return this.settlementRequest(world, "expansion", template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE,
+		return this.settlementRequest(world, "expansion", template, world.home.position, SETTLEMENT_MAX_DISTANCE,
 			priorities.values.investment, world.homeRegion, null);
 	}
 
@@ -530,7 +530,7 @@ export class Construction
 	fishingSea(world, priorities)
 	{
 		const plan = priorities.naval.fishDock;
-		const home = world.centres[0].position;
+		const home = world.home.position;
 		const counts = new Map();
 		for (const school of world.schools)
 		{
@@ -561,7 +561,7 @@ export class Construction
 		if (sea === undefined || sea === null || world.population < population)
 			return null;
 		return this.shoreRequest(world, priorities, yard ? "shipyard" : "dock", world.homeRegion, yard ? world.crossing.sea : sea,
-			world.centres[0].position, [...this.offered(world)], null, yard ? priorities.naval.yardSpacing : 0);
+			world.home.position, [...this.offered(world)], null, yard ? priorities.naval.yardSpacing : 0);
 	}
 
 	shoreRequest(world, priorities, purpose, region, sea, origin, buildable, builders, spacing)
@@ -1145,7 +1145,7 @@ export class Construction
 		const weighted = grid.weighted[code];
 		if (!totals || !weighted)
 			return [];
-		const home = world.centres[0].position;
+		const home = world.home.position;
 		const served = world.anchors.filter(anchor => anchor.types.includes(code));
 		const cells = [];
 		for (let index = 0; index < totals.length; ++index)
