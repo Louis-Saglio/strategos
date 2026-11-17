@@ -49,12 +49,15 @@ many games, and under which actions it was granted, then the kinds the
 bot's code can emit that the play never granted. The kinds of the code are
 read from the bot that played (DIR/mods/strategos, or --bot): see
 source_kinds. The table can be trusted only when that reading is whole: a
-purpose or a source that the reading cannot follow in the code, a builder
+purpose or a source that the reading cannot follow in the code, a method
+that is handed a purpose and is called otherwise than as this.NAME( in the
+class that declares it (see carrier_uses), a builder
 of requests.js reached otherwise than by a plain named import and a call
 by its own name, a request built in requests.js with a source or a purpose
 of its own, a request written outside requests.js, a class with a
-requests( method from which no kind is read, a kind of the ledgers that
-the reading does not know, or an `[ALLOC]` line that cannot be parsed, is
+requests( method from which no kind is read and which is not composed of
+classes that are read (see composition), a kind of the ledgers that the
+reading does not know, or an `[ALLOC]` line that cannot be parsed, is
 reported and the exit status is 1.
 
 A line of tools/identity.jsonl is a complete match spec for run.py
@@ -454,9 +457,13 @@ FUNCTION_RE = re.compile(r"^(export )?function (\w+)\(([^()\n]*)\)", re.M)
 # imports are then the module's own, and nothing else reaches a builder.
 IMPORT_RE = re.compile(r'^import \{\s*\w+(?:,\s*\w+)*\s*\} from "simulation/ai/strategos/requests\.js";$', re.M)
 CLASS_RE = re.compile(r"^export class (\w+)", re.M)
-# A method of a class that is handed a purpose: `\tname(..., purpose, ...)` on
-# its own line, as the bot's code writes a method.
+# A method of a class, as the bot's code declares one: `\tname(parameters)` on
+# its own line. A carrier is a method that is handed a purpose:
+# `\tname(..., purpose, ...)`.
+METHOD_RE = re.compile(r"^\t(\w+)\(([^()\n]*)\)$", re.M)
 CARRIER_RE = re.compile(r"^\t(\w+)\(([^()\n]*\bpurpose\b[^()\n]*)\)$", re.M)
+# A class created inside another: `new NAME(`.
+CREATED_RE = re.compile(r"\bnew (\w+)\(")
 LITERAL_RE = re.compile(rf'"({NAME})"\Z')
 CHOICE_RE = re.compile(rf'[^"?:]+\?\s*"({NAME})"\s*:\s*"({NAME})"\Z')
 WRITTEN_RE = re.compile(r'"(?:claims|purpose)"\s*:')
@@ -535,12 +542,13 @@ def class_kinds(name, where, body, builders, above=0):
     `this.NAME(`). It is read when it is a string literal or a choice between
     two; the word `purpose` itself, in a carrier, is the purpose handed on.
     A source is the first argument of a builder and must be a string literal.
-    Anything else that these positions hold, a carrier used otherwise than
-    called as `this.NAME(`, and any other use of the word `purpose` (a
-    variable, a field written) is something this reading cannot follow: it
-    is returned as unread. What is let through: the purpose of a request read
-    as a field (`request.purpose`, compared or read, never assigned), and the
-    keys that `copied` allows the file."""
+    Anything else that these positions hold, and any other use of the word
+    `purpose` (a variable, a field written) is something this reading cannot
+    follow: it is returned as unread. What is let through: the purpose of a
+    request read as a field (`request.purpose`, compared or read, never
+    assigned), and the keys that `copied` allows the file. A carrier reached
+    otherwise than as `this.NAME(` in this class is not seen here: see
+    carrier_uses."""
     sources, purposes, unread, followed = set(), set(), [], set()
 
     def line(offset):
@@ -554,8 +562,6 @@ def class_kinds(name, where, body, builders, above=0):
     calls = [(m, 1, True) for name in builders for m in re.finditer(rf"(?<![.\w]){name}\(", body)]
     for name, index in carriers.items():
         calls += [(m, index, False) for m in re.finditer(rf"\bthis\.{name}\(", body)]
-        for m in re.finditer(rf"\bthis\.{name}\b(?!\()|(?<!\bthis)\.{name}\(", body):
-            unread.append(f"{line(m.start())}: {name} takes a purpose and `{m.group(0)}` is not a call of it as this.{name}(")
     for m, index, builder in calls:
         spans = call_arguments(body, m.end() - 1)
         if spans is None or len(spans) <= index:
@@ -584,6 +590,103 @@ def class_kinds(name, where, body, builders, above=0):
         if m.start() not in followed and m.start() - 1 not in copies and not field_read:
             unread.append(f"{line(m.start())}: `purpose` is used where no request is built")
     return sources, purposes, unread
+
+
+def carrier_uses(where, body, above, carriers):
+    """What a text (one class, what a file holds outside its classes, requests.js) does with the name of a
+    carrier that the reading cannot follow; `where` and `above` as in class_kinds, `carriers` {method name: [the
+    classes that declare a carrier of that name]} over the whole bot.
+
+    class_kinds reads the purpose a carrier is handed in one place: a call
+    `this.NAME(` in the class that declares it. Called from anywhere else
+    the carrier may be handed a purpose that is read nowhere (`this.tug =
+    new Tug()` then `this.tug.haul("tow", ...)` in Naval: the kind naval/tow
+    would be in no list), and this reading does not know of which class an
+    object is. So every other call that names a carrier is refused, in
+    every file and whatever the object:
+    - `.NAME(` or `["NAME"](` on anything (`this.tug.haul(`, `tug.haul(`),
+      `this.NAME(` in a class that declares no method NAME included;
+    - `NAME(` on its own (the method taken out of its object and called, a
+      function of that name);
+    - each of these through `.call(`, `.apply(` or `.bind(`, or as `?.(`;
+    - `this.NAME` otherwise than called, in the class that declares the
+      carrier.
+    One call is let through besides the one class_kinds reads: `this.NAME(`
+    in a class that declares a method NAME of its own that takes no purpose
+    (Executor.unload beside Convoys.unload). The method `this` reaches is
+    the class's own before any other, so that call is no call of the
+    carrier, and refusing it would forbid a method name to every class once
+    one carrier has it. That same method called on another object
+    (`executor.unload(`) is refused: there the name is all this reading has.
+    A name that is not called (`worker.haul` read as a field, a variable, a
+    parameter, a key, a string) is not looked at: a record may have a field
+    named as a carrier is. So one thing is not seen: a carrier taken from
+    another object as a value and called under another name (`const pull =
+    part.haul`, `list.map(part.haul)`, a destructuring that renames it), or
+    reached under a computed name (`part[name](...)`)."""
+    own = {m.group(1) for m in CARRIER_RE.finditer(body)}
+    declared = {m.start(1): m.group(1) for m in METHOD_RE.finditer(body)}
+    methods = set(declared.values())
+    faults = []
+    for name in sorted(carriers):
+        for m in re.finditer(rf'(?<![\w$]){name}(?![\w$])|\[\s*(["\'`]){name}\1\s*\]', body):
+            if m.start() in declared:
+                continue
+            before, after = body[:m.start()], body[m.end():]
+            direct = after.startswith("(")
+            called = direct or re.match(r"\s*(?:\??\.\s*(?:call|apply|bind)\s*)?(?:\?\.\s*)?\(", after)
+            if m.group(1) is None and re.search(r"(?<![\w$.])this\.$", before):
+                # On `this`: the call class_kinds reads, the class's own method that takes no purpose, a field.
+                if direct if name in own else name in methods or not called:
+                    continue
+            elif not called:
+                continue
+            begin, end = body.rfind("\n", 0, m.start()) + 1, body.find("\n", m.start())
+            faults.append(f"{where} line {above + body.count(chr(10), 0, m.start()) + 1} "
+                          f"(`{clip(body[begin:end if end >= 0 else len(body)].strip())}`): {name} is a method that takes "
+                          f"a purpose ({', '.join(carriers[name])}) and is used here otherwise than called as "
+                          f"this.{name}( in the class that declares it: a purpose it is handed here is read nowhere")
+    return faults
+
+
+def composition(where, body, read):
+    """What makes a class that has a `requests(` method and names no purpose unread, [] when its requests are
+    those of its parts.
+
+    A subsystem may be composed: its class builds no request and returns
+    those of the classes it creates (Naval: the shipyards, the convoys, the
+    hunt...), each in a file of its own and read as a class like any other,
+    so the kinds of the subsystem are the kinds of its parts and the class
+    that composes them adds none. `read` is {class name: [(file, sources,
+    purposes)]} over every class of the bot. The class is taken as composed
+    when
+    - it creates, as `new NAME(`, at least one class of the bot that names
+      purposes: its parts (a class it creates that names none, a register or
+      a switch, is not one);
+    - every part is one class (a name declared once in the bot) and all name
+      the same source: a subsystem has one.
+    A class that is handed its parts, or reaches them otherwise than by
+    creating them, is not followed and stays unread. A purpose it would
+    name itself as the argument of a part's method is refused where every
+    such call is (carrier_uses). The parts are those the class creates
+    itself: a part that names purposes and creates a class of another
+    source is not looked into, so the one-source rule does not cross that
+    nesting; the nested class is read as a class like any other and its
+    kinds are in the table."""
+    created = sorted({m.group(1) for m in CREATED_RE.finditer(body)} & set(read))
+    parts = [name for name in created if any(purposes for _, _, purposes in read[name])]
+    if not parts:
+        return [f"{where} has a requests( method and names no purpose, and creates no class that names one"]
+    faults = []
+    for name in parts:
+        if len(read[name]) > 1:
+            faults.append(f"{where} creates {name}, which {len(read[name])} files declare "
+                          f"({', '.join(sorted(file for file, _, _ in read[name]))})")
+    sources = sorted({source for name in parts for _, sources, _ in read[name] for source in sources})
+    if len(sources) != 1:
+        faults.append(f"{where} has a requests( method, names no purpose, and its parts ({', '.join(parts)}) name "
+                      f"{len(sources)} sources ({', '.join(sources)}): a composed subsystem has one")
+    return faults
 
 
 def module_builders(module):
@@ -680,13 +783,18 @@ def source_kinds(bot_dir):
 
     Every request is built by a builder of requests.js, an exported function
     whose first two parameters are the source and the purpose
-    (module_builders). A subsystem is a class; class_kinds reads the one
-    source it names and the purposes it names, and its kinds are that source
-    with each of those purposes.
+    (module_builders). A subsystem is a class, or a class composed of others
+    (composition); class_kinds reads the one source a class names and the
+    purposes it names, and its kinds are that source with each of those
+    purposes. Every .js file under the AI's directory is read, in whatever
+    subdirectory it is put.
 
     The second value lists what makes the kinds less than the whole of what
     the code emits, and the caller must say so: what module_builders could
-    not follow in requests.js, what class_kinds could not follow, a file
+    not follow in requests.js, what class_kinds could not follow, a method
+    that is handed a purpose and is called otherwise than as `this.NAME(` in
+    the class that declares it (carrier_uses, over every file, requests.js
+    included), a file
     that names requests.js otherwise than in a plain named import (a
     namespace, an alias, a re-export: its builders would be called under
     names this reading does not know), a builder named otherwise than called
@@ -694,18 +802,27 @@ def source_kinds(bot_dir):
     called or a purpose named outside a class, a request written by hand
     outside requests.js (`"claims":`, or `"purpose":` anywhere but in an
     assignment of allocator.js, COPIED_RE), a class with purposes and no
-    source, a class with a `requests(` method and no kind."""
+    source, a class with a `requests(` method and no kind that is not
+    composed of classes that have some (composition)."""
     root = os.path.join(bot_dir, "simulation/ai/strategos")
+    # Every .js file of the AI, wherever it is put: a file is named by its path below the root.
     texts = {}
-    for name in sorted(os.listdir(root)):
-        if name.endswith(".js"):
-            with open(os.path.join(root, name), encoding="utf-8") as fh:
-                texts[name] = fh.read()
+    for folder, _, names in sorted(os.walk(root)):
+        for name in sorted(names):
+            if name.endswith(".js"):
+                path = os.path.join(folder, name)
+                with open(path, encoding="utf-8") as fh:
+                    texts[os.path.relpath(path, root)] = fh.read()
     module = texts.pop(REQUESTS_MODULE, None)
     if module is None:
         return set(), [f"{REQUESTS_MODULE}: no such file in {root}: this bot does not build its requests in one module"]
     builders, unread = module_builders(module)
     kinds = set()
+    # Every class read, by name, and the classes with a requests( method and no purpose: judged once all are read.
+    read, silent = collections.defaultdict(list), []
+    # Every text in which a carrier may be reached, as (where, text, lines before it), requests.js first, and the
+    # classes that declare each carrier: judged once all are read too.
+    scanned, carriers = [(REQUESTS_MODULE, module, 0)], collections.defaultdict(list)
     for name, text in texts.items():
         copies = copied(name, text)
         for m in WRITTEN_RE.finditer(text):
@@ -733,6 +850,7 @@ def source_kinds(bot_dir):
         outside = text[:first.start()] if first else text
         sources, purposes, faults = class_kinds(name, name, outside, builders)
         unread += faults
+        scanned.append((name, outside, 0))
         if sources or purposes:
             unread.append(f"{name}: a request is built outside a class ({', '.join(sorted(sources | purposes))})")
         for cls, body, above in classes:
@@ -744,8 +862,20 @@ def source_kinds(bot_dir):
             if purposes and not sources:
                 unread.append(f"{name}: class {cls} names purposes ({', '.join(sorted(purposes))}) and no source")
             elif "\trequests(" in body and not purposes:
-                unread.append(f"{name}: class {cls} has a requests( method and names no purpose")
+                if sources:
+                    unread.append(f"{name}: class {cls} has a requests( method and names no purpose")
+                else:
+                    silent.append((f"{name}: class {cls}", body))
+            read[cls].append((name, sources, purposes))
+            scanned.append((f"{name}: class {cls},", body, above))
             kinds |= {f"{source}/{purpose}" for source in sources for purpose in purposes}
+    for where, body, _ in scanned[1:]:
+        for carrier in sorted({m.group(1) for m in CARRIER_RE.finditer(body)}):
+            carriers[carrier].append(where.rstrip(","))
+    for where, body, above in scanned:
+        unread += carrier_uses(where, body, above, carriers)
+    for where, body in silent:
+        unread += composition(where, body, read)
     return kinds, unread
 
 
