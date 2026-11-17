@@ -2,7 +2,7 @@ import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
-import { territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/terrain.js";
 import { REACH_RADIUS, arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const BASE = {

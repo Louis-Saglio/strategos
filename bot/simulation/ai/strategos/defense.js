@@ -1,5 +1,5 @@
 import { attack, garrisonIn, hold, orderRequest, unloadAllRequest, unloadRequest, walkTo } from "simulation/ai/strategos/requests.js";
-import { territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/terrain.js";
 import { COVER_MARGIN } from "simulation/ai/strategos/forecast.js";
 import { centroid, direction, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";

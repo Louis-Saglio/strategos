@@ -12,11 +12,12 @@ import { Naval } from "simulation/ai/strategos/naval.js";
 import { Offense } from "simulation/ai/strategos/offense.js";
 import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
-import { Telemetry } from "simulation/ai/strategos/telemetry.js";
+import { Stopwatch, Telemetry } from "simulation/ai/strategos/telemetry.js";
 import { Upgrades } from "simulation/ai/strategos/upgrades.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
 import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
-import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
+import { buildWorld } from "simulation/ai/strategos/world.js";
+import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex } from "simulation/ai/strategos/world-memory.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
@@ -63,21 +64,15 @@ StrategosBot.prototype.OnUpdate = function()
 
 StrategosBot.prototype.decide = function()
 {
-	const started = Date.now();
-	const stages = {};
-	let mark = started;
-	const lap = stage => {
-		const now = Date.now();
-		stages[stage] = now - mark;
-		mark = now;
-	};
+	const stopwatch = new Stopwatch();
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
 	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, this.musterIndex, pending,
-		this.allocator.demand());
-	lap("world");
+		this.allocator.demand(), stopwatch);
+	stopwatch.lap("world");
 	this.battleLog.observe(world);
-	lap("BattleLog");
+	stopwatch.lap("BattleLog");
 	const priorities = this.strategy.update(world);
+	stopwatch.lap("Strategy");
 	const requests = [];
 	const emitted = [];
 	for (const subsystem of this.subsystems)
@@ -85,13 +80,13 @@ StrategosBot.prototype.decide = function()
 		const own = subsystem.requests(world, priorities);
 		emitted.push(own);
 		requests.push(...own);
-		lap(subsystem.constructor.name);
+		stopwatch.lap(subsystem.constructor.name);
 	}
 	const outcomes = this.allocator.allocate(world, requests);
 	this.executor.execute(world, outcomes.filter(entry => entry.outcome === GRANTED && entry.request.action));
 	this.settle(world, emitted, outcomes);
-	lap("allocateExecute");
-	this.telemetry.recordDecision(Date.now() - started, stages);
+	stopwatch.lap("allocateExecute");
+	this.telemetry.recordDecision(stopwatch);
 	for (const trainer of world.trainers)
 		this.telemetry.recordProduction(trainer.trainable.some(name => this.catalog.isCivilian(name)) ? "civilian" :
 			trainer.trainable.some(name => this.catalog.isFighter(name)) ? "military" : "other", trainer.queueLength === 0);

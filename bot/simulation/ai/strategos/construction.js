@@ -4,7 +4,7 @@ import { Placement } from "simulation/ai/strategos/placement.js";
 import { buildRequest, deleteRequest, fundRequest, inTier, noting, pressing, repairRequest } from "simulation/ai/strategos/requests.js";
 import { Change, Retry } from "simulation/ai/strategos/switches.js";
 import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
-import { territoryAt } from "simulation/ai/strategos/world.js";
+import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
 const BUILDING_MARGIN = 3;
 const TIGHT_MARGIN = 1;
