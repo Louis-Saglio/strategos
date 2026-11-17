@@ -1,4 +1,5 @@
 import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
+import { upgradeRequest } from "simulation/ai/strategos/requests.js";
 import { TECH_HORIZON_S, auraBenefit, resourcePrices } from "simulation/ai/strategos/valuation.js";
 
 const SWITCH_EDGE = 2;
@@ -52,13 +53,7 @@ export class Upgrades
 			this.last = world.time;
 			this.telemetry.line("UPGRADE", world.time, { "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) });
 		}
-		return [{
-			"source": "upgrades",
-			"action": { "type": "upgrade", "entity": best.entity.id, "template": best.option.template },
-			"claims": { "resources": best.option.cost, "slots": ["upgrade-" + best.entity.id] },
-			"value": priorities.values.investment,
-			"urgency": 1
-		}];
+		return [upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, priorities.values.investment, 1)];
 	}
 
 	worth(world, name, weights, mobile)

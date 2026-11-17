@@ -1,3 +1,4 @@
+import { barterRequest, goodsRequest, orderRequest, tradeRoute, trainRequest } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
@@ -67,13 +68,8 @@ export class Trade
 					.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 				if (!template)
 					continue;
-				requests.push({
-					"source": "trade",
-					"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
-					"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-					"value": priorities.values.support,
-					"urgency": 1
-				});
+				requests.push(trainRequest("trade", "trader", trainer.id, template, 1, this.catalog.cost(template),
+					this.catalog.population(template), priorities.values.support, 1));
 				break;
 			}
 		if (!world.traders.length)
@@ -89,23 +85,11 @@ export class Trade
 			goods.forEach((code, index) => { shares[code] = Math.floor(100 / goods.length) + (index < 100 % goods.length ? 1 : 0); });
 			this.telemetry.line("TRADE", world.time, { "route": Math.round(route.distance), "gain": Math.round(route.gain * 10) / 10,
 				"goods": shares, "traders": world.traders.length });
-			requests.push({
-				"source": "trade",
-				"action": { "type": "trading-goods", "goods": shares },
-				"claims": {},
-				"value": priorities.values.support,
-				"urgency": 1
-			});
+			requests.push(goodsRequest("trade", "goods", shares, priorities.values.support, 1));
 		}
 		for (const trader of world.traders)
 			if (trader.idle || !trader.state.includes("TRADE"))
-				requests.push({
-					"source": "trade",
-					"action": { "type": "trade-route", "unit": trader.id, "target": route.to.id, "source": route.from.id },
-					"claims": { "workers": [trader.id] },
-					"value": priorities.values.support,
-					"urgency": 1
-				});
+				requests.push(orderRequest("trade", "route", trader.id, tradeRoute(route.to.id, route.from.id), priorities.values.support, 1));
 		return requests;
 	}
 
@@ -126,13 +110,6 @@ export class Trade
 			.sort((a, b) => surplus[b] * rate(b) - surplus[a] * rate(a) || (a < b ? -1 : 1))[0];
 		if (!sell)
 			return [];
-		return [{
-			"source": "trade",
-			"action": { "type": "barter", "sell": sell, "buy": buy, "amount": DEAL_AMOUNT, "rate": rate(sell) },
-			"claims": { "resources": { [sell]: DEAL_AMOUNT } },
-			"value": priorities.values.barter,
-			"urgency": 1,
-			"conversion": true
-		}];
+		return [barterRequest("trade", "barter", sell, buy, DEAL_AMOUNT, rate(sell), priorities.values.barter, 1)];
 	}
 }

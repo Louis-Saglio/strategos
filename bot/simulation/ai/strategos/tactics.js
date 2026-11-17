@@ -1,3 +1,4 @@
+import { attack, hold, walkTo } from "simulation/ai/strategos/requests.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
@@ -144,7 +145,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 			const dx = unit.position[0] - chaser.unit.position[0];
 			const dz = unit.position[1] - chaser.unit.position[1];
 			const length = Math.sqrt(dx * dx + dz * dz) || 1;
-			actions.set(unit.id, { "type": "walk", "x": unit.position[0] + dx / length * KITE_STEP, "z": unit.position[1] + dz / length * KITE_STEP });
+			actions.set(unit.id, walkTo(unit.position[0] + dx / length * KITE_STEP, unit.position[1] + dz / length * KITE_STEP));
 			continue;
 		}
 		const reach = (profile.range + FOCUS_SLACK) * (profile.range + FOCUS_SLACK);
@@ -170,11 +171,11 @@ export function skirmish(catalog, ours, enemies, retreat)
 		if (!chosen)
 		{
 			const closest = nearest(enemies, unit.position).unit;
-			actions.set(unit.id, unit.state.includes("COMBAT") ? { "type": "hold" } : { "type": "attack", "target": closest.id });
+			actions.set(unit.id, unit.state.includes("COMBAT") ? hold() : attack(closest.id));
 			continue;
 		}
 		pending.set(chosen.id, (pending.get(chosen.id) || 0) + FOCUS_HORIZON_S * catalog.hitRate(unit.template, chosen.template, unit.owner, chosen.owner));
-		actions.set(unit.id, chosen.id === unit.target ? { "type": "hold" } : { "type": "attack", "target": chosen.id });
+		actions.set(unit.id, chosen.id === unit.target ? hold() : attack(chosen.id));
 	}
 	const guarded = new Set();
 	for (const unit of ranged)
@@ -186,7 +187,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 		if (!guard.unit || guard.distance > GUARD_REACH)
 			continue;
 		guarded.add(chaser.unit.id);
-		actions.set(guard.unit.id, guard.unit.target === chaser.unit.id ? { "type": "hold" } : { "type": "attack", "target": chaser.unit.id });
+		actions.set(guard.unit.id, guard.unit.target === chaser.unit.id ? hold() : attack(chaser.unit.id));
 	}
 	for (const unit of melee)
 	{
@@ -194,10 +195,10 @@ export function skirmish(catalog, ours, enemies, retreat)
 			continue;
 		if (unit.state.includes("COMBAT"))
 		{
-			actions.set(unit.id, { "type": "hold" });
+			actions.set(unit.id, hold());
 			continue;
 		}
-		actions.set(unit.id, { "type": "attack", "target": nearest(enemies, unit.position).unit.id });
+		actions.set(unit.id, attack(nearest(enemies, unit.position).unit.id));
 	}
 	return actions;
 }

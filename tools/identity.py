@@ -42,15 +42,20 @@ reported apart and does not change it, because a refactoring may change
 telemetry on purpose. 2 means the two directories cannot be compared (one
 is not a play of the committed list, or was played without --commands).
 
-coverage reads the `[ALLOC]` ledgers of a play: every kind of request
-(source/action) with how many times it was granted and denied and in how
-many games, then the kinds the bot's code can emit that the play never
-granted. The kinds of the code are read from the bot that played
-(DIR/mods/strategos, or --bot): see source_kinds. The table can be trusted
-only when that reading is whole: a class with a requests( method from
-which no kind is read, a kind of the ledgers that the reading does not
-know, or an `[ALLOC]` line that cannot be parsed, is reported and the exit
-status is 1.
+coverage reads the `[ALLOC]` ledgers of a play, whose keys are
+`source/purpose/action:outcome` (see ledger_kind): every kind of request
+(source/purpose) with how many times it was granted and denied, in how
+many games, and under which actions it was granted, then the kinds the
+bot's code can emit that the play never granted. The kinds of the code are
+read from the bot that played (DIR/mods/strategos, or --bot): see
+source_kinds. The table can be trusted only when that reading is whole: a
+purpose or a source that the reading cannot follow in the code, a builder
+of requests.js reached otherwise than by a plain named import and a call
+by its own name, a request built in requests.js with a source or a purpose
+of its own, a request written outside requests.js, a class with a
+requests( method from which no kind is read, a kind of the ledgers that
+the reading does not know, or an `[ALLOC]` line that cannot be parsed, is
+reported and the exit status is 1.
 
 A line of tools/identity.jsonl is a complete match spec for run.py
 --matches: tag, seed, map, size, biome, placement, victory, every game
@@ -417,86 +422,314 @@ def compare(a):
 
 # ------------------------------------------------------------------ coverage
 
+# A source, a purpose, an action, an outcome: lower-case words joined by hyphens.
+NAME = r"[a-z][a-z0-9-]*"
+KEY_RE = re.compile(rf"({NAME}/{NAME})/({NAME}!?):({NAME})\Z")
+
+
 def ledger_kind(key):
-    """A key of the `outcomes` of an [ALLOC] line -> (kind of request, outcome).
+    """A key of the `outcomes` of an [ALLOC] line -> (kind of request, action, outcome).
 
-    The allocator (allocator.js, record) writes `source/action:outcome`, with
-    a `!` after the action for a request of the production tier; the kind is
-    `source/action`. This function and source_kinds are the only two places
-    that know what a kind is made of."""
-    kind, outcome = key.rsplit(":", 1)
-    return kind.rstrip("!"), outcome
+    The allocator (allocator.js, record) writes `source/purpose/action:outcome`,
+    the action followed by `!` when the request is of the production tier. The
+    kind is `source/purpose`: the table sums over the actions and the tiers of
+    a kind, and names them beside it. A key of another form (a ledger written
+    before requests had a purpose) is a ValueError: the line is then reported
+    as malformed. This function and source_kinds are the only two places that
+    know what a kind is made of."""
+    m = KEY_RE.match(key)
+    if not m:
+        raise ValueError(key)
+    return m.groups()
 
 
-SOURCE_RE = re.compile(r'"source":\s*"([\w-]+)"')
-ACTION_RE = re.compile(r'\{\s*"type":\s*"([\w-]+)"')
+# The module that builds every request (issue #44). Its functions are
+# declared `function NAME(...)` at the start of a line; a maker is one whose
+# first two parameters are the source and the purpose, and a builder is an
+# exported maker: what the subsystems call.
+REQUESTS_MODULE = "requests.js"
+FUNCTION_RE = re.compile(r"^(export )?function (\w+)\(([^()\n]*)\)", re.M)
+# The one form in which a file of the bot names the module: the names it
+# imports are then the module's own, and nothing else reaches a builder.
+IMPORT_RE = re.compile(r'^import \{\s*\w+(?:,\s*\w+)*\s*\} from "simulation/ai/strategos/requests\.js";$', re.M)
 CLASS_RE = re.compile(r"^export class (\w+)", re.M)
-FUNCTION_RE = re.compile(r"^export function (\w+)", re.M)
+# A method of a class that is handed a purpose: `\tname(..., purpose, ...)` on
+# its own line, as the bot's code writes a method.
+CARRIER_RE = re.compile(r"^\t(\w+)\(([^()\n]*\bpurpose\b[^()\n]*)\)$", re.M)
+LITERAL_RE = re.compile(rf'"({NAME})"\Z')
+CHOICE_RE = re.compile(rf'[^"?:]+\?\s*"({NAME})"\s*:\s*"({NAME})"\Z')
+WRITTEN_RE = re.compile(r'"(?:claims|purpose)"\s*:')
 
 
 def regions(text, pattern):
-    """[(name, text)] of the top-level blocks a pattern starts, each up to the next one."""
+    """[(name, text, lines before it)] of the top-level blocks a pattern starts, each up to the next one."""
     marks = list(pattern.finditer(text))
-    return [(m.group(1), text[m.start():marks[i + 1].start() if i + 1 < len(marks) else len(text)])
-            for i, m in enumerate(marks)]
+    return [(m.group(1), text[m.start():marks[i + 1].start() if i + 1 < len(marks) else len(text)],
+             text.count("\n", 0, m.start())) for i, m in enumerate(marks)]
+
+
+def place(name, text, offset):
+    """`FILE line N (the line)` of an offset of the text of a file."""
+    begin, end = text.rfind("\n", 0, offset) + 1, text.find("\n", offset)
+    return f"{name} line {text.count(chr(10), 0, offset) + 1} (`{clip(text[begin:end if end >= 0 else len(text)].strip())}`)"
+
+
+def call_arguments(text, opening):
+    """[(begin, end)] of the arguments of the call whose `(` is text[opening], or None when it does not close."""
+    depth, quote, begin, spans, i = 0, None, opening + 1, [], opening
+    while i < len(text):
+        c = text[i]
+        if quote:
+            if c == "\\":
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'`":
+            quote = c
+        elif c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+            if depth == 0:
+                return spans + [(begin, i)]
+        elif c == "," and depth == 1:
+            spans.append((begin, i))
+            begin = i + 1
+        i += 1
+    return None
+
+
+def literals(argument):
+    """The names an argument can take: one string literal, or `condition ? "a" : "b"`; None for anything else."""
+    for pattern in (LITERAL_RE, CHOICE_RE):
+        m = pattern.match(argument)
+        if m:
+            return list(m.groups())
+    return None
+
+
+def class_kinds(where, body, builders, above=0):
+    """(the sources named, the purposes named, what could not be read) in the text of one class, which starts
+    `above` lines down its file.
+
+    A purpose is named where a request is built: as the second argument of a
+    builder, or as the `purpose` argument of a method of the class that hands
+    it on (a carrier: it has a parameter called `purpose` and is called as
+    `this.NAME(`). It is read when it is a string literal or a choice between
+    two; the word `purpose` itself, in a carrier, is the purpose handed on.
+    A source is the first argument of a builder and must be a string literal.
+    Anything else that these positions hold, a carrier used otherwise than
+    called as `this.NAME(`, and any other use of the word `purpose` (a
+    variable, a field written) is something this reading cannot follow: it
+    is returned as unread."""
+    sources, purposes, unread, followed = set(), set(), [], set()
+
+    def line(offset):
+        return f"{where} line {above + body.count(chr(10), 0, offset) + 1}"
+
+    carriers = {}
+    for m in CARRIER_RE.finditer(body):
+        parameters = [p.strip() for p in m.group(2).split(",")]
+        carriers[m.group(1)] = parameters.index("purpose")
+        followed.add(m.start(2) + re.search(r"\bpurpose\b", m.group(2)).start())
+    calls = [(m, 1, True) for name in builders for m in re.finditer(rf"(?<![.\w]){name}\(", body)]
+    for name, index in carriers.items():
+        calls += [(m, index, False) for m in re.finditer(rf"\bthis\.{name}\(", body)]
+        for m in re.finditer(rf"\bthis\.{name}\b(?!\()|(?<!\bthis)\.{name}\(", body):
+            unread.append(f"{line(m.start())}: {name} takes a purpose and `{m.group(0)}` is not a call of it as this.{name}(")
+    for m, index, builder in calls:
+        spans = call_arguments(body, m.end() - 1)
+        if spans is None or len(spans) <= index:
+            unread.append(f"{line(m.start())}: the arguments of {m.group(0)}...) cannot be read")
+            continue
+        if builder:
+            named = literals(body[slice(*spans[0])].strip())
+            if named is None or len(named) != 1:
+                unread.append(f"{line(m.start())}: the source of {m.group(0)}...) is not a string literal")
+            else:
+                sources.add(named[0])
+        begin, end = spans[index]
+        argument = body[begin:end].strip()
+        if argument == "purpose":
+            followed.add(body.index("purpose", begin, end))
+            continue
+        named = literals(argument)
+        if named is None:
+            unread.append(f"{line(m.start())}: the purpose of {m.group(0)}...) is `{clip(argument)}`, "
+                          "neither a string literal nor a choice between two")
+        else:
+            purposes.update(named)
+    for m in re.finditer(r"\bpurpose\b", body):
+        field_read = body[m.start() - 1:m.start()] == "." and not re.match(r"\s*=[^=]", body[m.end():])
+        if m.start() not in followed and not field_read:
+            unread.append(f"{line(m.start())}: `purpose` is used where no request is built")
+    return sources, purposes, unread
+
+
+def module_builders(module):
+    """(the builders of requests.js, what could not be read in it).
+
+    The kinds are read where the subsystems call the builders, so the module
+    itself must name no source and no purpose: both go untouched from the
+    parameters of a builder to the request. That holds when
+    - every function is declared `function NAME(...)` at the start of a line,
+      and every export is one of them (no arrow function, no class, no
+      exported constant: none could be followed);
+    - `source` and `purpose` are parameters of the makers only, first and
+      second;
+    - a maker is named only where it is declared or called, and every call
+      of one is inside a maker and hands on `source, purpose` as its first two
+      arguments;
+    - a request is written (`"claims":`, `"purpose":`) only inside a maker, as
+      `"source": source` and `"purpose": purpose`;
+    - the words `source` and `purpose` appear nowhere else (`"source"` as the
+      key of an action is not the word: tradeRoute has one).
+    Anything else is returned as unread."""
+    unread = []
+
+    def line(offset):
+        return f"{REQUESTS_MODULE} line {module.count(chr(10), 0, offset) + 1}"
+
+    marks = list(FUNCTION_RE.finditer(module))
+    declared = {m.start() + len(m.group(1) or "") for m in marks}
+    exported = {m.start() for m in marks if m.group(1)}
+    for m in re.finditer(r"\bfunction\b|=>|\bclass\b", module):
+        if m.start() not in declared:
+            unread.append(f"{line(m.start())}: `{m.group(0)}`, a function that is not declared `function NAME(...)` "
+                          "at the start of a line")
+    for m in re.finditer(r"\bexport\b", module):
+        if m.start() not in exported:
+            unread.append(f"{line(m.start())}: an export that is not `export function NAME(...)`")
+    parameters = {m.group(2): [p.strip() for p in m.group(3).split(",")] for m in marks}
+    makers = {name for name, listed in parameters.items() if listed[:2] == ["source", "purpose"]}
+    misdeclared = set()
+    for m in marks:
+        listed = parameters[m.group(2)]
+        if {"source", "purpose"} & set(listed if m.group(2) not in makers else listed[2:]):
+            misdeclared.add(m.group(2))
+            unread.append(f"{line(m.start())}: {m.group(2)}({m.group(3)}) takes a source or a purpose and is not a "
+                          "builder (source, purpose, ...)")
+    # The text before the first function, then each function up to the next one.
+    bounds = [m.start() for m in marks] + [len(module)]
+    blocks = [(None, 0, bounds[0])] + [(m, m.start(), bounds[i + 1]) for i, m in enumerate(marks)]
+    for mark, begin, end in blocks:
+        if mark is not None and mark.group(2) in misdeclared:
+            continue
+        body = module[begin:end]
+        maker = mark is not None and mark.group(2) in makers
+        followed = set()
+        if maker:
+            followed |= {mark.start(3) + re.search(rf"\b{word}\b", mark.group(3)).start() for word in ("source", "purpose")}
+        for name in makers:
+            for m in re.finditer(rf"\b{name}\b", body):
+                at = begin + m.start()
+                if mark is not None and at == mark.start(2):
+                    continue
+                if module[at - 1] == "." or module[at + len(name):at + len(name) + 1] != "(":
+                    unread.append(f"{line(at)}: {name} is used otherwise than called as {name}(...)")
+                    continue
+                spans = call_arguments(module, at + len(name))
+                handed = [module[b:e].strip() for b, e in spans[:2]] if spans else []
+                if not maker or handed != ["source", "purpose"]:
+                    unread.append(f"{line(at)}: {name}({clip(', '.join(handed))}, ...) builds a request whose source and "
+                                  "purpose are not the parameters `source, purpose` of the function it is in")
+                else:
+                    followed |= {module.index("source", *spans[0]), module.index("purpose", *spans[1])}
+        sources = list(re.finditer(r'"source"\s*:\s*(source\b)', body))
+        purposes = list(re.finditer(r'"purpose"\s*:\s*(purpose\b)', body))
+        written = list(re.finditer(r'"claims"\s*:', body))
+        if maker:
+            followed |= {begin + m.start(1) for m in sources + purposes} | {begin + m.start() + 1 for m in purposes}
+        if (purposes or written) and not (maker and len(purposes) == len(sources) == len(re.findall(r'"source"\s*:', body))
+                                          and len(written) <= len(purposes)):
+            unread.append(f"{line(begin + (written or purposes)[0].start())}: a request is written whose source and "
+                          "purpose are not the parameters `source, purpose` of the function it is in")
+        for m in re.finditer(r'\bpurpose\b|(?<!")\bsource\b(?!")', body):
+            if begin + m.start() not in followed:
+                unread.append(f"{line(begin + m.start())}: `{m.group(0)}` is used otherwise than handed on from the "
+                              "parameters of a builder to the request")
+    builders = {m.group(2) for m in marks if m.group(1) and m.group(2) in makers}
+    if not builders:
+        unread.append(f"{REQUESTS_MODULE}: no builder `export function NAME(source, purpose, ...)`")
+    return builders, unread
 
 
 def source_kinds(bot_dir):
-    """The kinds of request the bot's code can emit, read from its source,
-    and what the reading could not read.
+    """The kinds of request (source/purpose) the bot's code can emit, read
+    from its source, and what the reading could not read.
 
-    A subsystem is a class with a `requests(` method that names itself in
-    `"source": "NAME"`; every action literal (`{ "type": "ACTION"`) of the
-    class is a kind NAME/ACTION, whether it stands in the request or is
-    handed to a helper that wraps it. A module without a subsystem (tactics.js)
-    builds actions for the subsystems that call it: the actions of each of
-    its exported functions go to every subsystem whose class calls that
-    function by name.
+    Every request is built by a builder of requests.js, an exported function
+    whose first two parameters are the source and the purpose
+    (module_builders). A subsystem is a class; class_kinds reads the one
+    source it names and the purposes it names, and its kinds are that source
+    with each of those purposes.
 
-    A class with a `requests(` method from which this reads no kind (its
-    source is not a string literal, or it holds no action literal) is
-    returned in the second value: the kinds are then not the whole of what
-    the code emits, and the caller must say so."""
+    The second value lists what makes the kinds less than the whole of what
+    the code emits, and the caller must say so: what module_builders could
+    not follow in requests.js, what class_kinds could not follow, a file
+    that names requests.js otherwise than in a plain named import (a
+    namespace, an alias, a re-export: its builders would be called under
+    names this reading does not know), a builder named otherwise than called
+    by its own name (handed to a variable, called on an object), a builder
+    called or a purpose named outside a class, a request written by hand
+    outside requests.js (`"claims":`), a class with purposes and no source, a
+    class with a `requests(` method and no kind."""
     root = os.path.join(bot_dir, "simulation/ai/strategos")
     texts = {}
     for name in sorted(os.listdir(root)):
         if name.endswith(".js"):
             with open(os.path.join(root, name), encoding="utf-8") as fh:
                 texts[name] = fh.read()
-    subsystems, helpers, unread = [], {}, []
+    module = texts.pop(REQUESTS_MODULE, None)
+    if module is None:
+        return set(), [f"{REQUESTS_MODULE}: no such file in {root}: this bot does not build its requests in one module"]
+    builders, unread = module_builders(module)
+    kinds = set()
     for name, text in texts.items():
-        emitting = [(cls, body) for cls, body in regions(text, CLASS_RE) if "\trequests(" in body]
-        for cls, body in emitting:
-            sources = set(SOURCE_RE.findall(body))
+        for m in WRITTEN_RE.finditer(text):
+            unread.append(f"{name} line {text.count(chr(10), 0, m.start()) + 1}: {m.group(0)} a request is written "
+                          f"outside {REQUESTS_MODULE}")
+        # The lines of the plain imports, where a builder is named without being called, and the lines already
+        # reported for naming the module otherwise.
+        told = {number for m in IMPORT_RE.finditer(text)
+                for number in range(text.count("\n", 0, m.start()), text.count("\n", 0, m.end()) + 1)}
+        for m in re.finditer(re.escape(REQUESTS_MODULE), text):
+            if text.count("\n", 0, m.start()) not in told:
+                told.add(text.count("\n", 0, m.start()))
+                unread.append(f"{place(name, text, m.start())}: {REQUESTS_MODULE} is named otherwise than in "
+                              f"`import {{ NAME, ... }} from \"simulation/ai/strategos/{REQUESTS_MODULE}\";`")
+        for builder in sorted(builders):
+            for m in re.finditer(rf"\b{builder}\b", text):
+                called = text[m.end():m.end() + 1] == "(" and text[m.start() - 1:m.start()] != "."
+                if not called and text.count("\n", 0, m.start()) not in told:
+                    unread.append(f"{place(name, text, m.start())}: the builder {builder} is used otherwise than called "
+                                  f"as {builder}(...)")
+        classes = regions(text, CLASS_RE)
+        first = CLASS_RE.search(text)
+        outside = text[:first.start()] if first else text
+        sources, purposes, faults = class_kinds(name, outside, builders)
+        unread += faults
+        if sources or purposes:
+            unread.append(f"{name}: a request is built outside a class ({', '.join(sorted(sources | purposes))})")
+        for cls, body, above in classes:
+            sources, purposes, faults = class_kinds(f"{name}: class {cls},", body, builders, above)
+            unread += faults
             if len(sources) > 1:
                 die(f"{name}: class {cls} names {len(sources)} sources ({', '.join(sorted(sources))}): "
                     "source_kinds reads one per subsystem")
-            if sources:
-                subsystems.append((name, cls, sources.pop(), body))
-            else:
-                unread.append(f'{name}: class {cls} has a requests( method and no literal "source": "NAME"')
-        if not emitting:
-            for function, body in regions(text, FUNCTION_RE):
-                actions = set(ACTION_RE.findall(body))
-                if actions:
-                    helpers[function] = actions
-    kinds = set()
-    for name, cls, source, body in subsystems:
-        actions = set(ACTION_RE.findall(body))
-        for function, extra in helpers.items():
-            if re.search(rf"\b{function}\(", body):
-                actions |= extra
-        if not actions:
-            unread.append(f'{name}: class {cls} (source {source}) has no action literal {{ "type": "ACTION"')
-        kinds |= {f"{source}/{action}" for action in actions}
+            if purposes and not sources:
+                unread.append(f"{name}: class {cls} names purposes ({', '.join(sorted(purposes))}) and no source")
+            elif "\trequests(" in body and not purposes:
+                unread.append(f"{name}: class {cls} has a requests( method and names no purpose")
+            kinds |= {f"{source}/{purpose}" for source in sources for purpose in purposes}
     return kinds, unread
 
 
 def ledger(outdirs):
-    """Over the [ALLOC] lines of plays: {kind: {outcome: count}}, {kind: games granting it}, the number of
-    games read, and the lines that are not a ledger ("path:line number: text")."""
-    outcomes, games = collections.defaultdict(collections.Counter), collections.defaultdict(set)
-    played, malformed = 0, []
+    """Over the [ALLOC] lines of plays: {kind: {outcome: count}}, {kind: {action granted: count}}, {kind: games
+    granting it}, the number of games read, and the lines that are not a ledger ("path:line number: text")."""
+    outcomes, actions = collections.defaultdict(collections.Counter), collections.defaultdict(collections.Counter)
+    games, played, malformed = collections.defaultdict(set), 0, []
     for outdir in outdirs:
         for tag in sorted(os.listdir(outdir), key=analyze.natural):
             path = os.path.join(outdir, tag, "stdout.log")
@@ -513,11 +746,12 @@ def ledger(outdirs):
                     except (ValueError, KeyError, TypeError, AttributeError):
                         malformed.append(f"{path}:{number}: {clip(line.rstrip())}")
                         continue
-                    for kind, outcome, n in counted:
+                    for kind, action, outcome, n in counted:
                         outcomes[kind][outcome] += n
                         if outcome == "granted":
+                            actions[kind][action] += n
                             games[kind].add((outdir, tag))
-    return outcomes, games, played, malformed
+    return outcomes, actions, games, played, malformed
 
 
 def coverage_table(outdirs, bot_dir):
@@ -525,14 +759,17 @@ def coverage_table(outdirs, bot_dir):
     bot_dir = bot_dir or next((d for d in (os.path.join(o, "mods", "strategos") for o in outdirs)
                                if os.path.isdir(d)), os.path.join(run.REPO, "bot"))
     known, unread = source_kinds(bot_dir)
-    outcomes, games, played, malformed = ledger(outdirs)
+    outcomes, actions, games, played, malformed = ledger(outdirs)
     granted = sorted(k for k in outcomes if outcomes[k]["granted"])
     unknown = sorted(set(outcomes) - known)
     width = max((len(k) for k in set(outcomes) | known), default=0)
-    print(f"{'kind of request'.ljust(width)}   granted    denied  games")
+    print(f"{'kind of request'.ljust(width)}   granted    denied  games  actions granted (`!`: production tier)")
     for kind in granted:
         denied = sum(n for outcome, n in outcomes[kind].items() if outcome != "granted")
-        print(f"{kind.ljust(width)}  {outcomes[kind]['granted']:8d}  {denied:8d}  {len(games[kind]):5d}"
+        # The action alone when the kind was granted one, each with its count otherwise.
+        seen = sorted(actions[kind].items())
+        told = seen[0][0] if len(seen) == 1 else ", ".join(f"{action} {n}" for action, n in seen)
+        print(f"{kind.ljust(width)}  {outcomes[kind]['granted']:8d}  {denied:8d}  {len(games[kind]):5d}  {told}"
               + ("" if kind in known else "   (NOT FOUND IN THE CODE)"))
     never = sorted(known - set(granted))
     faults = ([f"the code: {told}" for told in unread]

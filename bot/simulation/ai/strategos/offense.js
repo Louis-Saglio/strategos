@@ -1,4 +1,5 @@
 import { PATIENCE_MS, REPORT_MS } from "simulation/ai/strategos/cadence.js";
+import { attack, attackWalkTo, capture, deleteHolderRequest, garrisonIn, hold, orderRequest, reserving, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 import { GATHER_EFFICIENCY, captureOutlook, resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { REACH_RADIUS, prospect } from "simulation/ai/strategos/forecast.js";
@@ -65,7 +66,7 @@ export class Offense
 		return world.fighters
 			.filter(fighter => fighter.region === world.homeRegion && !this.army.has(fighter.id) && !held.has(fighter.id) &&
 				fighter.state.includes("COMBAT") && !world.ownSide(fighter.position))
-			.map(fighter => this.order(fighter, { "type": "walk", "x": home.position[0], "z": home.position[1] }, priorities));
+			.map(fighter => this.order("stray", fighter, walkTo(home.position[0], home.position[1]), priorities));
 	}
 
 	mopUpRequests(world, priorities)
@@ -87,8 +88,8 @@ export class Offense
 				}
 			}
 			if (best)
-				requests.push(this.order(fighter, { "type": "attack-walk", "x": best.position[0], "z": best.position[1],
-					"targetClasses": best.unit ? UNIT_CLASSES : TARGET_CLASSES }, priorities));
+				requests.push(this.order("mop-up", fighter, attackWalkTo(best.position[0], best.position[1],
+					best.unit ? UNIT_CLASSES : TARGET_CLASSES), priorities));
 		}
 		if (requests.length && !this.mopping)
 		{
@@ -128,8 +129,8 @@ export class Offense
 			this.telemetry.line("ATTACK", world.time, { "mode": "storm", "target": target.id, "centre": target.centre, "army": group.length,
 				"enemySoldiers": world.enemySoldiers });
 		}
-		return group.map(member => member.target === target.id ? this.order(member, { "type": "hold" }, priorities) :
-			this.order(member, { "type": "attack", "target": target.id }, priorities));
+		return group.map(member => member.target === target.id ? this.order("storm", member, hold(), priorities) :
+			this.order("storm", member, attack(target.id), priorities));
 	}
 
 	holdRequests(world, priorities)
@@ -167,7 +168,7 @@ export class Offense
 				for (const member of chosen)
 				{
 					taken.add(member.id);
-					requests.push(this.order(member, { "type": "garrison", "target": structure.id }, priorities));
+					requests.push(this.order("occupy", member, garrisonIn(structure.id), priorities));
 				}
 				this.telemetry.line("ATTACK", world.time, { "mode": "hold", "structure": structure.id, "units": chosen.length });
 				continue;
@@ -175,13 +176,7 @@ export class Offense
 			if (pending.length)
 				continue;
 			this.telemetry.line("ATTACK", world.time, { "mode": "raze", "structure": structure.id });
-			requests.push({
-				"source": "offense",
-				"action": { "type": "delete", "target": structure.id },
-				"claims": { "slots": ["garrison-" + structure.id] },
-				"value": priorities.values.offense,
-				"urgency": 1
-			});
+			requests.push(deleteHolderRequest("offense", "raze", structure.id, priorities.values.offense, 1));
 		}
 		return requests;
 	}
@@ -197,28 +192,22 @@ export class Offense
 		{
 			const template = trainer.trainable.filter(name => this.catalog.isBreaker(name))
 				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-			requests.push({
-				"source": "offense",
-				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
-				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-				"value": priorities.values.support,
-				"urgency": 1,
-				"reserve": true
-			});
+			requests.push(reserving(trainRequest("offense", "breaker", trainer.id, template, 1, this.catalog.cost(template),
+				this.catalog.population(template), priorities.values.support, 1)));
 		}
 		if (this.mode === "home" || this.overseas)
 			return requests;
 		const moving = breaker => MOVING_STATES.some(state => breaker.state.includes(state));
 		for (const breaker of world.breakers)
 		{
-			let action = { "type": "hold" };
+			let action = hold();
 			if (this.mode === "attack" && breaker.target !== this.target.id)
-				action = { "type": "attack", "target": this.target.id };
+				action = attack(this.target.id);
 			else if (this.mode === "rally" && !moving(breaker))
-				action = { "type": "walk", "x": this.rally[0], "z": this.rally[1] };
+				action = walkTo(this.rally[0], this.rally[1]);
 			else if (this.mode === "return" && !moving(breaker))
-				action = { "type": "walk", "x": home.position[0], "z": home.position[1] };
-			requests.push(this.order(breaker, action, priorities));
+				action = walkTo(home.position[0], home.position[1]);
+			requests.push(this.order("siege", breaker, action, priorities));
 		}
 		return requests;
 	}
@@ -578,15 +567,9 @@ export class Offense
 		});
 	}
 
-	order(member, action, priorities)
+	order(purpose, member, action, priorities)
 	{
-		return {
-			"source": "offense",
-			"action": Object.assign({ "unit": member.id }, action),
-			"claims": { "workers": [member.id] },
-			"value": priorities.values.offense,
-			"urgency": 1
-		};
+		return orderRequest("offense", purpose, member.id, action, priorities.values.offense, 1);
 	}
 
 	rallyRequests(world, priorities, members)
@@ -600,8 +583,8 @@ export class Offense
 			return this.attackRequests(world, priorities, members, { "position": this.base });
 		}
 		return members.map(member => squareDistance(member.position, this.rally) <= limit ?
-			this.order(member, { "type": "hold" }, priorities) :
-			this.order(member, { "type": "walk", "x": this.rally[0], "z": this.rally[1] }, priorities));
+			this.order("rally", member, hold(), priorities) :
+			this.order("rally", member, walkTo(this.rally[0], this.rally[1]), priorities));
 	}
 
 	exposure(world, position)
@@ -657,27 +640,24 @@ export class Offense
 			const fighting = new Set(world.enemyFighters.map(enemy => enemy.id));
 			return members.map(member => {
 				if (member.target === target.id || member.state.includes("COMBAT") && fighting.has(member.target))
-					return this.order(member, { "type": "hold" }, priorities);
+					return this.order("assault", member, hold(), priorities);
 				if (squareDistance(member.position, target.position) <= limit)
-					return this.order(member, { "type": "capture", "target": target.id }, priorities);
+					return this.order("assault", member, capture(target.id), priorities);
 				return MOVING_STATES.some(state => member.state.includes(state)) ?
-					this.order(member, { "type": "hold" }, priorities) :
-					this.order(member, { "type": "attack-walk", "x": target.position[0], "z": target.position[1],
-						"targetClasses": UNIT_CLASSES }, priorities);
+					this.order("assault", member, hold(), priorities) :
+					this.order("assault", member, attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), priorities);
 			});
 		}
 		return members.map(member => {
 			if (this.exposure(world, member.position))
 				return member.state.includes("WALKING") ?
-					this.order(member, { "type": "hold" }, priorities) :
-					this.order(member, { "type": "walk", "x": this.rally[0], "z": this.rally[1] }, priorities);
+					this.order("pull-back", member, hold(), priorities) :
+					this.order("pull-back", member, walkTo(this.rally[0], this.rally[1]), priorities);
 			if (member.target === target.id)
-				return this.order(member, { "type": "attack-walk", "x": target.position[0], "z": target.position[1],
-					"targetClasses": UNIT_CLASSES }, priorities);
+				return this.order("fight", member, attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), priorities);
 			return MOVING_STATES.some(state => member.state.includes(state)) ?
-				this.order(member, { "type": "hold" }, priorities) :
-				this.order(member, { "type": "attack-walk", "x": target.position[0], "z": target.position[1],
-					"targetClasses": TARGET_CLASSES }, priorities);
+				this.order("fight", member, hold(), priorities) :
+				this.order("fight", member, attackWalkTo(target.position[0], target.position[1], TARGET_CLASSES), priorities);
 		});
 	}
 
@@ -693,7 +673,7 @@ export class Offense
 			return [];
 		}
 		return away.map(member => member.state.includes("WALKING") ?
-			this.order(member, { "type": "hold" }, priorities) :
-			this.order(member, { "type": "walk", "x": home.position[0], "z": home.position[1] }, priorities));
+			this.order("return", member, hold(), priorities) :
+			this.order("return", member, walkTo(home.position[0], home.position[1]), priorities));
 	}
 }

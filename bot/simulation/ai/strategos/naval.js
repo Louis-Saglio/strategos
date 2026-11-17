@@ -1,4 +1,6 @@
 import { PATIENCE_MS, REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
+import { attack, attackWalkTo, garrisonIn, gatherRequest, hold, inTier, orderRequest, reserving, roomRequest, stanceRequest, trainRequest,
+	unloadAllRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
@@ -470,8 +472,8 @@ export class Naval
 				this.telemetry.line("NAVAL", world.time, { "hunt": target.id, "warship": target.warship, "hunters": hunters.length, "prey": prey.length });
 			}
 			for (const ship of hunters)
-				requests.push(ship.target === target.id ? this.order(ship.id, { "type": "hold" }, priorities) :
-					this.order(ship.id, { "type": "attack", "target": target.id }, priorities));
+				requests.push(ship.target === target.id ? this.order("hunt", ship.id, hold(), priorities) :
+					this.order("hunt", ship.id, attack(target.id), priorities));
 		}
 		return requests;
 	}
@@ -526,8 +528,8 @@ export class Naval
 		const summoned = convoy.summoned || new Set();
 		convoy.summoned = new Set(ships.map(ship => ship.id));
 		const requests = ships.map(ship => away.includes(ship) && (ship.idle || !summoned.has(ship.id)) ?
-			this.order(ship.id, { "type": "walk", "x": convoy.quay.get(ship.id).land[0], "z": convoy.quay.get(ship.id).land[1] }, priorities) :
-			this.order(ship.id, { "type": "hold" }, priorities));
+			this.order("berth", ship.id, walkTo(convoy.quay.get(ship.id).land[0], convoy.quay.get(ship.id).land[1]), priorities) :
+			this.order("berth", ship.id, hold(), priorities));
 		for (const [id, ship] of convoy.berths)
 		{
 			const unit = units.get(id);
@@ -535,8 +537,8 @@ export class Naval
 			if (!unit || !quay)
 				continue;
 			requests.push(squareDistance(unit.position, quay.land) <= MUSTER_RADIUS * MUSTER_RADIUS || unit.state.includes("WALKING") ?
-				this.order(id, { "type": "hold" }, priorities) :
-				this.order(id, { "type": "walk", "x": quay.land[0], "z": quay.land[1] }, priorities));
+				this.order("muster", id, hold(), priorities) :
+				this.order("muster", id, walkTo(quay.land[0], quay.land[1]), priorities));
 		}
 		return requests;
 	}
@@ -569,18 +571,18 @@ export class Naval
 		if (late || !convoy.party.size)
 		{
 			this.move(world, convoy, "done", { "reason": "embark", "aboard": aboard.size });
-			return this.disembark(ships.filter(ship => ship.cargo.length), priorities);
+			return this.disembark("disembark", ships.filter(ship => ship.cargo.length), priorities);
 		}
 		const present = new Set(ships.map(ship => ship.id));
-		const requests = ships.map(ship => this.order(ship.id, { "type": "hold" }, priorities));
+		const requests = ships.map(ship => this.order("embark", ship.id, hold(), priorities));
 		for (const unit of ashore)
 		{
 			const ship = convoy.berths.get(unit.id);
 			if (!present.has(ship))
 				continue;
 			requests.push(unit.state.includes("GARRISON") && unit.target === ship ?
-				this.order(unit.id, { "type": "hold" }, priorities) :
-				this.order(unit.id, { "type": "garrison", "target": ship }, priorities));
+				this.order("board", unit.id, hold(), priorities) :
+				this.order("board", unit.id, garrisonIn(ship), priorities));
 		}
 		return requests;
 	}
@@ -598,10 +600,10 @@ export class Naval
 			return this.landRequests(world, priorities, convoy, ships);
 		}
 		if (convoy.sailed !== null)
-			return loaded.map(ship => this.order(ship.id, { "type": "hold" }, priorities));
+			return loaded.map(ship => this.order("sail", ship.id, hold(), priorities));
 		convoy.sailed = world.time;
-		return loaded.map(ship => this.order(ship.id,
-			{ "type": "walk", "x": convoy.beach.get(ship.id).land[0], "z": convoy.beach.get(ship.id).land[1] }, priorities));
+		return loaded.map(ship => this.order("sail", ship.id,
+			walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), priorities));
 	}
 
 	landRequests(world, priorities, convoy, ships)
@@ -612,42 +614,30 @@ export class Naval
 			this.move(world, convoy, "done", {
 				"reason": loaded.length ? "stuck" : "landed", "left": loaded.reduce((sum, ship) => sum + ship.cargo.length, 0)
 			});
-			return this.disembark(loaded, priorities);
+			return this.disembark("land", loaded, priorities);
 		}
-		const requests = this.disembark(loaded, priorities);
+		const requests = this.disembark("land", loaded, priorities);
 		if (world.time - convoy.nudged >= UNLOAD_NUDGE_MS)
 		{
 			convoy.nudged = world.time;
 			for (const ship of loaded)
-				requests.push(this.order(ship.id,
-					{ "type": "walk", "x": convoy.beach.get(ship.id).land[0], "z": convoy.beach.get(ship.id).land[1] }, priorities));
+				requests.push(this.order("land", ship.id,
+					walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), priorities));
 		}
 		else
 			for (const ship of loaded)
-				requests.push(this.order(ship.id, { "type": "hold" }, priorities));
+				requests.push(this.order("land", ship.id, hold(), priorities));
 		return requests;
 	}
 
-	order(unit, action, priorities)
+	order(purpose, unit, action, priorities)
 	{
-		return {
-			"source": "naval",
-			"action": Object.assign({ "unit": unit }, action),
-			"claims": { "workers": [unit] },
-			"value": priorities.values.ferry,
-			"urgency": 1
-		};
+		return orderRequest("naval", purpose, unit, action, priorities.values.ferry, 1);
 	}
 
-	disembark(ships, priorities)
+	disembark(purpose, ships, priorities)
 	{
-		return ships.map(ship => ({
-			"source": "naval",
-			"action": { "type": "unload-all", "holder": ship.id },
-			"claims": { "slots": ["garrison-" + ship.id] },
-			"value": priorities.values.ferry,
-			"urgency": 1
-		}));
+		return ships.map(ship => unloadAllRequest("naval", purpose, ship.id, priorities.values.ferry, 1));
 	}
 
 	fleetRequests(world, priorities)
@@ -684,13 +674,7 @@ export class Naval
 			Math.ceil(plan.seaSuperiority * world.enemyWarships) - world.ships.length);
 		if (world.crossing && world.populationMax - world.population - world.queuedPopulation <= missing)
 			for (let berth = 0; berth < missing; ++berth)
-				requests.push({
-					"source": "naval",
-					"action": { "type": "hold" },
-					"claims": { "population": this.catalog.population(template) },
-					"value": priorities.values.investment,
-					"urgency": 1
-				});
+				requests.push(roomRequest("naval", "ship-room", this.catalog.population(template), priorities.values.investment, 1));
 		const wanted = world.crossing ? Math.min(plan.maxCapacity,
 			Math.max(priorities.offense.minArmy, plan.maxCapacity * world.population / Math.max(1, world.populationMax))) :
 			priorities.colony || priorities.ferry ? 1 : 0;
@@ -711,25 +695,14 @@ export class Naval
 		{
 			const gun = arsenal.trainable.filter(bombards).sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 			if (payable(gun))
-				requests.push({
-					"source": "naval",
-					"action": { "type": "train", "trainer": arsenal.id, "template": gun, "count": 1 },
-					"claims": { "resources": this.catalog.cost(gun), "population": this.catalog.population(gun), "slots": [arsenal.id] },
-					"value": priorities.values.support,
-					"urgency": 1
-				});
+				requests.push(trainRequest("naval", "siege-ship", arsenal.id, gun, 1, this.catalog.cost(gun), this.catalog.population(gun),
+					priorities.values.support, 1));
 		}
 		if (!yard || building >= short)
 			return requests;
-		requests.unshift({
-			"source": "naval",
-			"action": { "type": "train", "trainer": yard.id, "template": template, "count": 1 },
-			"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [yard.id] },
-			"value": priorities.values.investment,
-			"urgency": pressed ? priorities.values.ferry / priorities.values.investment : 1,
-			"tier": pressed ? "production" : "investment",
-			"reserve": true
-		});
+		const urgency = pressed ? priorities.values.ferry / priorities.values.investment : 1;
+		requests.unshift(inTier(reserving(trainRequest("naval", "ship", yard.id, template, 1, this.catalog.cost(template),
+			this.catalog.population(template), priorities.values.investment, urgency)), pressed ? "production" : "investment"));
 		return requests;
 	}
 
@@ -799,11 +772,11 @@ export class Naval
 		const target = this.bombardment.target;
 		return battery.map(ship => {
 			if (ship.target === target)
-				return this.order(ship.id, { "type": "hold" }, priorities);
+				return this.order("bombard", ship.id, hold(), priorities);
 			if (squareDistance(ship.position, point) <= plan.arrive * plan.arrive)
-				return this.order(ship.id, { "type": "attack", "target": target }, priorities);
-			return ship.idle ? this.order(ship.id, { "type": "walk", "x": point[0], "z": point[1] }, priorities) :
-				this.order(ship.id, { "type": "hold" }, priorities);
+				return this.order("bombard", ship.id, attack(target), priorities);
+			return ship.idle ? this.order("bombard", ship.id, walkTo(point[0], point[1]), priorities) :
+				this.order("bombard", ship.id, hold(), priorities);
 		});
 	}
 
@@ -856,7 +829,7 @@ export class Naval
 			return [];
 		const claimed = new Set();
 		for (const request of hunting)
-			for (const id of request.claims.workers || [])
+			for (const id of request.claims.units || [])
 				claimed.add(id);
 		const raiders = world.fleet.filter(ship => ship.warship && !ship.bombard && !ship.cargo.length && ship.sea === objective.sea &&
 			!this.engaged(ship.id) && !claimed.has(ship.id) && ship.hitpoints >= plan.hull * ship.maxHitpoints);
@@ -884,17 +857,11 @@ export class Naval
 			if (!this.steady.has(ship.id))
 			{
 				this.steady.add(ship.id);
-				posture.push({
-					"source": "naval",
-					"action": { "type": "stance", "unit": ship.id, "name": "standground" },
-					"claims": {},
-					"value": priorities.values.ferry,
-					"urgency": 1
-				});
+				posture.push(stanceRequest("naval", "raid-stance", ship.id, "standground", priorities.values.ferry, 1));
 			}
 		return posture.concat(raiders.map(ship => squareDistance(ship.position, point) <= near || !ship.idle ?
-			this.order(ship.id, { "type": "hold" }, priorities) :
-			this.order(ship.id, { "type": "attack-walk", "x": point[0], "z": point[1], "targetClasses": RAID_CLASSES }, priorities)));
+			this.order("raid", ship.id, hold(), priorities) :
+			this.order("raid", ship.id, attackWalkTo(point[0], point[1], RAID_CLASSES), priorities)));
 	}
 
 	fishingRequests(world, priorities)
@@ -923,14 +890,8 @@ export class Naval
 		{
 			const template = yard.trainable.filter(fishes)
 				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-			requests.push({
-				"source": "naval",
-				"action": { "type": "train", "trainer": yard.id, "template": template, "count": 1 },
-				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [yard.id] },
-				"value": priorities.values.fishing,
-				"urgency": 1,
-				"tier": "production"
-			});
+			requests.push(inTier(trainRequest("naval", "fishing-boat", yard.id, template, 1, this.catalog.cost(template),
+				this.catalog.population(template), priorities.values.fishing, 1), "production"));
 		}
 		const reserved = new Map();
 		for (const boat of boats)
@@ -952,8 +913,8 @@ export class Naval
 				const away = [boat.position[0] + (boat.position[0] - foe.position[0]) / length * clearance.flight,
 					boat.position[1] + (boat.position[1] - foe.position[1]) / length * clearance.flight];
 				if (world.openWater(away, boat.sea, clearance.berth))
-					requests.push(boat.state.includes("WALKING") ? this.order(boat.id, { "type": "hold" }, priorities) :
-						this.order(boat.id, { "type": "walk", "x": away[0], "z": away[1] }, priorities));
+					requests.push(boat.state.includes("WALKING") ? this.order("flee", boat.id, hold(), priorities) :
+						this.order("flee", boat.id, walkTo(away[0], away[1]), priorities));
 				continue;
 			}
 			if (!boat.idle || boat.gathering)
@@ -974,13 +935,7 @@ export class Naval
 			if (!best)
 				continue;
 			reserved.set(best.id, (reserved.get(best.id) || 0) + 1);
-			requests.push({
-				"source": "naval",
-				"action": { "type": "gather", "worker": boat.id, "target": best.id, "resource": "food" },
-				"claims": { "workers": [boat.id] },
-				"value": priorities.values.assignIdleWorker,
-				"urgency": 1
-			});
+			requests.push(gatherRequest("naval", "fish", boat.id, best.id, "food", priorities.values.assignIdleWorker, 1));
 		}
 		return requests;
 	}
@@ -1006,15 +961,9 @@ export class Naval
 			if (!shore)
 				continue;
 			if (nearest > LANDING_RADIUS * LANDING_RADIUS && ship.idle)
-				requests.push(this.order(ship.id, { "type": "walk", "x": shore.land[0], "z": shore.land[1] }, priorities));
+				requests.push(this.order("castaway", ship.id, walkTo(shore.land[0], shore.land[1]), priorities));
 			else if (ship.idle)
-				requests.push({
-					"source": "naval",
-					"action": { "type": "unload-all", "holder": ship.id },
-					"claims": { "slots": ["garrison-" + ship.id] },
-					"value": priorities.values.founding,
-					"urgency": 1
-				});
+				requests.push(unloadAllRequest("naval", "castaway", ship.id, priorities.values.founding, 1));
 		}
 		return requests;
 	}
@@ -1025,9 +974,9 @@ export class Naval
 		if (!carrying.length || !world.docks.length)
 			return [];
 		const dock = world.docks[0].position;
-		return this.disembark(carrying, priorities).concat(carrying.filter(ship => ship.idle &&
+		return this.disembark("stranded", carrying, priorities).concat(carrying.filter(ship => ship.idle &&
 			squareDistance(ship.position, dock) > LANDING_RADIUS * LANDING_RADIUS)
-			.map(ship => this.order(ship.id, { "type": "walk", "x": dock[0], "z": dock[1] }, priorities)));
+			.map(ship => this.order("stranded", ship.id, walkTo(dock[0], dock[1]), priorities)));
 	}
 
 	anchorage(world, dock)
@@ -1058,7 +1007,7 @@ export class Naval
 			for (const id of convoy.ships)
 				busy.add(id);
 		for (const request of issued)
-			for (const id of request.claims.workers || [])
+			for (const id of request.claims.units || [])
 				busy.add(id);
 		const docks = new Map(world.docks.map(dock => [dock.id, dock]));
 		const afloat = new Set(world.fleet.map(ship => ship.id));
@@ -1099,7 +1048,7 @@ export class Naval
 			    squareDistance(ship.position, point) <= ANCHOR_TOLERANCE * ANCHOR_TOLERANCE)
 				continue;
 			station.ordered = world.time;
-			requests.push(this.order(ship.id, { "type": "walk", "x": point[0], "z": point[1] }, priorities));
+			requests.push(this.order("station", ship.id, walkTo(point[0], point[1]), priorities));
 		}
 		return requests;
 	}

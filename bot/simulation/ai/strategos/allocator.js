@@ -74,7 +74,7 @@ export class Allocator
 			"resources": Object.assign({}, world.resources),
 			"population": world.populationRoom,
 			"slots": new Set(),
-			"workers": new Set()
+			"units": new Set()
 		};
 		const ordered = requests
 			.map((request, index) => ({ request, index, "priority": request.value * request.urgency }))
@@ -116,7 +116,7 @@ export class Allocator
 			if (own)
 				for (const code of this.codes)
 					budget.earmark[code] -= own[code];
-			const reason = this.denial(world, request, budget);
+			const reason = this.denial(request, budget);
 			this.record(request, reason || "granted");
 			if (reason)
 			{
@@ -145,14 +145,12 @@ export class Allocator
 		return grants;
 	}
 
-	denial(world, request, budget)
+	denial(request, budget)
 	{
-		if (request.deadline !== undefined && world.time > request.deadline)
-			return "expired";
 		const claims = request.claims;
-		for (const id of claims.workers || [])
-			if (budget.workers.has(id))
-				return "worker-taken";
+		for (const id of claims.units || [])
+			if (budget.units.has(id))
+				return "unit-taken";
 		for (const id of claims.slots || [])
 			if (budget.slots.has(id))
 				return "slot-taken";
@@ -167,8 +165,8 @@ export class Allocator
 	commit(request, budget)
 	{
 		const claims = request.claims;
-		for (const id of claims.workers || [])
-			budget.workers.add(id);
+		for (const id of claims.units || [])
+			budget.units.add(id);
 		for (const id of claims.slots || [])
 			budget.slots.add(id);
 		budget.population -= claims.population || 0;
@@ -193,7 +191,7 @@ export class Allocator
 
 	record(request, outcome)
 	{
-		const key = request.source + "/" + request.action.type + (request.tier === "production" ? "!" : "") + ":" + outcome;
+		const key = request.source + "/" + request.purpose + "/" + request.action.type + (request.tier === "production" ? "!" : "") + ":" + outcome;
 		this.ledger.set(key, (this.ledger.get(key) || 0) + 1);
 	}
 

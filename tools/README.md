@@ -13,7 +13,7 @@ Development tooling for Strategos. Not part of the bot.
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `duel.py` | check the core of the combat forecast against the duels of the duel scenario; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
-| `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request the set grants |
+| `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request (source and purpose) the set grants |
 | `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
@@ -450,34 +450,96 @@ change the status: a refactoring may change telemetry on purpose. Status
 committed list at its limit, or was played without `--commands`).
 
 `coverage` (also printed at the end of `play`) reads the `[ALLOC]` ledgers
-of a play: per kind of request (`source/action`, the production tier's
-`!` dropped) the times it was granted and denied and the games granting
-it, then the kinds the bot's code can emit that the play never granted,
-each as never requested or as requested and denied. The kinds of the code
-are read from the bot the play snapshotted (`DIR/mods/strategos`, or
-`--bot`): every action literal (`{ "type": "..."`) of a class that has a
-`requests(` method and names its `"source"`, plus the actions that a
-module without such a class (`tactics.js`) builds for the classes calling
-it. What a kind is made of is known to two functions only, `ledger_kind`
-(the key of the ledger) and `source_kinds` (the code).
+of a play. The allocator counts every request it grants or denies, and the
+bot prints the counts every 60 s:
+`"outcomes": {"construction/house/construct!:granted": 3, "economy/soldiers/train:resources-food": 2, ...}`.
+A key is `source/purpose/action:outcome`:
+
+- `source` — the subsystem asking;
+- `purpose` — what the request is for (a house is not a dropsite, a
+  soldier is not a worker);
+- `action` — the type of the request's action (`train`, `construct`,
+  `walk`, `hold`, `attack-walk`...; `hold` is also the action of a request
+  that only holds resources or population), followed by `!` when the
+  request is of the production tier;
+- `outcome` — `granted`, or the reason of the denial (`unit-taken`,
+  `slot-taken`, `population`, `resources-CODE`).
+
+The requests of the last, unfinished minute of a game are in no ledger.
+
+A kind of request is `source/purpose`: the table sums a kind over its
+actions and tiers. It gives, per kind, the times it was granted and denied,
+the games granting it and the actions it was granted under — the action
+alone when there is one, each with its count otherwise (`hold 491, walk
+3`, `train 510, train! 421`), so a kind granted is not read as every
+action of that purpose granted. Then come the kinds the bot's code can
+emit that the play never granted, each as never requested or as requested
+and denied. The kinds of the code are read from the bot the play
+snapshotted (`DIR/mods/strategos`, or `--bot`). Every request is built by a
+builder of `requests.js` (an exported function whose first parameters are
+`source, purpose`); a class names its source as the first argument of the
+builders it calls, and a purpose as the second, or as the `purpose`
+argument of one of its own methods that hands it on (`this.order("rally",
+...)`). A purpose is read when it is a string literal or a choice between
+two (`yard ? "shipyard" : "dock"`). What a kind is made of is known to two
+functions only, `ledger_kind` (the key of the ledger) and `source_kinds`
+(the code).
 
 The table is worth what that reading is worth, so `coverage` says when it
-is not whole and exits 1: a class with a `requests(` method from which no
-kind is read (its `"source"` is not a string literal, or it has no action
-literal), a kind of the ledgers that no class read emits, or an `[ALLOC]`
-line that cannot be parsed (reported with its file and line number). The
-kinds such a class emits would otherwise be missing from the list of those
-never granted.
+is not whole and exits 1:
 
-The set grants 40 of the 44 kinds. Never granted within 14 minutes:
-`trade/train`, `trade/trading-goods` and `trade/trade-route` (traders are
-trained once two finished land markets, one of ours and another of ours or
-of an ally, make a route that pays 0.5 a second, 0.3 when stone or metal
-runs out at home; in the three team games tried with 3000 resources the
-second market was missing or the route paid 0.43, and recorded 30-minute
-games set their first route around minute 27), and `offense/garrison`
-(soldiers garrisoned in a captured structure to hold it: the earliest
-grant in recorded games is in the ledger of minute 14.2).
+- in a subsystem: a source or a purpose that is neither of those forms,
+  the word `purpose` used where no request is built (a variable, a field
+  written), a method taking a purpose that is used otherwise than called
+  as `this.NAME(`, a request built outside a class or written by hand
+  outside `requests.js` (`"claims":`), a class with a `requests(` method
+  that names no purpose;
+- between a subsystem and `requests.js`: the module named otherwise than
+  in `import { NAME, ... } from "simulation/ai/strategos/requests.js";` (a
+  namespace import, an alias, a re-export, a dynamic import), or a builder
+  named otherwise than called by its own name (`const make =
+  goodsRequest`, `Requests.goodsRequest(...)`, `goodsRequest.call(...)`);
+- in `requests.js`, where no source and no purpose may be named — both go
+  from the parameters of a builder to the request: a function that is not
+  declared `function NAME(...)` at the start of a line (an arrow function,
+  a class), an export that is not such a function, `source` or `purpose`
+  as parameters elsewhere than first and second, a call of a builder or of
+  what the builders share (`compose`) whose first two arguments are not
+  the `source, purpose` of the function it is in, such a function named
+  otherwise than called, a request written (`"claims":`, `"purpose":`)
+  otherwise than as `"source": source, "purpose": purpose`, and any other
+  use of the words `source` and `purpose` (`"source"` as the key of an
+  action is not one);
+- in the ledgers: a kind that no class read emits, or an `[ALLOC]` line
+  that cannot be parsed (reported with its file and line number). A play
+  whose ledgers have another key is refused this way: that of a bot from
+  before `requests.js` (`tmp/ident/d1c8f01`, `source/action:outcome`).
+
+The set grants 68 of the 84 kinds. Never in a ledger within 14 minutes:
+
+- `trade/trader`, `trade/goods`, `trade/route` — traders are trained once
+  two finished land markets, one of ours and another of ours or of an
+  ally, make a route that pays 0.5 a second, 0.3 when stone or metal runs
+  out at home; in the three team games tried with 3000 resources the
+  second market was missing or the route paid 0.43, and recorded
+  30-minute games set their first route around minute 27;
+  `construction/trade-post` is the second market, beside a far centre;
+- `offense/occupy` — soldiers garrisoned in a captured structure to hold
+  it: the earliest grant in recorded games is in the ledger of minute
+  14.2;
+- `offense/return` — no army of the set goes home before the limit (no
+  `[ATTACK]` line with the mode `return`); `offense/storm` — an army
+  overseas without a target it can capture;
+- `offense/mop-up` — requested in `team-4305` from 13.9 minutes on, in the
+  minute whose ledger the game does not print;
+- `construction/colony-centre`, `construction/forward-base` — a civic
+  centre founded by settlers landed on another island, or at the front of
+  an invasion;
+- `naval/siege-ship`, `naval/bombard` — ships that bombard structures;
+  `naval/ship-room` — population kept for ships at the population limit;
+- `naval/disembark`, `naval/stranded`, `naval/castaway` — a convoy that
+  gives up its embarkation, a loaded ship outside any convoy, loaded ships
+  of a player without a civic centre.
 
 ### league.py — the bot against a set of opponents
 
