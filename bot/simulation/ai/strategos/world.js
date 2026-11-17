@@ -14,6 +14,41 @@ const FISHER_WORTH = 3;
 const STRAGGLERS_KEPT = 24;
 const MUSTER_WINDOW_MS = 120000;
 const MUSTER_MIN_S = 30;
+const STATE_FLAGS = {
+	"fighting": ["COMBAT"],
+	"striking": ["ATTACKING"],
+	"walking": ["WALKING"],
+	"moving": ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"],
+	"garrisoning": ["GARRISON"],
+	"gathering": ["GATHER"],
+	"returning": ["RETURNRESOURCE"],
+	"repairing": ["REPAIR"],
+	"working": ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"],
+	"collecting": ["COLLECTTREASURE"],
+	"healing": ["HEAL"],
+	"trading": ["TRADE"]
+};
+const STATES = new Map();
+
+function stateNamed(name)
+{
+	let state = STATES.get(name);
+	if (!state)
+	{
+		state = {};
+		for (const flag in STATE_FLAGS)
+			state[flag] = STATE_FLAGS[flag].some(mark => name.includes(mark));
+		STATES.set(name, Object.freeze(state));
+	}
+	return state;
+}
+
+function stateOf(ent)
+{
+	return stateNamed(ent.unitAIState() || "");
+}
+
+export const NO_STATE = stateNamed("");
 
 export class ResourceIndex
 {
@@ -647,6 +682,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	{
 		const position = ent.position();
 		const unitName = ent.templateName();
+		const state = stateOf(ent);
 		if (!roster.has(unitName))
 			roster.set(unitName, { "template": unitName, "classes": ent.classes(), "count": 0, "value": 0, "soldier": ent.hasClass("Soldier"),
 				"military": ent.hasClass("Soldier") || ent.hasClass("Siege") || ent.hasClass("Warship"), "structure": false,
@@ -659,7 +695,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				"id": ent.id(),
 				"position": position,
 				"region": accessibility.getAccessValue(position),
-				"state": ent.unitAIState() || "",
+				"state": state,
 				"idle": ent.isIdle()
 			}));
 		if (position && listed.healer)
@@ -667,7 +703,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				"id": ent.id(),
 				"position": position,
 				"region": accessibility.getAccessValue(position),
-				"state": ent.unitAIState() || ""
+				"state": state
 			}));
 		if (position && catalog.isBreaker(ent.templateName()))
 		{
@@ -675,7 +711,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			breakers.push(Object.freeze({
 				"id": ent.id(),
 				"position": position,
-				"state": ent.unitAIState() || "",
+				"state": state,
 				"target": orders.length && orders[0] ? orders[0].target : undefined
 			}));
 		}
@@ -688,24 +724,23 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				"id": ent.id(),
 				"position": position,
 				"region": region,
-				"state": ent.unitAIState() || "",
+				"state": state,
 				"buildable": Object.freeze(catalog.buildable(ent))
 			}));
 			continue;
 		}
 		const orders = ent.unitAIOrderData() || [];
-		const state = ent.unitAIState() || "";
 		const soldier = ent.hasClass("Soldier");
 		let gathering = null;
 		let kind = null;
 		let haul = null;
 		let targetPosition = null;
-		if (state.includes("RETURNRESOURCE"))
+		if (state.returning)
 		{
 			const carried = ent.resourceCarrying();
 			gathering = carried && carried.length ? carried[0].type : null;
 		}
-		else if (state.includes("GATHER") && orders.length && orders[0] && orders[0].target !== undefined)
+		else if (state.gathering && orders.length && orders[0] && orders[0].target !== undefined)
 		{
 			const target = gameState.getEntityById(orders[0].target);
 			const type = target && target.resourceSupplyType();
@@ -900,13 +935,13 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				}));
 			else if (ent.position() && stragglers.length < STRAGGLERS_KEPT)
 				stragglers.push(ent);
-			const labour = ent.unitAIState() || "";
-			if (labour.includes("GATHER") || labour.includes("RETURNRESOURCE"))
+			const state = stateOf(ent);
+			if (state.gathering || state.returning)
 				enemyGatherers += 1;
 			if (ent.position() && catalog.isCivilian(ent.templateName()))
 				enemyCivilians.push(Object.freeze({
 					"id": ent.id(), "owner": enemy, "position": ent.position(), "template": ent.templateName(), "hitpoints": ent.hitpoints(),
-					"state": labour
+					"state": state
 				}));
 			if (ent.hasClass("Soldier"))
 			{
@@ -925,12 +960,12 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 						"position": ent.position(),
 						"template": ent.templateName(),
 						"hitpoints": ent.hitpoints(),
-						"state": ent.unitAIState() || "",
+						"state": state,
 						"target": orders.length && orders[0] ? orders[0].target : undefined
 					}));
 				}
 				else
-					enemyHidden.push(Object.freeze({ "id": ent.id(), "owner": enemy, "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": "" }));
+					enemyHidden.push(Object.freeze({ "id": ent.id(), "owner": enemy, "template": ent.templateName(), "hitpoints": ent.hitpoints(), "state": NO_STATE }));
 				const attacks = catalog.combat(ent.templateName(), enemy).attacks;
 				for (const type in attacks)
 					for (const kind in attacks[type].damage)
@@ -955,10 +990,10 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		const position = ent.position();
 		if (!position)
 			continue;
-		const state = ent.unitAIState() || "";
+		const state = stateOf(ent);
 		const orders = ent.unitAIOrderData() || [];
 		const target = orders.length && orders[0] && orders[0].target !== undefined ? gameState.getEntityById(orders[0].target) : null;
-		const attacksUs = state.includes("COMBAT") && !!target && target.owner() === player;
+		const attacksUs = state.fighting && !!target && target.owner() === player;
 		const trespasses = THREAT_CLASSES.some(cls => ent.hasClass(cls)) && territoryAt(territory, position[0], position[1]).owner === player;
 		if (!attacksUs && !trespasses)
 			continue;
@@ -985,7 +1020,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const army = new Map();
 	for (const ent of gameState.getOwnEntitiesByClass("Hero", true).values())
 		if (ent.position())
-			heroes.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "state": ent.unitAIState() || "" }));
+			heroes.push(Object.freeze({ "id": ent.id(), "position": ent.position(), "state": stateOf(ent) }));
 	for (const ent of gameState.getOwnEntitiesByClass("Soldier", true).values())
 	{
 		const position = ent.position();
@@ -997,7 +1032,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			"position": position,
 			"region": accessibility.getAccessValue(position),
 			"template": ent.templateName(),
-			"state": ent.unitAIState() || "",
+			"state": stateOf(ent),
 			"classes": ent.classes(),
 			"capture": captureStrength(ent),
 			"hitpoints": ent.hitpoints(),
@@ -1072,6 +1107,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		if (!ent.position())
 			continue;
 		const orders = ent.unitAIOrderData() || [];
+		const state = stateOf(ent);
 		fleet.push(Object.freeze({
 			"id": ent.id(),
 			"position": ent.position(),
@@ -1079,13 +1115,13 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			"template": ent.templateName(),
 			"capacity": catalog.transportCapacity(ent.templateName()),
 			"cargo": Object.freeze((ent.garrisoned() || []).slice()),
-			"state": ent.unitAIState() || "",
+			"state": state,
 			"idle": ent.isIdle(),
 			"fishing": ent.hasClass("FishingBoat"),
 			"classes": ent.classes(),
 			"profile": ent.hasClass("FishingBoat") ? catalog.gathering(ent) : null,
 			"bombard": catalog.isBombardShip(ent.templateName()),
-			"gathering": (ent.unitAIState() || "").includes("GATHER") || (ent.unitAIState() || "").includes("RETURNRESOURCE"),
+			"gathering": state.gathering || state.returning,
 			"warship": ent.hasClass("Warship"),
 			"hitpoints": ent.hitpoints(),
 			"maxHitpoints": ent.maxHitpoints(),
@@ -1105,7 +1141,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 				"position": ent.position(),
 				"owner": ent.owner(),
 				"region": accessibility.getAccessValue(ent.position()),
-				"state": ent.unitAIState() || ""
+				"state": stateOf(ent)
 			}));
 	const homeRegion = centres.length ? accessibility.getAccessValue(centres[0].position) : 0;
 	const presence = new Map();

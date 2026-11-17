@@ -23,7 +23,6 @@ const TARGET_DISTANCE_SCALE = 200;
 const TARGET_WEIGHTS = { "centre": 3, "defensive": 2, "other": 1 };
 const HOLD_MARGIN = 2;
 const HOLD_RADIUS = 80;
-const MOVING_STATES = ["COMBAT", "WALKING", "APPROACHING", "CHASING", "CAPTURE", "ATTACK"];
 const STORM_MIN_ARMY = 30;
 const STORM_SUPERIORITY = 2;
 const TARGET_CLASSES = { "attack": ["Unit", "Structure"], "avoid": ["Palisade", "Wall"] };
@@ -68,7 +67,7 @@ export class Offense
 	{
 		return world.fighters
 			.filter(fighter => fighter.region === world.homeRegion && !this.army.has(fighter.id) && !held.has(fighter.id) &&
-				fighter.state.includes("COMBAT") && !world.ownSide(fighter.position))
+				fighter.state.fighting && !world.ownSide(fighter.position))
 			.map(fighter => this.order("stray", fighter, walkTo(home.position[0], home.position[1]), priorities));
 	}
 
@@ -77,7 +76,7 @@ export class Offense
 		const requests = [];
 		for (const fighter of world.fighters)
 		{
-			if (MOVING_STATES.some(state => fighter.state.includes(state)))
+			if (fighter.state.moving)
 				continue;
 			const best = nearest(world.enemyTargets, fighter.position, firstListed, target => target.region === fighter.region).item;
 			if (best)
@@ -128,7 +127,7 @@ export class Offense
 		{
 			if (!this.attacked.has(structure.id))
 				continue;
-			const pending = world.fighters.filter(fighter => fighter.state.includes("GARRISON") && fighter.target === structure.id);
+			const pending = world.fighters.filter(fighter => fighter.state.garrisoning && fighter.target === structure.id);
 			let regen = structure.regen + pending.reduce((sum, fighter) => sum + fighter.capture * structure.garrisonRegenRate, 0);
 			const need = structure.decayRate + HOLD_MARGIN;
 			if (regen >= need)
@@ -138,7 +137,7 @@ export class Offense
 			{
 				const room = structure.free - pending.length;
 				const near = world.fighters
-					.filter(member => this.army.has(member.id) && !taken.has(member.id) && !member.state.includes("GARRISON") &&
+					.filter(member => this.army.has(member.id) && !taken.has(member.id) && !member.state.garrisoning &&
 						MatchesClassList(member.classes, structure.classes) &&
 						squareDistance(member.position, structure.position) <= HOLD_RADIUS * HOLD_RADIUS)
 					.sort((a, b) => squareDistance(a.position, structure.position) - squareDistance(b.position, structure.position) || a.id - b.id);
@@ -184,15 +183,14 @@ export class Offense
 		}
 		if (this.mode === "home" || this.overseas)
 			return requests;
-		const moving = breaker => MOVING_STATES.some(state => breaker.state.includes(state));
 		for (const breaker of world.breakers)
 		{
 			let action = hold();
 			if (this.mode === "attack" && breaker.target !== this.target.id)
 				action = attack(this.target.id);
-			else if (this.mode === "rally" && !moving(breaker))
+			else if (this.mode === "rally" && !breaker.state.moving)
 				action = walkTo(this.rally[0], this.rally[1]);
-			else if (this.mode === "return" && !moving(breaker))
+			else if (this.mode === "return" && !breaker.state.moving)
 				action = walkTo(home.position[0], home.position[1]);
 			requests.push(this.order("siege", breaker, action, priorities));
 		}
@@ -215,7 +213,7 @@ export class Offense
 		if (this.mode === "attack" && !this.overseas && this.reinforce(world, priorities, members, home))
 			members = world.fighters.filter(fighter => this.army.has(fighter.id));
 		home = { "position": this.base };
-		const free = members.filter(member => !held.has(member.id) && !member.state.includes("GARRISON"));
+		const free = members.filter(member => !held.has(member.id) && !member.state.garrisoning);
 		const reason = this.mode !== "return" && this.retreatReason(world, priorities, free, home);
 		if (reason)
 			this.switchMode(world, "return", Object.assign({
@@ -236,7 +234,7 @@ export class Offense
 		if (!priorities.guard.holds || !members.length || !world.enemyStructures.some(structure => structure.id === this.target.id))
 			return false;
 		const joiners = world.fighters.filter(fighter => fighter.region === world.homeRegion && !this.army.has(fighter.id) &&
-			!priorities.guard.ids.has(fighter.id) && !fighter.state.includes("COMBAT"));
+			!priorities.guard.ids.has(fighter.id) && !fighter.state.fighting);
 		if (joiners.length < plan.min)
 			return false;
 		const whole = members.concat(joiners);
@@ -396,7 +394,7 @@ export class Offense
 		if (!members.length)
 			return null;
 		const exchange = priorities.offense.exchange;
-		const front = members.filter(member => member.state.includes("COMBAT"));
+		const front = members.filter(member => member.state.fighting);
 		const outlook = prospect(this.catalog, members, centroid(front.length >= FRONT_MIN ? front : members), world.enemyFighters,
 			world.enemyStructures, Object.assign(this.plan(priorities, REACH_RADIUS), { "prey": world.enemyCivilians }));
 		const prize = this.assaulting.on ? this.prize(world, priorities, members, this.target) : 0;
@@ -444,7 +442,7 @@ export class Offense
 		const groups = new Map();
 		for (const fighter of world.fighters)
 		{
-			if (fighter.region === world.homeRegion && fighter.state.includes("COMBAT") || priorities.guard.ids.has(fighter.id))
+			if (fighter.region === world.homeRegion && fighter.state.fighting || priorities.guard.ids.has(fighter.id))
 				continue;
 			if (!groups.has(fighter.region))
 				groups.set(fighter.region, []);
@@ -612,23 +610,23 @@ export class Offense
 		{
 			const fighting = new Set(world.enemyFighters.map(enemy => enemy.id));
 			return members.map(member => {
-				if (member.target === target.id || member.state.includes("COMBAT") && fighting.has(member.target))
+				if (member.target === target.id || member.state.fighting && fighting.has(member.target))
 					return this.order("assault", member, hold(), priorities);
 				if (squareDistance(member.position, target.position) <= limit)
 					return this.order("assault", member, capture(target.id), priorities);
-				return MOVING_STATES.some(state => member.state.includes(state)) ?
+				return member.state.moving ?
 					this.order("assault", member, hold(), priorities) :
 					this.order("assault", member, attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), priorities);
 			});
 		}
 		return members.map(member => {
 			if (this.exposure(world, member.position))
-				return member.state.includes("WALKING") ?
+				return member.state.walking ?
 					this.order("pull-back", member, hold(), priorities) :
 					this.order("pull-back", member, walkTo(this.rally[0], this.rally[1]), priorities);
 			if (member.target === target.id)
 				return this.order("fight", member, attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), priorities);
-			return MOVING_STATES.some(state => member.state.includes(state)) ?
+			return member.state.moving ?
 				this.order("fight", member, hold(), priorities) :
 				this.order("fight", member, attackWalkTo(target.position[0], target.position[1], TARGET_CLASSES), priorities);
 		});
@@ -645,7 +643,7 @@ export class Offense
 			this.telemetry.line("ATTACK", world.time, { "mode": "home" });
 			return [];
 		}
-		return away.map(member => member.state.includes("WALKING") ?
+		return away.map(member => member.state.walking ?
 			this.order("return", member, hold(), priorities) :
 			this.order("return", member, walkTo(home.position[0], home.position[1]), priorities));
 	}

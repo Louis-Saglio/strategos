@@ -146,7 +146,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 		if (!chosen)
 		{
 			const foe = closest(enemies, unit.position).unit;
-			actions.set(unit.id, unit.state.includes("COMBAT") ? hold() : attack(foe.id));
+			actions.set(unit.id, unit.state.fighting ? hold() : attack(foe.id));
 			continue;
 		}
 		pending.set(chosen.id, (pending.get(chosen.id) || 0) + FOCUS_HORIZON_S * catalog.hitRate(unit.template, chosen.template, unit.owner, chosen.owner));
@@ -168,7 +168,7 @@ export function skirmish(catalog, ours, enemies, retreat)
 	{
 		if (actions.has(unit.id))
 			continue;
-		if (unit.state.includes("COMBAT"))
+		if (unit.state.fighting)
 		{
 			actions.set(unit.id, hold());
 			continue;

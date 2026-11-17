@@ -88,7 +88,7 @@ export class Trade
 			requests.push(goodsRequest("trade", "goods", shares, priorities.values.support, 1));
 		}
 		for (const trader of world.traders)
-			if (trader.idle || !trader.state.includes("TRADE"))
+			if (trader.idle || !trader.state.trading)
 				requests.push(orderRequest("trade", "route", trader.id, tradeRoute(route.to.id, route.from.id), priorities.values.support, 1));
 		return requests;
 	}

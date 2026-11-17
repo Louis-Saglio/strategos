@@ -1,6 +1,6 @@
 import { attack, garrisonIn, hold, orderRequest, unloadAllRequest, unloadRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { territoryAt } from "simulation/ai/strategos/world.js";
-import { COVER_MARGIN, atWork } from "simulation/ai/strategos/forecast.js";
+import { COVER_MARGIN } from "simulation/ai/strategos/forecast.js";
 import { centroid, direction, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";
 import { balance, coveringHolders, skirmish } from "simulation/ai/strategos/tactics.js";
@@ -100,7 +100,7 @@ export class Defense
 		const sentinels = world.fighters.filter(fighter => territoryAt(territory, fighter.position[0], fighter.position[1]).owner === player);
 		const limit = WARNING_RADIUS * WARNING_RADIUS;
 		const inside = new Set(world.threats.map(threat => threat.id));
-		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !atWork(enemy) &&
+		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !enemy.state.working &&
 			world.ownSide(enemy.position) && sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit));
 	}
 
@@ -141,7 +141,7 @@ export class Defense
 
 	respond(world, priorities, free, near, group, cover)
 	{
-		const ordered = near.filter(entry => entry.fighter.state.includes("COMBAT")).concat(near.filter(entry => !entry.fighter.state.includes("COMBAT")))
+		const ordered = near.filter(entry => entry.fighter.state.fighting).concat(near.filter(entry => !entry.fighter.state.fighting))
 			.map(entry => entry.fighter);
 		let enough = ordered.length;
 		if (enough > 1 && balance(this.catalog, ordered, group, cover) >= RESPONSE_MARGIN)
@@ -187,7 +187,7 @@ export class Defense
 			if (!action)
 			{
 				const { threat } = this.nearestThreat(world, unit.position);
-				action = unit.state.includes("COMBAT") && allowed.has(unit.target) || !threat ? hold() : attack(threat.id);
+				action = unit.state.fighting && allowed.has(unit.target) || !threat ? hold() : attack(threat.id);
 			}
 			requests.push(this.order(retreating.has(unit.id) ? "retreat" : "engage", unit, action, priorities));
 		}
@@ -224,7 +224,7 @@ export class Defense
 				defenders.push(fighter);
 				continue;
 			}
-			if (squareDistance(fighter.position, slot) <= SLOT_TOLERANCE * SLOT_TOLERANCE || fighter.state.includes("WALKING"))
+			if (squareDistance(fighter.position, slot) <= SLOT_TOLERANCE * SLOT_TOLERANCE || fighter.state.walking)
 			{
 				requests.push(this.order("line", fighter, hold(), priorities));
 				continue;
@@ -270,7 +270,7 @@ export class Defense
 		const any = () => true;
 		for (const worker of world.workers)
 		{
-			if (worker.soldier || worker.state.includes("GARRISON"))
+			if (worker.soldier || worker.state.garrisoning)
 				continue;
 			const { distance } = this.nearestThreat(world, worker.position);
 			if (distance > DANGER_RADIUS)

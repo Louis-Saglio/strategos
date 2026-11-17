@@ -1,10 +1,10 @@
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
+import { NO_STATE } from "simulation/ai/strategos/world.js";
 
 export const CONTACT_RADIUS = 60;
 export const REACH_RADIUS = 150;
 export const COVER_MARGIN = 5;
-const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
 const RECRUIT_WAVE_S = 20;
 
 export const FORECAST = {
@@ -173,7 +173,7 @@ function grouped(units, opponents, arriving, committed, passive)
 		return group;
 	};
 	for (const unit of units)
-		if (committed || unit.state.includes("ATTACKING") && foes.has(unit.target))
+		if (committed || unit.state.striking && foes.has(unit.target))
 			entry(unit, 0).engaged += 1;
 		else
 			entry(unit, 0);
@@ -236,19 +236,14 @@ export function within(units, centre, taken)
 	return units.filter(unit => !(taken && taken.has(unit.id)) && squareDistance(unit.position, centre) <= limit);
 }
 
-export function atWork(unit)
-{
-	return WORKING_STATES.some(state => unit.state.includes(state));
-}
-
 export function arriving(catalog, units, centre, present, working, reach, fighting)
 {
 	const limit = (reach || REACH_RADIUS) * (reach || REACH_RADIUS);
 	const coming = [];
 	for (const unit of units)
 	{
-		if (present.has(unit.id) || !fighting && unit.state.includes("COMBAT") ||
-		    working && atWork(unit))
+		if (present.has(unit.id) || !fighting && unit.state.fighting ||
+		    working && unit.state.working)
 			continue;
 		const distance = squareDistance(unit.position, centre);
 		if (distance > limit)
@@ -284,7 +279,7 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 		for (let k = 1; k <= count; ++k)
 		{
 			const unit = { "id": -(mustered.length + recruited.length + 1), "template": group.template, "owner": group.owner, "hitpoints": hitpoints,
-				"state": "" };
+				"state": NO_STATE };
 			if (k / group.rate <= lead)
 				mustered.push(unit);
 			else

@@ -260,7 +260,7 @@ export class Naval
 		const rank = worker => worker.idle ? -1 : ferry.excess.indexOf(worker.gathering);
 		const able = world.workers.filter(worker => worker.region === ferry.from && !this.enlisted(worker.id) &&
 			worker.gatherTypes.includes(ferry.code) && (worker.idle || worker.gathering && worker.gathering !== ferry.code) &&
-			!worker.state.includes("REPAIR") && !worker.state.includes("COMBAT"));
+			!worker.state.repairing && !worker.state.fighting);
 		const party = able
 			.map(worker => ({ worker, "rank": rank(worker), "distance": squareDistance(worker.position, dock.position) }))
 			.filter(entry => entry.rank >= -1)
@@ -303,7 +303,7 @@ export class Naval
 		const groups = new Map();
 		for (const fighter of world.fighters)
 		{
-			if (fighter.state.includes("COMBAT") || this.enlisted(fighter.id))
+			if (fighter.state.fighting || this.enlisted(fighter.id))
 				continue;
 			if (!groups.has(fighter.region))
 				groups.set(fighter.region, []);
@@ -496,7 +496,7 @@ export class Naval
 			const quay = convoy.quay.get(ship);
 			if (!unit || !quay)
 				continue;
-			requests.push(squareDistance(unit.position, quay.land) <= MUSTER_RADIUS * MUSTER_RADIUS || unit.state.includes("WALKING") ?
+			requests.push(squareDistance(unit.position, quay.land) <= MUSTER_RADIUS * MUSTER_RADIUS || unit.state.walking ?
 				this.order("muster", id, hold(), priorities) :
 				this.order("muster", id, walkTo(quay.land[0], quay.land[1]), priorities));
 		}
@@ -540,7 +540,7 @@ export class Naval
 			const ship = convoy.berths.get(unit.id);
 			if (!present.has(ship))
 				continue;
-			requests.push(unit.state.includes("GARRISON") && unit.target === ship ?
+			requests.push(unit.state.garrisoning && unit.target === ship ?
 				this.order("board", unit.id, hold(), priorities) :
 				this.order("board", unit.id, garrisonIn(ship), priorities));
 		}
@@ -856,7 +856,7 @@ export class Naval
 				const foe = nearest(foes, boat.position, firstListed).item;
 				const away = awayFrom(boat.position, foe.position, clearance.flight);
 				if (world.openWater(away, boat.sea, clearance.berth))
-					requests.push(boat.state.includes("WALKING") ? this.order("flee", boat.id, hold(), priorities) :
+					requests.push(boat.state.walking ? this.order("flee", boat.id, hold(), priorities) :
 						this.order("flee", boat.id, walkTo(away[0], away[1]), priorities));
 				continue;
 			}
