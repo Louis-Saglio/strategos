@@ -1,5 +1,5 @@
 import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
-import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
+import { productionFlow, exchangeOutlook, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 import { arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
@@ -10,8 +10,6 @@ const BASE = {
 	"military": { "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
 		"plenty": { "enter": 8000, "exit": 3000 }, "raid": { "hostiles": 2, "share": 0.5, "memoryMs": 60000 },
 		"threat": { "minEnemy": 15, "enter": 0.7, "exit": 1, "horizonS": 90 } },
-	"phaseUpPopulation": { "2": 120, "3": 150 },
-	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1 },
 	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, 		"exchange": { "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
@@ -159,13 +157,36 @@ export class Strategy
 			world.codes.every(code => world.resources[code] >= world.nextPhaseCost[code]);
 		if (byBlockedGrowth)
 			this.phaseWanted = next;
-		const byPopulation = byBlockedGrowth || world.population >= (this.table.phaseUpPopulation[next] || Infinity);
 		const { surplus } = exchangeOutlook(world);
-		const bySurplus = next >= this.table.surplusPhaseFrom && !!world.nextPhaseTech &&
-			world.codes.every(code => surplus[code] >= world.nextPhaseCost[code]);
-		if (bySurplus)
+		const bySurplus = !!world.nextPhaseTech && world.codes.every(code => surplus[code] >= world.nextPhaseCost[code]);
+		if (bySurplus || !!world.nextPhaseTech && this.phasePays(world))
 			this.phaseWanted = next;
-		return byPopulation || bySurplus;
+		return byBlockedGrowth || this.phaseWanted === next;
+	}
+
+	phasePays(world)
+	{
+		if (this.phaseJudged !== undefined && world.time - this.phaseJudged < RETRY_MS)
+			return false;
+		this.phaseJudged = world.time;
+		const prices = resourcePrices(world);
+		const priced = cost => world.codes.reduce((sum, code) => sum + prices[code] * (cost[code] || 0), 0);
+		const counted = new Set();
+		let gain = 0;
+		for (const entry of world.phaseOpens)
+		{
+			if (counted.has(entry.tech))
+				continue;
+			const net = techBenefit(world, this.catalog, entry.tech) - priced(this.catalog.techCost(entry.tech, entry.template));
+			if (!(net > 0))
+				continue;
+			gain += net;
+			counted.add(entry.tech);
+			if (this.catalog.technology(entry.tech).sibling)
+				counted.add(this.catalog.technology(entry.tech).sibling);
+		}
+		this.phaseGain = Math.round(gain);
+		return gain >= priced(world.nextPhaseCost);
 	}
 
 	colony(world, labour, ferry)

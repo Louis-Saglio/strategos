@@ -433,6 +433,20 @@ export class Catalog
 		});
 	}
 
+	opened(producer, tech)
+	{
+		const phase = this.gameState.getTemplate(tech);
+		const names = [tech].concat(phase && phase._template.replaces || []);
+		return (this.researchables.get(producer) || []).filter(name => {
+			if (names.includes(name) || this.gameState.isResearched(name) || this.gameState.isResearching(name))
+				return false;
+			const template = this.gameState.getTemplate(name);
+			const alternatives = template && template.requirements(this.civ);
+			return !!alternatives && alternatives.some(alternative => (alternative.techs || []).some(other => names.includes(other)) &&
+				alternative.techs.every(other => names.includes(other) || this.gameState.isResearched(other)));
+		});
+	}
+
 	footprint(name)
 	{
 		if (!this.footprints.has(name))
