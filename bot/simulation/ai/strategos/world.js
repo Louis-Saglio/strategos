@@ -178,7 +178,7 @@ export class ResourceIndex
 				continue;
 			let nearest = Infinity;
 			for (const point of points)
-				nearest = Math.min(nearest, Math.max(0, Math.sqrt(squareDistance(point.position, position)) - point.radius));
+				nearest = Math.min(nearest, Math.sqrt(squareDistance(point.position, position)));
 			const type = ent.resourceSupplyType();
 			const alive = !!ent.get("UnitAI") && ent.hitpoints() > 0;
 			sites.push(Object.freeze({
