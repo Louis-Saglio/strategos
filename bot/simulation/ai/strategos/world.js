@@ -559,23 +559,6 @@ function phaseNeeds(gameState, tech)
 	return needs;
 }
 
-function phaseOpens(gameState, catalog, laboratories)
-{
-	const phase = gameState.getPhaseName(gameState.currentPhase() + 1);
-	const opens = [];
-	if (!phase)
-		return opens;
-	const listed = new Set();
-	for (const template of [...laboratories].sort())
-		for (const tech of catalog.opened(template, phase))
-			if (!listed.has(tech))
-			{
-				listed.add(tech);
-				opens.push(Object.freeze({ "tech": tech, "template": template }));
-			}
-	return opens;
-}
-
 function techCost(gameState, codes, tech)
 {
 	const template = tech && gameState.getTemplate(tech);
@@ -786,7 +769,6 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const decaying = [];
 	let garrisonedSoldiers = 0;
 	const researchers = [];
-	const laboratories = new Set();
 	const footprints = [];
 	for (const ent of gameState.getOwnStructures().values())
 	{
@@ -821,7 +803,6 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 			}));
 		if (ent.get("Researcher"))
 		{
-			laboratories.add(ent.templateName());
 			const techs = catalog.researchable(ent);
 			if (techs.length)
 				researchers.push(Object.freeze({
@@ -1274,7 +1255,6 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"nextPhaseTech": gameState.getPhaseName(gameState.currentPhase() + 1) || null,
 		"nextPhaseCost": techCost(gameState, codes, gameState.getPhaseName(gameState.currentPhase() + 1)),
 		"phaseNeeds": Object.freeze(phaseNeeds(gameState, gameState.getPhaseName(gameState.currentPhase() + 1))),
-		"phaseOpens": Object.freeze(phaseOpens(gameState, catalog, laboratories)),
 		"civ": catalog.civ,
 		"codes": codes,
 		"resources": Object.freeze(resources),
