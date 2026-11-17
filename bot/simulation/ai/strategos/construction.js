@@ -124,7 +124,7 @@ export class Construction
 		const requests = [];
 		const assigned = new Map();
 		for (const worker of world.workers)
-			if (worker.state.includes("REPAIR") && worker.target !== undefined)
+			if (worker.state.repairing && worker.target !== undefined)
 				assigned.set(worker.target, (assigned.get(worker.target) || 0) + 1);
 		const hostiles = world.threats.concat(world.wild);
 		const safe = REPAIR_SAFE_RADIUS * REPAIR_SAFE_RADIUS;
@@ -627,7 +627,7 @@ export class Construction
 		const colony = priorities.colony;
 		if (!colony || world.docks.some(dock => dock.region === colony.region))
 			return [];
-		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.includes("REPAIR"));
+		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.repairing);
 		if (!builders.length)
 			return this.colonyHold(world, priorities, colony);
 		const origin = centroid(builders);
@@ -657,7 +657,7 @@ export class Construction
 		if (!front || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
 		    world.foundations.some(foundation => isSettlement(foundation.template)))
 			return [];
-		const landed = world.settlers.filter(settler => settler.region === front.region && !settler.state.includes("REPAIR"));
+		const landed = world.settlers.filter(settler => settler.region === front.region && !settler.state.repairing);
 		if (!landed.length)
 			return [];
 		if (landed.length < priorities.forwardPlan.settlers)
@@ -1173,7 +1173,7 @@ export class Construction
 		const region = world.regionOf(position);
 		return world.workers
 			.filter(worker => (taken ? worker.buildable.length > 0 : worker.buildable.includes(template)) &&
-				!worker.state.includes("REPAIR") && !worker.state.includes("COMBAT") &&
+				!worker.state.repairing && !worker.state.fighting &&
 				!(taken && taken.has(worker.id)) && (region < 2 || worker.region === region))
 			.map(worker => ({ "id": worker.id, "armed": worker.soldier ? 1 : 0, "distance": squareDistance(worker.position, position) }))
 			.sort((a, b) => a.armed - b.armed || a.distance - b.distance || a.id - b.id)
@@ -1186,7 +1186,7 @@ export class Construction
 		const requests = [];
 		const assigned = new Map();
 		for (const worker of world.workers)
-			if (worker.state.includes("REPAIR") && worker.target !== undefined)
+			if (worker.state.repairing && worker.target !== undefined)
 				assigned.set(worker.target, (assigned.get(worker.target) || 0) + 1);
 		const taken = new Set();
 		for (const foundation of world.foundations)

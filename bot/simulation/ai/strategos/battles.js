@@ -40,10 +40,10 @@ export class BattleLog
 		const foes = new Map(world.enemyFighters.map(enemy => [enemy.id, enemy]));
 		const seeds = [];
 		for (const fighter of world.fighters)
-			if (fighter.state.includes("COMBAT") && foes.has(fighter.target))
+			if (fighter.state.fighting && foes.has(fighter.target))
 				seeds.push([fighter, foes.get(fighter.target)]);
 		for (const enemy of world.enemyFighters)
-			if (enemy.state.includes("COMBAT") && own.has(enemy.target))
+			if (enemy.state.fighting && own.has(enemy.target))
 				seeds.push([own.get(enemy.target), enemy]);
 		const taken = new Set();
 		const found = [];

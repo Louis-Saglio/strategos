@@ -34,7 +34,7 @@ export class Guard
 				nearest(world.enemyTargets, centre.position, firstListed).item;
 			const post = awayFrom(centre.position, danger ? danger.position : hero.position, centre.radius + POST_CLEARANCE);
 			const away = squareDistance(hero.position, post) > POST_TOLERANCE * POST_TOLERANCE;
-			requests.push(this.order("hero-post", hero, away && !hero.state.includes("WALKING") ?
+			requests.push(this.order("hero-post", hero, away && !hero.state.walking ?
 				walkTo(post[0], post[1]) : hold(), priorities));
 		}
 		return requests;
@@ -76,7 +76,7 @@ export class Relics
 				continue;
 			const post = toward(home.position, relic.position, home.radius + RELIC_POST_CLEARANCE);
 			const away = squareDistance(relic.position, post) > RELIC_POST_TOLERANCE * RELIC_POST_TOLERANCE;
-			requests.push(this.order("relic-post", relic.id, away && !relic.state.includes("WALKING") ?
+			requests.push(this.order("relic-post", relic.id, away && !relic.state.walking ?
 				walkTo(post[0], post[1]) : hold(), priorities));
 		}
 		const wanted = world.relics
@@ -96,7 +96,7 @@ export class Relics
 			this.telemetry.line("RELIC", world.time, { "seek": wanted.id, "owner": wanted.owner, "x": Math.round(wanted.position[0]), "z": Math.round(wanted.position[1]) });
 		const members = world.fighters.filter(fighter => this.squad.has(fighter.id));
 		const spare = world.fighters
-			.filter(fighter => !this.squad.has(fighter.id) && fighter.region === world.homeRegion && !fighter.state.includes("COMBAT"))
+			.filter(fighter => !this.squad.has(fighter.id) && fighter.region === world.homeRegion && !fighter.state.fighting)
 			.map(fighter => ({ fighter, "distance": squareDistance(fighter.position, wanted.position) }))
 			.sort((a, b) => a.distance - b.distance || a.fighter.id - b.fighter.id)
 			.slice(0, Math.max(0, RELIC_SQUAD - members.length))

@@ -97,7 +97,13 @@ StrategosBot.prototype.decide = function()
 StrategosBot.prototype.report = function(world, priorities)
 {
 	if (this.strategy.changed)
-		this.telemetry.line("STRAT", world.time, priorities);
+		this.telemetry.line("STRAT", world.time, Object.assign({}, priorities, { "guard": {
+			"hostiles": priorities.guard.group.length,
+			"needed": priorities.guard.needed.length,
+			"ratio": priorities.guard.ratio,
+			"holds": priorities.guard.holds,
+			"value": priorities.guard.value
+		} }));
 	if (!this.telemetry.due("REPORT", world.time, REPORT_MS))
 		return;
 	this.telemetry.line("ALLOC", world.time, this.allocator.flushLedger());

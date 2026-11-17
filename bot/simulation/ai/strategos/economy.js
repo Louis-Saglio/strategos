@@ -159,7 +159,7 @@ export class Economy
 	{
 		const collected = new Set();
 		for (const worker of world.workers)
-			if (worker.state.includes("COLLECTTREASURE") && worker.target !== undefined)
+			if (worker.state.collecting && worker.target !== undefined)
 				collected.add(worker.target);
 		const requests = [];
 		const taken = new Set();
@@ -168,7 +168,7 @@ export class Economy
 			if (collected.has(treasure.id))
 				continue;
 			const best = nearest(world.workers, treasure.position, lowerId, worker => worker.collector && !taken.has(worker.id) &&
-				(worker.idle || worker.state.includes("GATHER") || worker.state.includes("RETURNRESOURCE"))).item;
+				(worker.idle || worker.state.gathering || worker.state.returning)).item;
 			if (!best)
 				continue;
 			taken.add(best.id);

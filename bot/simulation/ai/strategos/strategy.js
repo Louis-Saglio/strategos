@@ -3,7 +3,7 @@ import { centroid, distanceBetween, squareDistance } from "simulation/ai/strateg
 import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { territoryAt } from "simulation/ai/strategos/world.js";
-import { REACH_RADIUS, arriving, atWork, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { REACH_RADIUS, arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const BASE = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -293,7 +293,7 @@ export class Strategy
 	{
 		const plan = this.table.military.threat;
 		const home = world.centres[0];
-		const ready = world.enemyFighters.filter(unit => !atWork(unit));
+		const ready = world.enemyFighters.filter(unit => !unit.state.working);
 		if (!home || ready.length < plan.minEnemy)
 		{
 			this.underThreat.on = false;

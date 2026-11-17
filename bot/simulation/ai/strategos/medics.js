@@ -63,7 +63,7 @@ export class Medics
 		const requests = [];
 		for (const healer of world.healers)
 		{
-			if (healer.state.includes("HEAL"))
+			if (healer.state.healing)
 				continue;
 			const danger = world.enemyFighters.some(enemy => squareDistance(enemy.position, healer.position) <= FLEE_RADIUS * FLEE_RADIUS);
 			let goal = post;
@@ -75,7 +75,7 @@ export class Medics
 				if (patient)
 					goal = patient.position;
 			}
-			if (!goal || squareDistance(goal, healer.position) <= REACH * REACH || healer.state.includes("WALKING"))
+			if (!goal || squareDistance(goal, healer.position) <= REACH * REACH || healer.state.walking)
 				continue;
 			requests.push(orderRequest("medics", "follow", healer.id, walkTo(goal[0], goal[1]), priorities.values.support, 1));
 		}
