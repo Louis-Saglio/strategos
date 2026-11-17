@@ -1,6 +1,7 @@
+import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
+
 const CONSTRUCT_CONFIRM_MS = 3000;
 const CONSTRUCT_MATCH_DISTANCE = 1.5;
-const BARTER_REPORT_MS = 30000;
 
 export class Executor
 {
@@ -128,7 +129,7 @@ export class Executor
 	barter(action)
 	{
 		Engine.PostCommand(this.player, { "type": "barter", "sell": action.sell, "buy": action.buy, "amount": action.amount });
-		if (this.telemetry.due("TRADE", this.time, BARTER_REPORT_MS))
+		if (this.telemetry.due("TRADE", this.time, REPORT_MS))
 			this.telemetry.line("TRADE", this.time, { "sell": action.sell, "buy": action.buy, "rate": Math.round(action.rate * 100) / 100 });
 		return true;
 	}

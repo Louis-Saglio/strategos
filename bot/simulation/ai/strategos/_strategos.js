@@ -15,11 +15,11 @@ import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Telemetry } from "simulation/ai/strategos/telemetry.js";
 import { Upgrades } from "simulation/ai/strategos/upgrades.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
+import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex, buildWorld } from "simulation/ai/strategos/world.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
-const REPORT_PERIOD_MS = 60000;
 
 export function StrategosBot(settings)
 {
@@ -98,7 +98,7 @@ StrategosBot.prototype.report = function(world, priorities)
 {
 	if (this.strategy.changed)
 		this.telemetry.line("STRAT", world.time, priorities);
-	if (!this.telemetry.due("REPORT", world.time, REPORT_PERIOD_MS))
+	if (!this.telemetry.due("REPORT", world.time, REPORT_MS))
 		return;
 	this.telemetry.line("ALLOC", world.time, this.allocator.flushLedger());
 	this.telemetry.line("ECO", world.time, {

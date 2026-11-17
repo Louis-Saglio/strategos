@@ -1,7 +1,6 @@
+import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { TECH_HORIZON_S, auraBenefit, resourcePrices } from "simulation/ai/strategos/valuation.js";
 
-const RETRY_MS = 60000;
-const COOLDOWN_MS = 20000;
 const SWITCH_EDGE = 2;
 const MIN_BENEFIT = 50;
 
@@ -17,7 +16,7 @@ export class Upgrades
 
 	requests(world, priorities)
 	{
-		if (!world.upgradable.length || world.time - this.last < COOLDOWN_MS)
+		if (!world.upgradable.length || world.time - this.last < RETRY_MS)
 			return [];
 		const prices = resourcePrices(world);
 		const priced = amounts => world.codes.reduce((sum, code) => sum + prices[code] * (amounts[code] || 0), 0);

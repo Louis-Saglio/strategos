@@ -1,3 +1,4 @@
+import { PATIENCE_MS, REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
@@ -13,7 +14,6 @@ const SUPPORT_VALUE = 100;
 const BERTH_PATIENCE_MS = 30000;
 const BERTH_READY_SHARE = 0.85;
 const EMBARK_QUORUM = 0.85;
-const EMBARK_PATIENCE_MS = 60000;
 const EMBARK_PATIENT_SHARE = 0.7;
 const EMBARK_TIMEOUT_MS = 120000;
 const EMBARK_MIN_SHARE = 0.6;
@@ -21,9 +21,7 @@ const SAIL_TIMEOUT_MS = 300000;
 const LANDING_RADIUS = 35;
 const LANDING_CLEARANCE = 40;
 const SAIL_SETTLE_MS = 6000;
-const UNLOAD_TIMEOUT_MS = 60000;
 const UNLOAD_NUDGE_MS = 12000;
-const RETRY_MS = 30000;
 const MIN_SETTLERS = 3;
 const SETTLER_SHARE = 3;
 const MAX_FERRIES = 3;
@@ -33,7 +31,6 @@ const ANCHOR_SPACING = 30;
 const ANCHOR_CLEARANCE = 16;
 const ANCHOR_TOLERANCE = 15;
 const ANCHOR_RETRY_MS = 12000;
-const REPORT_MS = 60000;
 const RAID_CLASSES = { "attack": ["Unit"], "avoid": [] };
 
 export class Naval
@@ -560,7 +557,7 @@ export class Naval
 		const ashore = [...convoy.party].filter(id => units.has(id)).map(id => units.get(id));
 		convoy.party = new Set([...aboard, ...ashore.map(unit => unit.id)]);
 		const late = world.time - convoy.since >= EMBARK_TIMEOUT_MS;
-		const patient = world.time - convoy.since >= EMBARK_PATIENCE_MS && aboard.size >= EMBARK_PATIENT_SHARE * convoy.party.size;
+		const patient = world.time - convoy.since >= PATIENCE_MS && aboard.size >= EMBARK_PATIENT_SHARE * convoy.party.size;
 		if (convoy.party.size && aboard.size >= Math.floor(EMBARK_QUORUM * convoy.party.size) || patient && aboard.size >= convoy.quorum ||
 		    late && aboard.size >= convoy.quorum)
 		{
@@ -610,7 +607,7 @@ export class Naval
 	landRequests(world, priorities, convoy, ships)
 	{
 		const loaded = ships.filter(ship => ship.cargo.some(id => convoy.party.has(id)));
-		if (!loaded.length || world.time - convoy.since >= UNLOAD_TIMEOUT_MS)
+		if (!loaded.length || world.time - convoy.since >= PATIENCE_MS)
 		{
 			this.move(world, convoy, "done", {
 				"reason": loaded.length ? "stuck" : "landed", "left": loaded.reduce((sum, ship) => sum + ship.cargo.length, 0)
@@ -777,7 +774,7 @@ export class Naval
 			centre[1] += ship.position[1] / battery.length;
 		}
 		const standing = this.bombardment && world.enemyStructures.some(structure => structure.id === this.bombardment.target);
-		if (!standing && (!this.bombardment || this.bombardment.target !== null || world.time - this.bombardment.since >= plan.retargetMs))
+		if (!standing && (!this.bombardment || this.bombardment.target !== null || world.time - this.bombardment.since >= RETRY_MS))
 		{
 			const ranked = world.enemyStructures.slice().sort((a, b) =>
 				(b.fire.arrows > 0 ? 1 : 0) - (a.fire.arrows > 0 ? 1 : 0) || (b.centre ? 1 : 0) - (a.centre ? 1 : 0) ||
@@ -868,7 +865,7 @@ export class Naval
 			this.raid = null;
 			return [];
 		}
-		if (!this.raid || world.time - this.raid.since >= plan.retargetMs)
+		if (!this.raid || world.time - this.raid.since >= RETRY_MS)
 		{
 			const power = raiders.reduce((sum, ship) => sum + this.catalog.costSum(ship.template) * ship.hitpoints / ship.maxHitpoints, 0);
 			const found = this.raidTarget(world, priorities, objective.sea, objective.region, power);

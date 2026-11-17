@@ -1,3 +1,4 @@
+import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { productionFlow, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 import { arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
@@ -11,7 +12,7 @@ const BASE = {
 		"threat": { "minEnemy": 15, "enter": 0.7, "exit": 1, "horizonS": 90 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
-	"blockedGrowth": { "room": 1, "afterMs": 60000 },
+	"blockedGrowth": { "room": 1 },
 	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, 		"exchange": { "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
 		"targetsTried": 6, "recall": 0.1, "reinforce": { "min": 20 },
@@ -21,13 +22,13 @@ const BASE = {
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
 	"trade": { "minRate": 0.3, "richRate": 0.5, "minDistance": 400, "max": 10, "populationPerTrader": 20, "scarceWealth": 3000, "scarceCodes": ["stone", "metal"] },
 	"naval": { "dockPopulation": 40, "fishDock": { "population": 20, "schools": 4, "reach": 300 }, "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10, "yardFishers": 18, "yardSpacing": 110, "yardCrowd": 70, "reinforcement": 10, "massShare": 0.5, "edge": 1.3, "huntSuperiority": 1.2, "fleetMax": 24, "fightersPerShip": 8,
-		"raid": { "minShips": 4, "reach": 50, "clearance": 12, "retargetMs": 20000, "minPrey": 3, "hull": 0.35, "preyPerValue": 0.01 },
+		"raid": { "minShips": 4, "reach": 50, "clearance": 12, "minPrey": 3, "hull": 0.35, "preyPerValue": 0.01 },
 		"fishClearance": { "battery": 15, "structure": 70, "soldier": 65, "berth": 12, "flight": 90 },
-		"bombard": { "ships": 6, "margin": 6, "clearance": 10, "bearings": 18, "searoom": 12, "tried": 40, "retargetMs": 30000, "arrive": 20 },
+		"bombard": { "ships": 6, "margin": 6, "clearance": 10, "bearings": 18, "searoom": 12, "tried": 40, "arrive": 20 },
 		"fishing": { "maxBoats": 12, "perFish": 2 } },
 	"colony": { "dockPopulation": 20, "maxHomeArea": 150000, "minArea": 6000, "centreArea": 14000, "enemyClearance": 220, "max": 5, "wealthCap": 6000,
-		"distanceScale": 400, "retryMs": 30000, "starvedWeight": 4, "phasePopulation": 50 },
-	"forward": { "settlers": 15, "builders": 20, "reach": 120, "clearance": 250, "shore": 120, "retryMs": 60000 },
+		"distanceScale": 400, "starvedWeight": 4, "phasePopulation": 50 },
+	"forward": { "settlers": 15, "builders": 20, "reach": 120, "clearance": 250, "shore": 120 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "wealthPerWorker": 150, "minWealth": 600, "minParty": 3, "maxParty": 10,
 		"scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"] },
 	"margin": 1.25,
@@ -154,7 +155,7 @@ export class Strategy
 			this.blockedSince = undefined;
 		else if (this.blockedSince === undefined)
 			this.blockedSince = world.time;
-		const byBlockedGrowth = housed && world.time - this.blockedSince >= this.table.blockedGrowth.afterMs && !!world.nextPhaseTech &&
+		const byBlockedGrowth = housed && world.time - this.blockedSince >= PATIENCE_MS && !!world.nextPhaseTech &&
 			world.codes.every(code => world.resources[code] >= world.nextPhaseCost[code]);
 		if (byBlockedGrowth)
 			this.phaseWanted = next;
@@ -188,7 +189,7 @@ export class Strategy
 			}
 			return this.colonySite;
 		}
-		if (this.colonySearched !== undefined && world.time - this.colonySearched < plan.retryMs)
+		if (this.colonySearched !== undefined && world.time - this.colonySearched < RETRY_MS)
 			return null;
 		this.colonySearched = world.time;
 		const found = this.findColony(world, starved);
@@ -210,7 +211,7 @@ export class Strategy
 			!world.enemyStructures.some(structure => squareDistance(structure.position, position) < plan.clearance * plan.clearance);
 		if (this.front && this.front.region === crossing.region && clear(this.front.position))
 			return this.front;
-		if (this.frontSearched !== undefined && world.time - this.frontSearched < plan.retryMs)
+		if (this.frontSearched !== undefined && world.time - this.frontSearched < RETRY_MS)
 			return null;
 		this.frontSearched = world.time;
 		const grid = world.wealth;

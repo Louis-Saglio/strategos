@@ -1,3 +1,4 @@
+import { PATIENCE_MS, REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 import { GATHER_EFFICIENCY, captureOutlook, resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { prospect } from "simulation/ai/strategos/forecast.js";
@@ -8,12 +9,10 @@ const RALLY_RADIUS = 30;
 const RALLY_QUORUM = 0.8;
 const RALLY_TIMEOUT_MS = 45000;
 const HOME_RADIUS = 50;
-const RETURN_TIMEOUT_MS = 60000;
 const RETREAT_FRACTION = 0.25;
 const COMMIT_MS = 10000;
 const FRONT_MIN = 3;
 const PRIZE_HORIZON_S = 60;
-const WAIT_REPORT_MS = 60000;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
 const ASSAULT_EXIT_SHARE = 0.25;
@@ -501,7 +500,7 @@ export class Offense
 			this.region = region;
 			break;
 		}
-		if (!target && this.refused && this.telemetry.due("ATTACK-wait", world.time, WAIT_REPORT_MS))
+		if (!target && this.refused && this.telemetry.due("ATTACK-wait", world.time, REPORT_MS))
 			this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": "wait", "army": this.refused.army, "target": this.refused.target,
 				"enemySoldiers": world.enemySoldiers }, this.described(this.refused.outlook)));
 		if (!target)
@@ -686,7 +685,7 @@ export class Offense
 	{
 		const limit = HOME_RADIUS * HOME_RADIUS;
 		const away = members.filter(member => squareDistance(member.position, home.position) > limit);
-		if (!away.length || world.time - this.since >= RETURN_TIMEOUT_MS)
+		if (!away.length || world.time - this.since >= PATIENCE_MS)
 		{
 			this.mode = "home";
 			this.army = new Set();

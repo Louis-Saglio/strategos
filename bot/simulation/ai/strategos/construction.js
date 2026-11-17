@@ -1,3 +1,4 @@
+import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
@@ -8,9 +9,6 @@ const FINE_STEP = 3;
 const CRAMPED_MEMORY_MS = 60000;
 const FIELD_MARGIN = 1;
 const HOUSE_RING_WIDTH = 120;
-const NO_SITE_REPORT_MS = 30000;
-const NO_SITE_RETRY_MS = 20000;
-const FULL_BASE_RETRY_MS = 60000;
 const CENTRE_CLEARANCE = 8;
 const SECONDS_PER_BUILDER = 25;
 const MAX_BUILDERS = 6;
@@ -77,7 +75,6 @@ export class Construction
 		this.telemetry = telemetry;
 		this.noSiteReported = new Map();
 		this.noSiteTime = new Map();
-		this.noSiteRetry = new Map();
 		this.dockSite = null;
 		this.dockRefused = new Set();
 		this.stalled = new Map();
@@ -87,15 +84,14 @@ export class Construction
 	searchable(world, template)
 	{
 		const failed = this.noSiteTime.get(template);
-		return failed === undefined || world.time - failed >= (this.noSiteRetry.get(template) || NO_SITE_RETRY_MS);
+		return failed === undefined || world.time - failed >= RETRY_MS;
 	}
 
-	noSite(world, template, retry)
+	noSite(world, template)
 	{
 		this.noSiteTime.set(template, world.time);
-		this.noSiteRetry.set(template, retry || NO_SITE_RETRY_MS);
 		const last = this.noSiteReported.get(template);
-		if (last === undefined || world.time - last >= NO_SITE_REPORT_MS)
+		if (last === undefined || world.time - last >= REPORT_MS)
 		{
 			this.noSiteReported.set(template, world.time);
 			this.telemetry.line("BUILD", world.time, { "noSite": template });
@@ -334,7 +330,7 @@ export class Construction
 			return null;
 		const site = this.ringSite(world, placement, template);
 		if (!site)
-			return this.noSite(world, template, FULL_BASE_RETRY_MS);
+			return this.noSite(world, template);
 		return this.production(this.constructRequest(world, template, site, priorities.values.house, 1 + Math.max(0, need - headroom) / need));
 	}
 
@@ -481,7 +477,7 @@ export class Construction
 			return null;
 		const site = this.ringSite(world, placement, template);
 		if (!site)
-			return this.noSite(world, template, FULL_BASE_RETRY_MS);
+			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, value, 1);
 	}
 
@@ -1010,7 +1006,7 @@ export class Construction
 		const site = placement.around(far.position, minRadius, minRadius + HOUSE_RING_WIDTH, this.catalog.footprint(template), BUILDING_MARGIN,
 			this.reservedBoxes(world), this.farmBelts(world));
 		if (!site)
-			return this.noSite(world, template, FULL_BASE_RETRY_MS);
+			return this.noSite(world, template);
 		return this.constructRequest(world, template, site, priorities.values.market, 1);
 	}
 
