@@ -8,7 +8,7 @@ civilisation, map and setting. This counts them so that a commit can say
 how many it removed or added:
 
 - declared: numeric literals inside the module-level `const NAME = ...;`
-  declarations (one for `const REACH = 150;`, every numeric leaf of a
+  declarations, exported or not (one for `const REACH = 150;`, every numeric leaf of a
   table such as `OPENING` in strategy.js), with the number of such
   declarations and of those holding no number (class names, template
   paths, state lists);
@@ -31,7 +31,7 @@ import sys
 
 NUMBER = re.compile(r"(?<![\w.$])(?:0x[0-9a-fA-F]+|\d+\.?\d*(?:e[+-]?\d+)?)(?![\w$])")
 STRING = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'|`(?:\\.|[^`\\])*`')
-DECLARATION = re.compile(r"^const ([A-Z][A-Z_0-9]*) = ", re.M)
+DECLARATION = re.compile(r"^(?:export )?const ([A-Z][A-Z_0-9]*) = ", re.M)
 TRIVIAL = {0.0, 1.0, 2.0}
 
 KINDS = [
