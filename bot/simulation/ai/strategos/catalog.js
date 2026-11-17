@@ -138,6 +138,13 @@ export class Catalog
 		return !!template && !!template.get("Trader") && !template.hasClass("Ship");
 	}
 
+	caravan()
+	{
+		const template = this.template("units/" + this.civ + "/support_trader");
+		return template && template.get("Trader") ?
+			{ "gain": +template.get("Trader/GainMultiplier") || 0, "speed": template.walkSpeed() || 0 } : null;
+	}
+
 	isHealer(name)
 	{
 		const template = this.template(name);

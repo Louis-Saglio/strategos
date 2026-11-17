@@ -855,7 +855,8 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		gameState.getEntities()).values())
 		if (ent.position() && ent.foundationProgress() === undefined && (ent.owner() === player || partners.has(ent.owner())))
 			markets.push(Object.freeze({ "id": ent.id(), "position": ent.position(),
-				"region": landRegionNear(accessibility, ent.position()), "own": ent.owner() === player }));
+				"region": landRegionNear(accessibility, ent.position()), "own": ent.owner() === player,
+				"bonus": +ent.get("Market/InternationalBonus") || 0 }));
 	markets.sort((a, b) => a.id - b.id);
 	const threats = [];
 	const enemyCentres = [];

@@ -1,24 +1,21 @@
+import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { exchangeOutlook } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const DEAL_AMOUNT = 100;
 const MIN_RATE = 0.65;
 
-const GAIN_MULTIPLIER = 0.75;
-const GAIN_REFERENCE = 100;
-const GAIN_MAP = 1024;
-const FOREIGN_BONUS = 0.2;
-const TRADER_SPEED = 9;
-
-export function routeGain(distance, mapSize)
+function routeGain(distance, mapSize, multiplier)
 {
-	const gain = length => length * length / (1 + 0.25 * length / mapSize);
-	return GAIN_MULTIPLIER * Math.sqrt(GAIN_MAP / mapSize) * gain(distance) / gain(GAIN_REFERENCE);
+	const gain = length => length * length / (1 + TRADE_GAIN_DAMPING * length / mapSize);
+	return multiplier * Math.sqrt(TRADE_GAIN_MAP / mapSize) * gain(distance) / gain(TRADE_GAIN_DISTANCE);
 }
 
-export function bestRoute(world)
+function bestRoute(world, caravan)
 {
 	let best = null;
+	if (!caravan)
+		return best;
 	for (let i = 0; i < world.markets.length; ++i)
 		for (let j = i + 1; j < world.markets.length; ++j)
 		{
@@ -29,8 +26,8 @@ export function bestRoute(world)
 			if (!a.own && !b.own)
 				continue;
 			const distance = Math.sqrt(squareDistance(a.position, b.position));
-			const gain = routeGain(distance, world.mapSize) * (a.own && b.own ? 1 : 1 + FOREIGN_BONUS);
-			const rate = gain / Math.max(1, distance / TRADER_SPEED);
+			const gain = routeGain(distance, world.mapSize, caravan.gain) * (a.own && b.own ? 1 : 1 + Math.max(a.bonus, b.bonus));
+			const rate = gain / Math.max(1, distance / Math.max(1, caravan.speed));
 			if (!best || rate > best.rate || rate === best.rate && a.id + b.id < best.from.id + best.to.id)
 				best = { "from": a, "to": b, "distance": distance, "gain": gain, "rate": rate };
 		}
@@ -54,7 +51,7 @@ export class Trade
 	caravanRequests(world, priorities)
 	{
 		const plan = priorities.trade;
-		const route = bestRoute(world);
+		const route = bestRoute(world, this.catalog.caravan());
 		const scarce = priorities.scarce;
 		if (!route || route.rate < plan.minRate)
 			return [];
