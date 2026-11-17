@@ -1,4 +1,5 @@
-const RESISTANCE_BASE = 0.9;
+import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
+
 const FIXED_AURA_RADIUS = 100;
 const FIXED_AURA_SHARE = 0.5;
 const OWN_AURA_PLAYERS = ["Player", "Ally", "MutualAlly"];

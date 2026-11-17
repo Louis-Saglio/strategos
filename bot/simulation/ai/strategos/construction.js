@@ -1,5 +1,5 @@
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
+import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -60,8 +60,6 @@ const REPAIR_MIN_MISSING = 0.1;
 const REPAIR_SAFE_RADIUS = 90;
 const WONDER_STOCK = 2;
 const TRADE_POST_CLEARANCE = 150;
-const POPULATION_PRICE = 100;
-const HERO_EDGE = 2;
 const WORKER_RATE = 0.5;
 const SPACING_MARGIN = 8;
 const ELITE_EDGE = 1.2;

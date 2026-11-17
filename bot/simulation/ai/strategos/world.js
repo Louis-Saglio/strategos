@@ -1,11 +1,12 @@
 import { byClass, isTreasure } from "simulation/ai/common-api/filters.js";
+import { TERRITORY_BLINKING_MASK, TERRITORY_OWNER_MASK } from "simulation/ai/strategos/rules.js";
 
 const SITE_RADIUS = 110;
 const TREASURE_RADIUS = 120;
 const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
-const FIRE_MARGIN = 10;
+export const FIRE_MARGIN = 10;
 const FISH_RADIUS = 160;
 const FISH_KEPT = 24;
 const FISHER_WORTH = 3;
@@ -393,8 +394,6 @@ export class ShoreIndex
 	}
 }
 
-const TERRITORY_OWNER_MASK = 0x1F;
-const TERRITORY_BLINKING_MASK = 0x40;
 const THREAT_CLASSES = ["Soldier", "Siege", "Hero"];
 const DEFAULT_DAMAGE_MIX = { "Hack": 0.5, "Pierce": 0.5 };
 const CRITICAL_CLASS = "ConquestCritical";

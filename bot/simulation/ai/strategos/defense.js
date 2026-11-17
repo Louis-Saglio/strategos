@@ -1,4 +1,5 @@
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
+import { COVER_MARGIN, atWork } from "simulation/ai/strategos/forecast.js";
 import { balance, centroid, coveringHolders, skirmish } from "simulation/ai/strategos/tactics.js";
 
 const ENGAGE_RADIUS = 160;
@@ -14,11 +15,9 @@ const APPROACH_RADIUS = 80;
 const ENGAGE_ENTER = 1.3;
 const ENGAGE_EXIT = 0.8;
 const RESPONSE_MARGIN = 2;
-const COVER_MARGIN = 5;
 const BATTLE_RADIUS = 60;
 const RETREAT_RADIUS = 90;
 const WARNING_RADIUS = 100;
-const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
 const LINE_FRONT = 14;
 const LINE_BACK = 3;
 const LINE_SPACING = 2.5;
@@ -130,7 +129,7 @@ export class Defense
 		const sentinels = world.fighters.filter(fighter => territoryAt(territory, fighter.position[0], fighter.position[1]).owner === player);
 		const limit = WARNING_RADIUS * WARNING_RADIUS;
 		const inside = new Set(world.threats.map(threat => threat.id));
-		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !WORKING_STATES.some(state => enemy.state.includes(state)) &&
+		return world.enemyFighters.filter(enemy => !inside.has(enemy.id) && !atWork(enemy) &&
 			world.ownSide(enemy.position) && sentinels.some(fighter => squareDistance(fighter.position, enemy.position) <= limit));
 	}
 

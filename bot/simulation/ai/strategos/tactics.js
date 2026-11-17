@@ -1,7 +1,7 @@
+import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
-const RESISTANCE_BASE = 0.9;
-const ARROW_HIT_SHARE = 0.5;
+export const ARROW_HIT_SHARE = 0.5;
 
 function histogram(units)
 {

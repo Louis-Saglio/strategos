@@ -1,10 +1,9 @@
-import { TRAINING_BATCH, heroWorth, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
+import { HERO_EDGE, TRAINING_BATCH, heroWorth, combatRole, enemyProfile, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
 const HERO_STOCK = 2;
-const HERO_EDGE = 2;
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;

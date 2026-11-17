@@ -1,4 +1,5 @@
-import { territoryCell } from "simulation/ai/strategos/world.js";
+import { TERRITORY_BLINKING_MASK } from "simulation/ai/strategos/rules.js";
+import { FIRE_MARGIN, territoryCell } from "simulation/ai/strategos/world.js";
 
 const RING_STEP = 4;
 const ARC_STEP = 4;
@@ -6,8 +7,6 @@ const MAX_CANDIDATES = 2000;
 const MAX_FINE_CANDIDATES = 12000;
 const DEFAULT_ANGLE = Math.PI;
 const CELL_SLACK = Math.SQRT1_2;
-const FIRE_MARGIN = 10;
-const NEUTRAL_BLINKING = 0x40;
 
 export class Placement
 {
@@ -27,7 +26,7 @@ export class Placement
 	territoryOwned(x, z)
 	{
 		const cell = territoryCell(this.grids.territory, x, z);
-		return cell === this.player || this.neutralAllowed && (cell === 0 || cell === NEUTRAL_BLINKING);
+		return cell === this.player || this.neutralAllowed && (cell === 0 || cell === TERRITORY_BLINKING_MASK);
 	}
 
 	allowNeutral(allowed)

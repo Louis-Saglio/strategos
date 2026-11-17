@@ -1,10 +1,10 @@
+import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
+import { ARROW_HIT_SHARE } from "simulation/ai/strategos/tactics.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 
 export const TECH_HORIZON_S = 180;
 export const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
-const RESISTANCE_BASE = 0.9;
-const ARROW_HIT_SHARE = 0.5;
 const CAPTURE_ENGAGED_SHARE = 0.9;
 const RATE_PREFIX = "ResourceGatherer/Rates/";
 const CAPACITY_PREFIX = "ResourceGatherer/Capacities/";
@@ -94,7 +94,8 @@ export function captureOutlook(members, centre)
 }
 
 const COMBAT_KINDS = ["Hack", "Pierce", "Crush"];
-const POPULATION_PRICE = 100;
+export const POPULATION_PRICE = 100;
+export const HERO_EDGE = 2;
 const POPULATION_PRESSURE_FROM = 0.7;
 const POPULATION_PRESSURE_SPAN = 0.25;
 const DIVERSITY_WEIGHT = 2;
