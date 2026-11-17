@@ -1,7 +1,7 @@
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 
-const CONTACT_RADIUS = 60;
-const REACH_RADIUS = 150;
+export const CONTACT_RADIUS = 60;
+export const REACH_RADIUS = 150;
 export const COVER_MARGIN = 5;
 const WORKING_STATES = ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"];
 const RECRUIT_WAVE_S = 20;

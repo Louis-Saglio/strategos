@@ -1,3 +1,4 @@
+import { CONTACT_RADIUS } from "simulation/ai/strategos/forecast.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 import { balance } from "simulation/ai/strategos/tactics.js";
 
@@ -79,7 +80,6 @@ const RELIC_HOME_THREATS = 3;
 const RELIC_COVER_MARGIN = 8;
 const RELIC_POST_CLEARANCE = 14;
 const RELIC_POST_TOLERANCE = 10;
-const RELIC_GUARD_RADIUS = 60;
 const RELIC_ENEMY_CLEARANCE = 300;
 
 export class Relics
@@ -139,7 +139,7 @@ export class Relics
 			.map(entry => entry.fighter);
 		const squad = members.concat(spare);
 		const guards = world.enemyFighters.concat(world.wild)
-			.filter(enemy => squareDistance(enemy.position, wanted.position) <= RELIC_GUARD_RADIUS * RELIC_GUARD_RADIUS);
+			.filter(enemy => squareDistance(enemy.position, wanted.position) <= CONTACT_RADIUS * CONTACT_RADIUS);
 		const ratio = guards.length ? balance(this.catalog, squad, guards, []) : Infinity;
 		this.contested = this.contested ? ratio < priorities.margin : ratio < 1 / priorities.margin;
 		if (this.contested)

@@ -1,7 +1,7 @@
 import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { productionFlow, exchangeOutlook, resourcePrices, techBenefit } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
-import { arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { REACH_RADIUS, arriving, atWork, centroid, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 
 const BASE = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
@@ -12,10 +12,10 @@ const BASE = {
 		"threat": { "minEnemy": 15, "enter": 0.7, "exit": 1, "horizonS": 90 } },
 	"blockedGrowth": { "room": 1 },
 	"offense": { "minArmy": 25, "breakers": { "perSoldiers": 25, "max": 5, "launch": 2 }, 		"exchange": { "maxCost": 0.3, "minCost": 0.1, "response": 1, "reaction": 0, "handicap": 0.8,
-			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300, "fight": 150 } },
+			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300 } },
 		"targetsTried": 6, "recall": 0.1, "reinforce": { "min": 20 },
 		"beachhead": { "superiority": 1, "reserve": 10 } },
-	"guard": { "enter": 3, "exit": 1, "engage": { "enter": 3, "exit": 2 }, "horizonS": 90, "near": 80, "reach": 150 },
+	"guard": { "enter": 3, "exit": 1, "engage": { "enter": 3, "exit": 2 }, "horizonS": 90, "near": 80 },
 	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
 	"trade": { "minRate": 0.3, "richRate": 0.5, "minDistance": 400, "max": 10, "populationPerTrader": 20, "scarceWealth": 3000, "scarceCodes": ["stone", "metal"] },
@@ -361,11 +361,11 @@ export class Strategy
 		const group = foes.filter(unit => inside.has(unit.id) || seeds.some(seed => squareDistance(seed.position, unit.position) <= near));
 		const centre = centroid(group);
 		const present = new Set(group.map(unit => unit.id));
-		const opposing = arriving(this.catalog, world.enemyFighters, centre, present, true, plan.reach, true);
+		const opposing = arriving(this.catalog, world.enemyFighters, centre, present, true, REACH_RADIUS, true);
 		const cover = covering(world.holders, centre, []);
 		const opposingCover = covering(world.enemyStructures, centre, []);
 		const territory = world.grids.territory;
-		const reach = plan.reach * plan.reach;
+		const reach = REACH_RADIUS * REACH_RADIUS;
 		const kept = this.guards || new Set();
 		let candidates = world.fighters
 			.map(fighter => ({ "fighter": fighter, "distance": squareDistance(fighter.position, centre) }))

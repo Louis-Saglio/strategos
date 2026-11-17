@@ -1,7 +1,7 @@
 import { PATIENCE_MS, REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { squareDistance } from "simulation/ai/strategos/world.js";
 import { GATHER_EFFICIENCY, captureOutlook, resourcePrices } from "simulation/ai/strategos/valuation.js";
-import { prospect } from "simulation/ai/strategos/forecast.js";
+import { REACH_RADIUS, prospect } from "simulation/ai/strategos/forecast.js";
 
 const RALLY_FRACTION = 0.35;
 const RALLY_MAX_DISTANCE = 120;
@@ -422,7 +422,7 @@ export class Offense
 		const exchange = priorities.offense.exchange;
 		const front = members.filter(member => member.state.includes("COMBAT"));
 		const outlook = prospect(this.catalog, members, this.armyCentre(front.length >= FRONT_MIN ? front : members), world.enemyFighters,
-			world.enemyStructures, Object.assign(this.plan(priorities, exchange.reach.fight), { "prey": world.enemyCivilians }));
+			world.enemyStructures, Object.assign(this.plan(priorities, REACH_RADIUS), { "prey": world.enemyCivilians }));
 		const prize = this.assaulting ? this.prize(world, priorities, members, this.target) : 0;
 		return outlook.cost >= exchange.minCost * this.armyValue(members) &&
 			outlook.gain + prize < this.attrition(world, priorities) * outlook.cost / priorities.margin ? outlook : null;
