@@ -1,6 +1,6 @@
 import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
+import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 import { squareDistance, territoryAt } from "simulation/ai/strategos/world.js";
 
 const BUILDING_MARGIN = 3;
@@ -29,9 +29,6 @@ const HAUL_HORIZON_S = 240;
 const HAUL_RETURN = 1.5;
 const HAUL_MAX_URGENCY = 3;
 const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
-const PRODUCTION_STOCK_BASE = 300;
-const PRODUCTION_STOCK_PER_TRAINER = 300;
-const PRODUCTION_STOCK_CODES = ["food", "wood"];
 const SETTLEMENT_SPACING_MARGIN = 10;
 const SETTLEMENT_MAX_DISTANCE = 360;
 const SETTLEMENT_ENEMY_CLEARANCE = 220;
@@ -418,20 +415,16 @@ export class Construction
 		if (world.pendingConstructions.some(pending => trains(pending.template)) ||
 		    world.foundations.some(foundation => trains(foundation.template)))
 			return null;
-		const trainers = world.trainers.filter(trainer => trainer.trainable.some(name => this.catalog.isWorker(name)));
-		const soldierTrainers = world.trainers.filter(trainer => trainer.trainable.some(name => this.catalog.isSoldier(name)) &&
-			!trainer.trainable.some(name => this.catalog.isCivilian(name)));
-		const military = priorities.military;
-		const wantedSoldierTrainers = world.population < military.firstTrainerPopulation ? 0 :
-			1 + Math.floor((world.population - military.firstTrainerPopulation) / military.populationPerTrainer);
-		const stock = PRODUCTION_STOCK_CODES.reduce((sum, code) => sum + (world.resources[code] || 0), 0);
-		const forArmy = soldierTrainers.length < wantedSoldierTrainers;
-		const forStock = !trainers.some(trainer => trainer.queueLength === 0) &&
-			stock >= PRODUCTION_STOCK_BASE + PRODUCTION_STOCK_PER_TRAINER * trainers.length;
-		if (!forArmy && !forStock)
-			return null;
-		const template = this.cheapest(world, forArmy ? name => trains(name) && this.catalog.trainsOnlySoldierWorkers(name) : trains);
+		const template = this.cheapest(world, name => trains(name) && this.catalog.trainsOnlySoldierWorkers(name)) || this.cheapest(world, trains);
 		if (!template)
+			return null;
+		const recruit = this.catalog.trainsFrom(template).filter(unit => this.catalog.isWorker(unit))
+			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+		if (!recruit)
+			return null;
+		const cost = this.catalog.cost(recruit);
+		const busy = productionFlow(world, this.catalog, priorities.military.civilianTarget);
+		if (world.codes.some(code => cost[code] > 0 && world.demand.income[code] <= busy[code]))
 			return null;
 		return this.nearCentreRequest(world, placement, template, priorities.values.production);
 	}

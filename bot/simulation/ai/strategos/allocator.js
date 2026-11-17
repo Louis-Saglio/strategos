@@ -10,13 +10,17 @@ export class Allocator
 		this.ledger = new Map();
 		this.spent = {};
 		this.spendRate = {};
+		this.income = {};
 		this.unmet = {};
 		for (const code of codes)
 		{
 			this.spent[code] = 0;
 			this.spendRate[code] = 0;
+			this.income[code] = 0;
 			this.unmet[code] = 0;
 		}
+		this.stock = null;
+		this.paid = null;
 		this.lastTime = undefined;
 		this.orders = new Map();
 		this.ordered = new Map();
@@ -31,21 +35,27 @@ export class Allocator
 		return Object.freeze({
 			"observed": this.lastTime !== undefined,
 			"spendRate": Object.freeze(Object.assign({}, this.spendRate)),
+			"income": Object.freeze(Object.assign({}, this.income)),
 			"orders": Object.freeze(Object.fromEntries(this.orders)),
 			"unmet": Object.freeze(Object.assign({}, this.unmet))
 		});
 	}
 
-	observe(world, spent, unmet)
+	observe(world, spent, unmet, paid)
 	{
 		const seconds = this.lastTime === undefined ? 0 : (world.time - this.lastTime) / 1000;
 		this.lastTime = world.time;
 		for (const code of this.codes)
 		{
 			this.unmet[code] = unmet[code];
-			if (seconds > 0)
-				this.spendRate[code] += SPEND_SMOOTHING * (spent[code] / seconds - this.spendRate[code]);
+			if (!(seconds > 0))
+				continue;
+			this.spendRate[code] += SPEND_SMOOTHING * (spent[code] / seconds - this.spendRate[code]);
+			const earned = Math.max(0, world.resources[code] - this.stock[code] + this.paid[code]) / seconds;
+			this.income[code] += SPEND_SMOOTHING * (earned - this.income[code]);
 		}
+		this.stock = Object.assign({}, world.resources);
+		this.paid = paid;
 		if (seconds > 0)
 		{
 			const blend = 1 - Math.exp(-seconds / ORDER_MEMORY_S);
@@ -93,10 +103,12 @@ export class Allocator
 		const grants = [];
 		const spent = {};
 		const unmet = {};
+		const paid = {};
 		for (const code of this.codes)
 		{
 			spent[code] = 0;
 			unmet[code] = 0;
+			paid[code] = 0;
 		}
 		for (const { request } of ordered)
 		{
@@ -117,15 +129,19 @@ export class Allocator
 				}
 				continue;
 			}
-			if (!request.conversion)
-				for (const code of this.codes)
-					spent[code] += request.claims.resources && request.claims.resources[code] || 0;
+			for (const code of this.codes)
+			{
+				const amount = request.claims.resources && request.claims.resources[code] || 0;
+				paid[code] += amount;
+				if (!request.conversion)
+					spent[code] += amount;
+			}
 			this.commit(request, budget);
 			if (ORDER_TYPES.includes(request.action.type))
 				this.ordered.set(request.action.template, (this.ordered.get(request.action.template) || 0) + (request.action.count || 1));
 			grants.push(request);
 		}
-		this.observe(world, spent, unmet);
+		this.observe(world, spent, unmet, paid);
 		return grants;
 	}
 

@@ -113,6 +113,7 @@ StrategosBot.prototype.report = function(world, priorities)
 		"haul": Object.fromEntries(world.codes.map(code => [code, Math.round(world.hauls[code])])),
 		"resources": world.resources,
 		"spendRate": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.spendRate[code] * 100) / 100])),
+		"income": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.income[code] * 100) / 100])),
 		"unmet": world.demand.unmet,
 		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(priorities.gatherShares[code] * 100) / 100]))
 	});
