@@ -71,7 +71,7 @@ export class Trade
 					"source": "trade",
 					"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
 					"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-					"value": priorities.values.caravan,
+					"value": priorities.values.support,
 					"urgency": 1
 				});
 				break;
@@ -93,7 +93,7 @@ export class Trade
 				"source": "trade",
 				"action": { "type": "trading-goods", "goods": shares },
 				"claims": {},
-				"value": priorities.values.caravan,
+				"value": priorities.values.support,
 				"urgency": 1
 			});
 		}
@@ -103,7 +103,7 @@ export class Trade
 					"source": "trade",
 					"action": { "type": "trade-route", "unit": trader.id, "target": route.to.id, "source": route.from.id },
 					"claims": { "workers": [trader.id] },
-					"value": priorities.values.caravan,
+					"value": priorities.values.support,
 					"urgency": 1
 				});
 		return requests;

@@ -201,7 +201,7 @@ export class Offense
 				"source": "offense",
 				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
 				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-				"value": priorities.values.siege,
+				"value": priorities.values.support,
 				"urgency": 1,
 				"reserve": true
 			});

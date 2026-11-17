@@ -426,7 +426,7 @@ export class Construction
 		const busy = productionFlow(world, this.catalog, priorities.military.civilianTarget);
 		if (world.codes.some(code => cost[code] > 0 && world.demand.income[code] <= busy[code]))
 			return null;
-		return this.nearCentreRequest(world, placement, template, priorities.values.production);
+		return this.nearCentreRequest(world, placement, template, priorities.values.support);
 	}
 
 	ringSite(world, placement, template)
@@ -489,7 +489,7 @@ export class Construction
 			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 		if (!template || !this.searchable(world, template))
 			return null;
-		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion,
+		return this.settlementRequest(world, template, world.centres[0].position, SETTLEMENT_MAX_DISTANCE, priorities.values.investment,
 			world.homeRegion, null);
 	}
 
@@ -520,7 +520,7 @@ export class Construction
 			const dock = world.docks.find(candidate => candidate.region === region.id);
 			if (!dock)
 				continue;
-			const request = this.settlementRequest(world, template, dock.position, SETTLEMENT_MAX_DISTANCE, priorities.values.expansion,
+			const request = this.settlementRequest(world, template, dock.position, SETTLEMENT_MAX_DISTANCE, priorities.values.investment,
 				region.id, null, key);
 			if (request && priorities.short.length)
 				return this.production(Object.assign(request, { "urgency": SHORT_URGENCY }));
@@ -637,10 +637,10 @@ export class Construction
 					"source": "construction",
 					"action": { "type": "construct", "template": template, "x": x, "z": z, "angle": 0, "builders": builders },
 					"claims": { "resources": this.catalog.cost(template), "workers": builders },
-					"value": priorities.values.dock,
+					"value": priorities.values.investment,
 					"urgency": urgency,
 					"reserve": true
-				} : this.constructRequest(world, template, site, priorities.values.dock, urgency);
+				} : this.constructRequest(world, template, site, priorities.values.investment, urgency);
 				if (request)
 					this.dockSite = { key, template, x, z, region, "seen": false };
 				return urgent ? this.production(request) : request;
@@ -673,7 +673,7 @@ export class Construction
 				return [];
 			const key = template + "@" + colony.region;
 			const centre = this.searchable(world, key) && this.settlementRequest(world, template, origin, SETTLEMENT_MAX_DISTANCE,
-				priorities.values.expansion, colony.region, ids, key);
+				priorities.values.investment, colony.region, ids, key);
 			if (centre)
 				return [centre];
 		}
@@ -722,7 +722,7 @@ export class Construction
 			"source": "construction",
 			"action": { "type": "construct", "template": template, "x": site.x, "z": site.z, "angle": site.angle, "builders": ids },
 			"claims": { "resources": this.catalog.cost(template), "workers": ids },
-			"value": priorities.values.expansion,
+			"value": priorities.values.investment,
 			"urgency": SHORT_URGENCY,
 			"reserve": true
 		})];
@@ -742,7 +742,7 @@ export class Construction
 			"source": "construction",
 			"action": { "type": "hold" },
 			"claims": { "resources": this.catalog.cost(template) },
-			"value": priorities.values.dock,
+			"value": priorities.values.investment,
 			"urgency": SHORT_URGENCY,
 			"reserve": true,
 			"conversion": true,
@@ -857,7 +857,7 @@ export class Construction
 		    world.foundations.some(foundation => trains(foundation.template)))
 			return null;
 		const template = this.cheapest(world, trains);
-		return template ? this.nearCentreRequest(world, placement, template, priorities.values.siege) : null;
+		return template ? this.nearCentreRequest(world, placement, template, priorities.values.support) : null;
 	}
 
 	phaseBuildingRequest(world, priorities, placement)
@@ -891,7 +891,7 @@ export class Construction
 		const template = this.cheapest(world, isMarket);
 		if (!template)
 			return null;
-		return this.nearCentreRequest(world, placement, template, priorities.values.market);
+		return this.nearCentreRequest(world, placement, template, priorities.values.support);
 	}
 
 	worksRequest(world, priorities, placement)
@@ -966,7 +966,7 @@ export class Construction
 			this.works = best.name;
 			this.telemetry.line("BUILD", world.time, { "works": best.name, "ratio": Math.round(best.ratio * 100) / 100 });
 		}
-		return this.nearCentreRequest(world, placement, best.name, priorities.values.laboratory);
+		return this.nearCentreRequest(world, placement, best.name, priorities.values.investment);
 	}
 
 	tradePostRequest(world, priorities, placement)
@@ -1000,7 +1000,7 @@ export class Construction
 			this.reservedBoxes(world), this.farmBelts(world));
 		if (!site)
 			return this.noSite(world, template);
-		return this.constructRequest(world, template, site, priorities.values.market, 1);
+		return this.constructRequest(world, template, site, priorities.values.support, 1);
 	}
 
 	eliteRequest(world, priorities, placement)
@@ -1037,7 +1037,7 @@ export class Construction
 		if (world.codes.some(code => world.resources[code] < ELITE_STOCK * (cost[code] || 0)) ||
 		    world.pendingConstructions.length > 0)
 			return null;
-		return this.nearCentreRequest(world, placement, best.name, priorities.values.production);
+		return this.nearCentreRequest(world, placement, best.name, priorities.values.support);
 	}
 
 	dropsiteRequest(world, priorities, placement)
@@ -1069,12 +1069,12 @@ export class Construction
 				const site = placement.around(centre, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
 					this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
 				if (site)
-					return this.constructRequest(world, template, site, priorities.values.dropsite, 1);
+					return this.constructRequest(world, template, site, priorities.values.investment, 1);
 			}
 		}
 		if (!best)
 			return null;
-		const request = this.production(this.constructRequest(world, best.template, best.site, priorities.values.dropsite,
+		const request = this.production(this.constructRequest(world, best.template, best.site, priorities.values.investment,
 			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN)));
 		if (request && this.relieved !== best.site.x + "," + best.site.z)
 		{

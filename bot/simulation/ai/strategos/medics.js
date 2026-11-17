@@ -43,7 +43,7 @@ export class Medics
 				"source": "medics",
 				"action": { "type": "train", "trainer": trainer.id, "template": template, "count": 1 },
 				"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [trainer.id] },
-				"value": priorities.values.medic,
+				"value": priorities.values.support,
 				"urgency": 1
 			}];
 		}
@@ -107,7 +107,7 @@ export class Medics
 				"source": "medics",
 				"action": { "type": "walk", "unit": healer.id, "x": goal[0], "z": goal[1] },
 				"claims": { "workers": [healer.id] },
-				"value": priorities.values.medic,
+				"value": priorities.values.support,
 				"urgency": 1
 			});
 		}

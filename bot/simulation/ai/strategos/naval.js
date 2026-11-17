@@ -688,7 +688,7 @@ export class Naval
 					"source": "naval",
 					"action": { "type": "hold" },
 					"claims": { "population": this.catalog.population(template) },
-					"value": priorities.values.transport,
+					"value": priorities.values.investment,
 					"urgency": 1
 				});
 		const wanted = world.crossing ? Math.min(plan.maxCapacity,
@@ -715,7 +715,7 @@ export class Naval
 					"source": "naval",
 					"action": { "type": "train", "trainer": arsenal.id, "template": gun, "count": 1 },
 					"claims": { "resources": this.catalog.cost(gun), "population": this.catalog.population(gun), "slots": [arsenal.id] },
-					"value": priorities.values.siege,
+					"value": priorities.values.support,
 					"urgency": 1
 				});
 		}
@@ -725,8 +725,8 @@ export class Naval
 			"source": "naval",
 			"action": { "type": "train", "trainer": yard.id, "template": template, "count": 1 },
 			"claims": { "resources": this.catalog.cost(template), "population": this.catalog.population(template), "slots": [yard.id] },
-			"value": priorities.values.transport,
-			"urgency": pressed ? priorities.values.ferry / priorities.values.transport : 1,
+			"value": priorities.values.investment,
+			"urgency": pressed ? priorities.values.ferry / priorities.values.investment : 1,
 			"tier": pressed ? "production" : "investment",
 			"reserve": true
 		});

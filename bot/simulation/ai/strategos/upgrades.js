@@ -56,7 +56,7 @@ export class Upgrades
 			"source": "upgrades",
 			"action": { "type": "upgrade", "entity": best.entity.id, "template": best.option.template },
 			"claims": { "resources": best.option.cost, "slots": ["upgrade-" + best.entity.id] },
-			"value": priorities.values.upgrade,
+			"value": priorities.values.investment,
 			"urgency": 1
 		}];
 	}
