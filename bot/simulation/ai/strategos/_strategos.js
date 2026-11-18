@@ -182,6 +182,9 @@ StrategosBot.prototype.report = function(world, assessments)
 	if (!this.telemetry.due("REPORT", world.time, REPORT_MS))
 		return;
 	this.telemetry.line("ALLOC", world.time, this.allocator.flushLedger());
+	const home = this.strategy.homeReport(world);
+	if (home)
+		this.telemetry.line("HOME", world.time, home);
 	this.telemetry.line("ECO", world.time, {
 		"population": world.population,
 		"populationLimit": world.populationLimit,

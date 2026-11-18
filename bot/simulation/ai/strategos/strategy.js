@@ -55,6 +55,11 @@ export class Strategy
 		});
 	}
 
+	homeReport(world)
+	{
+		return this.posture.homeOutlook(world, this.plan);
+	}
+
 	report()
 	{
 		return { "plans": this.plans.names, "table": this.selected ? plain(this.plan) : undefined, "assessments": plain(this.assessments) };

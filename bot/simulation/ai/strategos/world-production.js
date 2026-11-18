@@ -19,6 +19,7 @@ function trainingSites(gameState, catalog)
 		trainers.push(Object.freeze({
 			"id": ent.id(),
 			"template": ent.templateName(),
+			"position": ent.position(),
 			"batchTimeModifier": +(ent.get("Trainer/BatchTimeModifier") || 1),
 			"queueLength": queue.length,
 			"trainable": Object.freeze(trainable)

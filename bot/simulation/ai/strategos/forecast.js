@@ -237,6 +237,11 @@ export function within(units, centre, taken)
 	return units.filter(unit => !(taken && taken.has(unit.id)) && squareDistance(unit.position, centre) <= limit);
 }
 
+export function walkSeconds(catalog, template, owner, squareDistanceToCentre)
+{
+	return Math.max(1, (Math.sqrt(squareDistanceToCentre) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(template, owner).speed));
+}
+
 export function arriving(catalog, units, centre, present, working, reach, fighting)
 {
 	const limit = (reach || REACH_RADIUS) * (reach || REACH_RADIUS);
@@ -249,7 +254,7 @@ export function arriving(catalog, units, centre, present, working, reach, fighti
 		const distance = squareDistance(unit.position, centre);
 		if (distance > limit)
 			continue;
-		coming.push({ "unit": unit, "seconds": Math.max(1, (Math.sqrt(distance) - CONTACT_RADIUS / 2) / Math.max(1, catalog.combat(unit.template, unit.owner).speed)) });
+		coming.push({ "unit": unit, "seconds": walkSeconds(catalog, unit.template, unit.owner, distance) });
 	}
 	return coming;
 }
