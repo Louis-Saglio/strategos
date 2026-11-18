@@ -27,13 +27,13 @@ export class Convoys
 		this.operations = operations;
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
 		const units = this.unitIndex(world);
 		const requests = [];
 		for (const convoy of this.operations.list)
 		{
-			requests.push(...this.advance(world, priorities, convoy, units));
+			requests.push(...this.advance(world, plan, convoy, units));
 			this.enrol(convoy);
 		}
 		for (const convoy of this.operations.list.filter(other => other.state === "done"))
@@ -96,7 +96,7 @@ export class Convoys
 			Object.assign({ "convoy": convoy.id, "kind": convoy.kind, "state": state, "party": convoy.party.size }, details || {}));
 	}
 
-	advance(world, priorities, convoy, units)
+	advance(world, plan, convoy, units)
 	{
 		const afloat = new Map(world.fleet.map(ship => [ship.id, ship]));
 		const ships = convoy.ships.map(id => afloat.get(id)).filter(ship => !!ship);
@@ -107,15 +107,15 @@ export class Convoys
 			return [];
 		}
 		if (convoy.state === "berth")
-			return this.berthRequests(world, priorities, convoy, ships, units);
+			return this.berthRequests(world, plan, convoy, ships, units);
 		if (convoy.state === "embark")
-			return this.embarkRequests(world, priorities, convoy, ships, units);
+			return this.embarkRequests(world, plan, convoy, ships, units);
 		if (convoy.state === "sail")
-			return this.sailRequests(world, priorities, convoy, ships);
-		return this.landRequests(world, priorities, convoy, ships);
+			return this.sailRequests(world, plan, convoy, ships);
+		return this.landRequests(world, plan, convoy, ships);
 	}
 
-	berthRequests(world, priorities, convoy, ships, units)
+	berthRequests(world, plan, convoy, ships, units)
 	{
 		const limit = BERTH_REACH * BERTH_REACH;
 		const settled = convoy.called !== null && world.time - convoy.called >= SAIL_SETTLE_MS;
@@ -136,7 +136,7 @@ export class Convoys
 				}
 			convoy.quorum = Math.min(convoy.quorum, Math.max(MIN_SETTLERS, EMBARK_MIN_SHARE * convoy.party.size));
 			this.move(world, convoy, "embark", { "ships": convoy.ships.length });
-			return this.embarkRequests(world, priorities, convoy, ships.filter(ship => kept.has(ship.id)), units);
+			return this.embarkRequests(world, plan, convoy, ships.filter(ship => kept.has(ship.id)), units);
 		}
 		if (late)
 		{
@@ -147,7 +147,7 @@ export class Convoys
 		convoy.summoned = new Set(ships.map(ship => ship.id));
 		const requests = ships.map(ship => this.member(convoy, "berth", ship.id,
 			!away.includes(ship) || !ship.idle && summoned.has(ship.id),
-			walkTo(convoy.quay.get(ship.id).land[0], convoy.quay.get(ship.id).land[1]), priorities));
+			walkTo(convoy.quay.get(ship.id).land[0], convoy.quay.get(ship.id).land[1]), plan));
 		for (const [id, ship] of convoy.berths)
 		{
 			const unit = units.get(id);
@@ -156,7 +156,7 @@ export class Convoys
 				continue;
 			requests.push(this.member(convoy, "muster", id,
 				squareDistance(unit.position, quay.land) <= MUSTER_RADIUS * MUSTER_RADIUS || unit.state.walking,
-				walkTo(quay.land[0], quay.land[1]), priorities));
+				walkTo(quay.land[0], quay.land[1]), plan));
 		}
 		return requests;
 	}
@@ -171,7 +171,7 @@ export class Convoys
 		return aboard;
 	}
 
-	embarkRequests(world, priorities, convoy, ships, units)
+	embarkRequests(world, plan, convoy, ships, units)
 	{
 		const aboard = this.aboard(convoy, ships);
 		const ashore = [...convoy.party].filter(id => units.has(id)).map(id => units.get(id));
@@ -184,26 +184,26 @@ export class Convoys
 			convoy.party = aboard;
 			convoy.sailed = null;
 			this.move(world, convoy, "sail", { "aboard": aboard.size });
-			return this.sailRequests(world, priorities, convoy, ships);
+			return this.sailRequests(world, plan, convoy, ships);
 		}
 		if (late || !convoy.party.size)
 		{
 			this.move(world, convoy, "done", { "reason": "embark", "aboard": aboard.size });
-			return this.unload(convoy, "disembark", ships.filter(ship => ship.cargo.length), priorities);
+			return this.unload(convoy, "disembark", ships.filter(ship => ship.cargo.length), plan);
 		}
 		const present = new Set(ships.map(ship => ship.id));
-		const requests = ships.map(ship => this.member(convoy, "embark", ship.id, true, hold(), priorities));
+		const requests = ships.map(ship => this.member(convoy, "embark", ship.id, true, hold(), plan));
 		for (const unit of ashore)
 		{
 			const ship = convoy.berths.get(unit.id);
 			if (!present.has(ship))
 				continue;
-			requests.push(this.member(convoy, "board", unit.id, unit.state.garrisoning && unit.target === ship, garrisonIn(ship), priorities));
+			requests.push(this.member(convoy, "board", unit.id, unit.state.garrisoning && unit.target === ship, garrisonIn(ship), plan));
 		}
 		return requests;
 	}
 
-	sailRequests(world, priorities, convoy, ships)
+	sailRequests(world, plan, convoy, ships)
 	{
 		const loaded = ships.filter(ship => ship.cargo.some(id => convoy.party.has(id)));
 		const limit = LANDING_RADIUS * LANDING_RADIUS;
@@ -213,16 +213,16 @@ export class Convoys
 		{
 			this.move(world, convoy, "land", { "ships": loaded.length, "short": waiting.length });
 			convoy.nudged = world.time;
-			return this.landRequests(world, priorities, convoy, ships);
+			return this.landRequests(world, plan, convoy, ships);
 		}
 		const underway = convoy.sailed !== null;
 		if (!underway)
 			convoy.sailed = world.time;
 		return loaded.map(ship => this.member(convoy, "sail", ship.id, underway,
-			walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), priorities));
+			walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), plan));
 	}
 
-	landRequests(world, priorities, convoy, ships)
+	landRequests(world, plan, convoy, ships)
 	{
 		const loaded = ships.filter(ship => ship.cargo.some(id => convoy.party.has(id)));
 		if (!loaded.length || world.time - convoy.since >= PATIENCE_MS)
@@ -230,25 +230,25 @@ export class Convoys
 			this.move(world, convoy, "done", {
 				"reason": loaded.length ? "stuck" : "landed", "left": loaded.reduce((sum, ship) => sum + ship.cargo.length, 0)
 			});
-			return this.unload(convoy, "land", loaded, priorities);
+			return this.unload(convoy, "land", loaded, plan);
 		}
-		const requests = this.unload(convoy, "land", loaded, priorities);
+		const requests = this.unload(convoy, "land", loaded, plan);
 		const nudge = world.time - convoy.nudged >= UNLOAD_NUDGE_MS;
 		if (nudge)
 			convoy.nudged = world.time;
 		for (const ship of loaded)
 			requests.push(this.member(convoy, "land", ship.id, !nudge,
-				walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), priorities));
+				walkTo(convoy.beach.get(ship.id).land[0], convoy.beach.get(ship.id).land[1]), plan));
 		return requests;
 	}
 
-	member(convoy, purpose, unit, engaged, order, priorities)
+	member(convoy, purpose, unit, engaged, order, plan)
 	{
-		return this.operations.serving(memberRequest("naval", purpose, unit, engaged, order, priorities.values.ferry, 1), convoy);
+		return this.operations.serving(memberRequest("naval", purpose, unit, engaged, order, plan.values.ferry, 1), convoy);
 	}
 
-	unload(convoy, purpose, ships, priorities)
+	unload(convoy, purpose, ships, plan)
 	{
-		return ships.map(ship => this.operations.serving(unloadAllRequest("naval", purpose, ship.id, priorities.values.ferry, 1), convoy));
+		return ships.map(ship => this.operations.serving(unloadAllRequest("naval", purpose, ship.id, plan.values.ferry, 1), convoy));
 	}
 }

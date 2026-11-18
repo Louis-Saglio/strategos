@@ -16,16 +16,16 @@ export class Guard
 		this.passive = new Set();
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
-		if (!priorities.protectHero || !world.centres.length)
+		if (!plan.protectHero || !world.centres.length)
 			return [];
 		const requests = [];
 		for (const hero of world.heroes)
 		{
 			if (!this.passive.has(hero.id))
 			{
-				requests.push(this.member("hero-stance", hero, false, stance("passive"), priorities));
+				requests.push(this.member("hero-stance", hero, false, stance("passive"), plan));
 				continue;
 			}
 			const centre = nearest(world.centres, hero.position, firstListed).item;
@@ -34,7 +34,7 @@ export class Guard
 				nearest(world.enemyTargets, centre.position, firstListed).item;
 			const post = awayFrom(centre.position, danger ? danger.position : hero.position, centre.radius + POST_CLEARANCE);
 			const away = squareDistance(hero.position, post) > POST_TOLERANCE * POST_TOLERANCE;
-			requests.push(this.member("hero-post", hero, !away || hero.state.walking, walkTo(post[0], post[1]), priorities));
+			requests.push(this.member("hero-post", hero, !away || hero.state.walking, walkTo(post[0], post[1]), plan));
 		}
 		return requests;
 	}
@@ -46,9 +46,9 @@ export class Guard
 				this.passive.add(request.action.unit);
 	}
 
-	member(purpose, hero, engaged, order, priorities)
+	member(purpose, hero, engaged, order, plan)
 	{
-		return memberRequest("guard", purpose, hero.id, engaged, order, priorities.values.shelter, 1);
+		return memberRequest("guard", purpose, hero.id, engaged, order, plan.values.shelter, 1);
 	}
 }
 
@@ -68,9 +68,9 @@ export class Relics
 		this.contested = new Hysteresis(false);
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
-		if (!priorities.seekRelics || !world.centres.length)
+		if (!plan.seekRelics || !world.centres.length)
 			return [];
 		const home = world.home;
 		const requests = [];
@@ -80,7 +80,7 @@ export class Relics
 				continue;
 			const post = toward(home.position, relic.position, home.radius + RELIC_POST_CLEARANCE);
 			const away = squareDistance(relic.position, post) > RELIC_POST_TOLERANCE * RELIC_POST_TOLERANCE;
-			requests.push(this.member("relic-post", relic.id, !away || relic.state.walking, walkTo(post[0], post[1]), priorities));
+			requests.push(this.member("relic-post", relic.id, !away || relic.state.walking, walkTo(post[0], post[1]), plan));
 		}
 		const wanted = world.relics
 			.filter(relic => relic.owner !== world.player && relic.region === world.homeRegion && !this.covered(world, relic) &&
@@ -115,7 +115,7 @@ export class Relics
 		const guards = world.enemyFighters.concat(world.wild)
 			.filter(enemy => squareDistance(enemy.position, wanted.position) <= CONTACT_RADIUS * CONTACT_RADIUS);
 		const ratio = guards.length ? balance(this.catalog, party, guards, []) : Infinity;
-		if (this.contested.below(ratio, 1 / priorities.margin, priorities.margin))
+		if (this.contested.below(ratio, 1 / plan.margin, plan.margin))
 		{
 			squad.members = [];
 			return requests;
@@ -123,7 +123,7 @@ export class Relics
 		squad.members = party.map(fighter => fighter.id);
 		for (const fighter of party)
 			requests.push(this.squads.serving(
-				this.member("relic-capture", fighter.id, fighter.target === wanted.id, capture(wanted.id), priorities), squad));
+				this.member("relic-capture", fighter.id, fighter.target === wanted.id, capture(wanted.id), plan), squad));
 		return requests;
 	}
 
@@ -142,8 +142,8 @@ export class Relics
 		});
 	}
 
-	member(purpose, unit, engaged, order, priorities)
+	member(purpose, unit, engaged, order, plan)
 	{
-		return memberRequest("relics", purpose, unit, engaged, order, priorities.values.relic, 1);
+		return memberRequest("relics", purpose, unit, engaged, order, plan.values.relic, 1);
 	}
 }

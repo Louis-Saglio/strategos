@@ -46,21 +46,21 @@ export class Naval
 		this.stations = new Stations(this.commitments);
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
 		if (!world.centres.length)
-			return this.rescue.castaways(world, priorities);
+			return this.rescue.castaways(world, plan);
 		if (!world.fleet.length && !world.docks.length)
 			return [];
-		const requests = this.shipyards.requests(world, priorities).concat(this.fishing.requests(world, priorities));
-		const invasion = this.crossings.plan(world, priorities);
-		requests.push(...this.convoys.requests(world, priorities));
-		requests.push(...this.rescue.stranded(world, priorities));
-		const bombarding = this.bombardment.requests(world, priorities);
-		const hunting = this.hunt.requests(world, priorities);
-		requests.push(...bombarding, ...hunting, ...this.raid.requests(world, priorities, hunting));
-		this.report(world, priorities, invasion);
-		return requests.concat(this.stations.requests(world, priorities, requests));
+		const requests = this.shipyards.requests(world, plan, assessments).concat(this.fishing.requests(world, plan));
+		const invasion = this.crossings.decide(world, plan, assessments);
+		requests.push(...this.convoys.requests(world, plan));
+		requests.push(...this.rescue.stranded(world, plan));
+		const bombarding = this.bombardment.requests(world, plan);
+		const hunting = this.hunt.requests(world, plan);
+		requests.push(...bombarding, ...hunting, ...this.raid.requests(world, plan, hunting));
+		this.report(world, assessments, invasion);
+		return requests.concat(this.stations.requests(world, plan, requests));
 	}
 
 	settle(world, outcomes)
@@ -70,7 +70,7 @@ export class Naval
 		this.stations.settle(world, outcomes);
 	}
 
-	report(world, priorities, invasion)
+	report(world, assessments, invasion)
 	{
 		if (!this.telemetry.due("SEA", world.time, REPORT_MS))
 			return;
@@ -91,9 +91,9 @@ export class Naval
 				"settlers": region.settlers, "fighters": region.fighters, "anchors": region.anchors, "centres": region.centres,
 				"wealth": world.codes.map(code => Math.round(world.regionWealth(region.id, code) / 100))
 			})),
-			"short": priorities.short,
-			"colony": priorities.colony && { "region": priorities.colony.region, "kind": priorities.colony.kind },
-			"ferry": priorities.ferry && { "to": priorities.ferry.to, "code": priorities.ferry.code, "count": priorities.ferry.count },
+			"short": assessments.short,
+			"colony": assessments.colony && { "region": assessments.colony.region, "kind": assessments.colony.kind },
+			"ferry": assessments.ferry && { "to": assessments.ferry.to, "code": assessments.ferry.code, "count": assessments.ferry.count },
 			"convoys": this.operations.list.map(convoy => convoy.kind + ":" + convoy.state),
 			"invasion": invasion
 		});

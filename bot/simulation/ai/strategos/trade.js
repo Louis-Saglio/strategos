@@ -44,21 +44,21 @@ export class Trade
 		this.goods = "";
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
-		return this.barterRequests(world, priorities).concat(this.caravanRequests(world, priorities));
+		return this.barterRequests(world, plan).concat(this.caravanRequests(world, plan, assessments));
 	}
 
-	caravanRequests(world, priorities)
+	caravanRequests(world, plan, assessments)
 	{
-		const plan = priorities.trade;
+		const trade = plan.trade;
 		const route = bestRoute(world, this.catalog.caravan());
-		const scarce = priorities.scarce;
-		if (!route || route.rate < plan.minRate)
+		const scarce = assessments.scarce;
+		if (!route || route.rate < trade.minRate)
 			return [];
 		const requests = [];
-		const wanted = scarce.length || route.rate >= plan.richRate ?
-			Math.min(plan.max, Math.floor(world.population / plan.populationPerTrader)) : 0;
+		const wanted = scarce.length || route.rate >= trade.richRate ?
+			Math.min(trade.max, Math.floor(world.population / trade.populationPerTrader)) : 0;
 		if (world.traders.length < wanted)
 			for (const trainer of world.trainers)
 			{
@@ -69,7 +69,7 @@ export class Trade
 				if (!template)
 					continue;
 				requests.push(trainRequest("trade", "trader", trainer.id, template, 1, this.catalog.cost(template),
-					this.catalog.population(template), priorities.values.support, 1));
+					this.catalog.population(template), plan.values.support, 1));
 				break;
 			}
 		if (!world.traders.length)
@@ -82,13 +82,13 @@ export class Trade
 			for (const code of world.codes)
 				shares[code] = 0;
 			goods.forEach((code, index) => { shares[code] = Math.floor(100 / goods.length) + (index < 100 % goods.length ? 1 : 0); });
-			requests.push(noting(goodsRequest("trade", "goods", shares, priorities.values.support, 1), { "goods": key, "report": {
+			requests.push(noting(goodsRequest("trade", "goods", shares, plan.values.support, 1), { "goods": key, "report": {
 				"route": Math.round(route.distance), "gain": Math.round(route.gain * 10) / 10, "goods": shares, "traders": world.traders.length
 			} }));
 		}
 		for (const trader of world.traders)
 			if (trader.idle || !trader.state.trading)
-				requests.push(orderRequest("trade", "route", trader.id, tradeRoute(route.to.id, route.from.id), priorities.values.support, 1));
+				requests.push(orderRequest("trade", "route", trader.id, tradeRoute(route.to.id, route.from.id), plan.values.support, 1));
 		return requests;
 	}
 
@@ -103,7 +103,7 @@ export class Trade
 		}
 	}
 
-	barterRequests(world, priorities)
+	barterRequests(world, plan)
 	{
 		if (!world.barter.open || !world.barter.prices)
 			return [];
@@ -120,6 +120,6 @@ export class Trade
 			.sort((a, b) => surplus[b] * rate(b) - surplus[a] * rate(a) || (a < b ? -1 : 1))[0];
 		if (!sell)
 			return [];
-		return [barterRequest("trade", "barter", sell, buy, DEAL_AMOUNT, rate(sell), priorities.values.barter, 1)];
+		return [barterRequest("trade", "barter", sell, buy, DEAL_AMOUNT, rate(sell), plan.values.barter, 1)];
 	}
 }

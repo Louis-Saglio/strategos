@@ -16,7 +16,7 @@ export class Upgrades
 		this.last = new Retry();
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
 		if (!world.upgradable.length || !this.last.due(world.time, RETRY_MS))
 			return [];
@@ -46,7 +46,7 @@ export class Upgrades
 		}
 		if (!best)
 			return [];
-		return [noting(upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, priorities.values.investment, 1),
+		return [noting(upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, plan.values.investment, 1),
 			{ "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) })];
 	}
 

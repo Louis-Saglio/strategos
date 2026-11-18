@@ -10,7 +10,7 @@ export class Hunt
 		this.hunted = new Map();
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
 		if (!world.enemyShips.length)
 			return [];
@@ -28,7 +28,7 @@ export class Hunt
 		{
 			const prey = world.enemyShips.filter(enemy => enemy.sea === sea && !world.batteries.some(structure =>
 				squareDistance(structure.position, enemy.position) <= structure.range * structure.range));
-			if (!prey.length || hunters.length < priorities.naval.huntSuperiority * prey.filter(enemy => enemy.warship).length)
+			if (!prey.length || hunters.length < plan.naval.huntSuperiority * prey.filter(enemy => enemy.warship).length)
 				continue;
 			const centre = centroid(hunters);
 			const kept = prey.find(enemy => enemy.id === this.hunted.get(sea));
@@ -42,7 +42,7 @@ export class Hunt
 			}
 			for (const ship of hunters)
 				requests.push(orderRequest("naval", "hunt", ship.id, ship.target === target.id ? hold() : attack(target.id),
-					priorities.values.ferry, 1));
+					plan.values.ferry, 1));
 		}
 		return requests;
 	}

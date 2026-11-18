@@ -71,13 +71,14 @@ StrategosBot.prototype.decide = function()
 	stopwatch.lap("world");
 	this.battleLog.observe(world);
 	stopwatch.lap("BattleLog");
-	const priorities = this.strategy.update(world);
+	this.strategy.update(world);
+	const { plan, assessments } = this.strategy;
 	stopwatch.lap("Strategy");
 	const requests = [];
 	const emitted = [];
 	for (const subsystem of this.subsystems)
 	{
-		const own = subsystem.requests(world, priorities);
+		const own = subsystem.requests(world, plan, assessments);
 		emitted.push(own);
 		requests.push(...own);
 		stopwatch.lap(subsystem.constructor.name);
@@ -90,7 +91,7 @@ StrategosBot.prototype.decide = function()
 	for (const trainer of world.trainers)
 		this.telemetry.recordProduction(trainer.trainable.some(name => this.catalog.isCivilian(name)) ? "civilian" :
 			trainer.trainable.some(name => this.catalog.isFighter(name)) ? "military" : "other", trainer.queueLength === 0);
-	this.report(world, priorities);
+	this.report(world, assessments);
 };
 
 StrategosBot.prototype.settle = function(world, emitted, outcomes)
@@ -104,16 +105,10 @@ StrategosBot.prototype.settle = function(world, emitted, outcomes)
 	});
 };
 
-StrategosBot.prototype.report = function(world, priorities)
+StrategosBot.prototype.report = function(world, assessments)
 {
 	if (this.strategy.changed)
-		this.telemetry.line("STRAT", world.time, Object.assign({}, priorities, { "guard": {
-			"hostiles": priorities.guard.group.length,
-			"needed": priorities.guard.needed.length,
-			"ratio": priorities.guard.ratio,
-			"holds": priorities.guard.holds,
-			"value": priorities.guard.value
-		} }));
+		this.telemetry.line("STRAT", world.time, this.strategy.report());
 	if (!this.telemetry.due("REPORT", world.time, REPORT_MS))
 		return;
 	this.telemetry.line("ALLOC", world.time, this.allocator.flushLedger());
@@ -131,7 +126,7 @@ StrategosBot.prototype.report = function(world, priorities)
 		"spendRate": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.spendRate[code] * 100) / 100])),
 		"income": Object.fromEntries(world.codes.map(code => [code, Math.round(world.demand.income[code] * 100) / 100])),
 		"unmet": world.demand.unmet,
-		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(priorities.gatherShares[code] * 100) / 100]))
+		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(assessments.gatherShares[code] * 100) / 100]))
 	});
 	this.telemetry.flushProduction(world.time);
 	this.telemetry.flushDecisions(world.time);

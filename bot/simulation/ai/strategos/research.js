@@ -14,7 +14,7 @@ export class Research
 		this.catalog = catalog;
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
 		const requests = [];
 		const chosen = new Set();
@@ -25,13 +25,13 @@ export class Research
 			return benefits.get(tech);
 		};
 		const prices = resourcePrices(world);
-		const phase = this.phaseRequest(world, priorities);
+		const phase = this.phaseRequest(world, plan, assessments);
 		if (phase)
 		{
 			requests.push(phase);
 			chosen.add(phase.action.tech);
 		}
-		const unlock = this.unlockRequest(world, priorities, chosen);
+		const unlock = this.unlockRequest(world, plan, chosen);
 		if (unlock)
 		{
 			requests.push(unlock);
@@ -63,12 +63,12 @@ export class Research
 				chosen.add(this.catalog.technology(best.tech).sibling);
 			const tier = best.payback <= PRODUCTION_PAYBACK_S ? "production" : "investment";
 			requests.push(inTier(researchRequest("research", "technology", researcher.id, best.tech, Math.round(best.payback), best.cost,
-				priorities.values.research, 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S), tier));
+				plan.values.research, 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S), tier));
 		}
 		return requests;
 	}
 
-	unlockRequest(world, priorities, chosen)
+	unlockRequest(world, plan, chosen)
 	{
 		if (!world.locked.length)
 			return null;
@@ -99,14 +99,14 @@ export class Research
 		}
 		if (!best || world.codes.some(code => world.resources[code] < UNLOCK_STOCK * best.cost[code]))
 			return null;
-		return inTier(researchRequest("research", "unlock", best.researcher.id, best.tech, 0, best.cost, priorities.values.research, 1),
+		return inTier(researchRequest("research", "unlock", best.researcher.id, best.tech, 0, best.cost, plan.values.research, 1),
 			"investment");
 	}
 
-	phaseRequest(world, priorities)
+	phaseRequest(world, plan, assessments)
 	{
 		const tech = world.nextPhaseTech;
-		if (!tech || !priorities.advancePhase)
+		if (!tech || !assessments.advancePhase)
 			return null;
 		const researcher = world.researchers
 			.filter(candidate => candidate.techs.includes(tech) && candidate.queueLength <= PHASE_QUEUE_LIMIT)
@@ -114,6 +114,6 @@ export class Research
 		if (!researcher)
 			return null;
 		return inTier(reserving(researchRequest("research", "phase", researcher.id, tech, 0, this.catalog.techCost(tech, researcher.template),
-			priorities.values.phase, 1)), "production");
+			plan.values.phase, 1)), "production");
 	}
 }

@@ -13,7 +13,8 @@ opponents that do:
   civ and team (`petra/5/aggressive`, `brennus`);
 - "bot": a commit of this repository — the bot as it was then;
 - "bot" + "set": that commit with values of its strategy table changed
-  (`BASE` in strategy.js, `OPENING` before the plans; a dotted path, `military.civilianTarget`): a
+  (`BASE` in strategy-plans.js; in strategy.js before the strategy was split, named `OPENING` before
+  the plans; a dotted path, `military.civilianTarget`): a
   plan variant. The commit is pinned, so a member stays the same opponent
   whatever the working tree becomes.
 
@@ -85,12 +86,19 @@ def build(member, spec, dest):
     bot = os.path.join(dest, "bot")
     ai_dir = os.path.join(bot, "simulation/ai/strategos")
     if spec.get("set"):
-        path = os.path.join(ai_dir, "strategy.js")
-        with open(path, encoding="utf-8") as fh:
-            text = fh.read()
-        m = TABLE_RE.search(text)
+        # The table is in strategy-plans.js; a commit from before the strategy was split has it in strategy.js.
+        m = None
+        for name in ("strategy-plans.js", "strategy.js"):
+            path = os.path.join(ai_dir, name)
+            if not os.path.exists(path):
+                continue
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+            m = TABLE_RE.search(text)
+            if m:
+                break
         if not m:
-            die(f"member {member}: no `const BASE = {{...}};` table in strategy.js at {spec['bot']}")
+            die(f"member {member}: no `const BASE = {{...}};` table in strategy-plans.js or strategy.js at {spec['bot']}")
         table = json.loads(m.group(2))
         for dotted, value in spec["set"].items():
             node = table

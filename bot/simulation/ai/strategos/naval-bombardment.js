@@ -12,17 +12,17 @@ export class Bombardment
 		this.current = null;
 	}
 
-	firingPoint(world, plan, structure, sea, range, from)
+	firingPoint(world, bombard, structure, sea, range, from)
 	{
 		let best = null;
 		let shortest = Infinity;
-		for (let k = 0; k < plan.bearings; ++k)
+		for (let k = 0; k < bombard.bearings; ++k)
 		{
-			const angle = 2 * Math.PI * k / plan.bearings;
-			const point = [structure.position[0] + (range - plan.margin) * Math.cos(angle),
-				structure.position[1] + (range - plan.margin) * Math.sin(angle)];
-			if (!world.openWater(point, sea, plan.searoom) || world.batteries.some(battery =>
-				squareDistance(battery.position, point) <= (battery.range + plan.clearance) * (battery.range + plan.clearance)))
+			const angle = 2 * Math.PI * k / bombard.bearings;
+			const point = [structure.position[0] + (range - bombard.margin) * Math.cos(angle),
+				structure.position[1] + (range - bombard.margin) * Math.sin(angle)];
+			if (!world.openWater(point, sea, bombard.searoom) || world.batteries.some(battery =>
+				squareDistance(battery.position, point) <= (battery.range + bombard.clearance) * (battery.range + bombard.clearance)))
 				continue;
 			const distance = squareDistance(point, from);
 			if (distance < shortest)
@@ -34,9 +34,9 @@ export class Bombardment
 		return best;
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
-		const plan = priorities.naval.bombard;
+		const bombard = plan.naval.bombard;
 		const guns = world.fleet.filter(ship => ship.bombard && !ship.cargo.length && !this.commitments.holds(ship.id));
 		if (!guns.length || !world.enemyStructures.length)
 		{
@@ -54,9 +54,9 @@ export class Bombardment
 				(b.fire.arrows > 0 ? 1 : 0) - (a.fire.arrows > 0 ? 1 : 0) || (b.centre ? 1 : 0) - (a.centre ? 1 : 0) ||
 				squareDistance(a.position, centre) - squareDistance(b.position, centre) || a.id - b.id);
 			this.current = { "target": null, "point": null, "since": world.time };
-			for (const structure of ranked.slice(0, plan.tried))
+			for (const structure of ranked.slice(0, bombard.tried))
 			{
-				const point = this.firingPoint(world, plan, structure, sea, range, centre);
+				const point = this.firingPoint(world, bombard, structure, sea, range, centre);
 				if (!point)
 					continue;
 				this.current = { "target": structure.id, "point": point, "since": world.time };
@@ -72,7 +72,7 @@ export class Bombardment
 		const point = this.current.point;
 		const target = this.current.target;
 		return battery.map(ship => orderRequest("naval", "bombard", ship.id, ship.target === target ? hold() :
-			squareDistance(ship.position, point) <= plan.arrive * plan.arrive ? attack(target) :
-			ship.idle ? walkTo(point[0], point[1]) : hold(), priorities.values.ferry, 1));
+			squareDistance(ship.position, point) <= bombard.arrive * bombard.arrive ? attack(target) :
+			ship.idle ? walkTo(point[0], point[1]) : hold(), plan.values.ferry, 1));
 	}
 }

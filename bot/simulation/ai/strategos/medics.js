@@ -17,17 +17,16 @@ export class Medics
 		this.trained = 0;
 	}
 
-	requests(world, priorities)
+	requests(world, plan)
 	{
-		const plan = priorities.medics;
 		const wounded = world.fighters.filter(fighter => fighter.hitpoints < fighter.maxHitpoints);
-		return this.trainRequests(world, priorities, plan, wounded).concat(this.followRequests(world, priorities, wounded));
+		return this.trainRequests(world, plan, wounded).concat(this.followRequests(world, plan, wounded));
 	}
 
-	trainRequests(world, priorities, plan, wounded)
+	trainRequests(world, plan, wounded)
 	{
 		const missing = wounded.reduce((sum, fighter) => sum + fighter.maxHitpoints - fighter.hitpoints, 0);
-		const wanted = Math.min(plan.max, Math.floor(world.fighters.length / plan.soldiersPerHealer), Math.floor(missing / plan.woundsPerHealer));
+		const wanted = Math.min(plan.medics.max, Math.floor(world.fighters.length / plan.medics.soldiersPerHealer), Math.floor(missing / plan.medics.woundsPerHealer));
 		if (world.healers.length >= wanted)
 			return [];
 		for (const trainer of world.trainers)
@@ -39,7 +38,7 @@ export class Medics
 			if (!template)
 				continue;
 			return [noting(trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),
-				priorities.values.support, 1), { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length })];
+				plan.values.support, 1), { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length })];
 		}
 		return [];
 	}
@@ -56,7 +55,7 @@ export class Medics
 		}
 	}
 
-	followRequests(world, priorities, wounded)
+	followRequests(world, plan, wounded)
 	{
 		if (!world.healers.length)
 			return [];
@@ -86,7 +85,7 @@ export class Medics
 			}
 			if (!goal || squareDistance(goal, healer.position) <= REACH * REACH || healer.state.walking)
 				continue;
-			requests.push(orderRequest("medics", "follow", healer.id, walkTo(goal[0], goal[1]), priorities.values.support, 1));
+			requests.push(orderRequest("medics", "follow", healer.id, walkTo(goal[0], goal[1]), plan.values.support, 1));
 		}
 		return requests;
 	}

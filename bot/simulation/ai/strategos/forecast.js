@@ -264,18 +264,18 @@ export function covering(structures, centre, side)
 	});
 }
 
-export function prospect(catalog, members, centre, enemies, structures, plan)
+export function prospect(catalog, members, centre, enemies, structures, terms)
 {
 	const seen = within(enemies, centre);
-	const preyReach = plan.preyReach || plan.reach;
-	const prey = (plan.prey || []).filter(unit => squareDistance(unit.position, centre) <= preyReach * preyReach);
-	const lead = plan.lead || 0;
+	const preyReach = terms.preyReach || terms.reach;
+	const prey = (terms.prey || []).filter(unit => squareDistance(unit.position, centre) <= preyReach * preyReach);
+	const lead = terms.lead || 0;
 	const mustered = [];
 	const recruited = [];
-	for (const group of plan.muster || [])
+	for (const group of terms.muster || [])
 	{
 		const hitpoints = catalog.combat(group.template, group.owner).hp;
-		const count = Math.floor(group.rate * (lead + (plan.horizonS || FORECAST.horizonS)));
+		const count = Math.floor(group.rate * (lead + (terms.horizonS || FORECAST.horizonS)));
 		for (let k = 1; k <= count; ++k)
 		{
 			const unit = { "id": -(mustered.length + recruited.length + 1), "template": group.template, "owner": group.owner, "hitpoints": hitpoints,
@@ -286,14 +286,14 @@ export function prospect(catalog, members, centre, enemies, structures, plan)
 				recruited.push({ "unit": unit, "seconds": k / group.rate - lead, "wave": 2 + Math.floor((k / group.rate - lead) / RECRUIT_WAVE_S) });
 		}
 	}
-	const present = seen.concat(plan.hidden || [], mustered, prey);
-	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, plan.reach, true)
-		.map(entry => ({ "unit": entry.unit, "seconds": plan.massed ? 1 : Math.max(1, entry.seconds - lead) }))
+	const present = seen.concat(terms.hidden || [], mustered, prey);
+	const coming = arriving(catalog, enemies, centre, new Set(seen.map(unit => unit.id)), false, terms.reach, true)
+		.map(entry => ({ "unit": entry.unit, "seconds": terms.massed ? 1 : Math.max(1, entry.seconds - lead) }))
 		.concat(recruited);
 	const outlook = forecast(engagement(catalog, members, present, [], covering(structures, centre, seen), [], coming, true,
 		new Set(prey.map(unit => unit.id))),
-		Object.assign({ "arrivals": plan.response, "joinScale": plan.reaction, "handicap": plan.handicap || 1 },
-			plan.horizonS ? { "horizonS": plan.horizonS } : {}));
+		Object.assign({ "arrivals": terms.response, "joinScale": terms.reaction, "handicap": terms.handicap || 1 },
+			terms.horizonS ? { "horizonS": terms.horizonS } : {}));
 	let opposing = 0;
 	for (const unit of present)
 		opposing += catalog.costSum(unit.template);
