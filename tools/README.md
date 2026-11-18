@@ -407,6 +407,20 @@ tools/run.sh -l 7 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
     -M random/strategos_battle_d30_a45_w_l90 -b '*' -H local OUTDIR 1-16
 ```
 
+`strategos_harass_aA`: enemy archers harassing the base. On the battle
+map, at 60 s, player 2 gets A basic archers of its civ (pin it: `-p
+none:maur:2`; a civ without `infantry_archer_b` aborts the game), set to
+standground and posted on an arc facing it, 10 m beyond the reach of
+player 1's centre, where they shoot what comes in their own range. The
+game ends when they are all dead (`repelled`) or 180 s after their launch
+(`endured`); the `tick`/`result` lines carry player 1's soldiers and
+civilians lost and the archers killed. Run with `-R 0`:
+
+```sh
+tools/run.sh -l 5 -R 0 -p 'strategos:*:1' -p 'none:maur:2' \
+    -M random/strategos_harass_a10 -b '*' -H local OUTDIR 1-8
+```
+
 `strategos_duel`: what a fight between two groups of soldiers costs each
 side with nothing else around. No AI plays; the trigger script fights 40
 duels one after the other at the centre of the map, out of reach of every
