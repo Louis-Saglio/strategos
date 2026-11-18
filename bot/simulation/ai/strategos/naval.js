@@ -44,6 +44,25 @@ export class Naval
 		this.stations = new Stations(this.commitments);
 	}
 
+	save(context)
+	{
+		const operations = this.operations.save();
+		operations.list = operations.list.map(convoy => this.convoys.saved(convoy, context));
+		return { "operations": operations, "crossings": this.crossings.save(), "bombardment": this.bombardment.save(),
+			"hunt": this.hunt.save(), "raid": this.raid.save(context), "stations": this.stations.save() };
+	}
+
+	restore(data, context)
+	{
+		this.operations.restore(data.operations);
+		this.operations.list.forEach(convoy => this.convoys.restored(convoy, context));
+		this.crossings.restore(data.crossings);
+		this.bombardment.restore(data.bombardment);
+		this.hunt.restore(data.hunt);
+		this.raid.restore(data.raid, context);
+		this.stations.restore(data.stations);
+	}
+
 	requests(world, plan, assessments)
 	{
 		if (!world.centres.length)

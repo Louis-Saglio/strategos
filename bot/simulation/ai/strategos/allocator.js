@@ -61,6 +61,44 @@ export class Allocator
 		};
 	}
 
+	save()
+	{
+		return {
+			"ledger": this.ledger,
+			"spent": this.spent,
+			"spendRate": this.spendRate,
+			"income": this.income,
+			"unmet": this.unmet,
+			"stock": this.stock,
+			"paid": this.paid,
+			"lastTime": this.lastTime,
+			"orders": this.orders,
+			"ordered": this.ordered,
+			"held": this.held,
+			"assigned": this.assigned.map(request => ({ "source": request.source, "purpose": request.purpose,
+				"operation": "operation" in request ? request.operation : null, "value": request.value,
+				"claims": { "units": request.claims.units } })),
+			"allocations": this.allocations
+		};
+	}
+
+	restore(data)
+	{
+		this.ledger = data.ledger;
+		this.spent = data.spent;
+		this.spendRate = data.spendRate;
+		this.income = data.income;
+		this.unmet = data.unmet;
+		this.stock = data.stock;
+		this.paid = data.paid;
+		this.lastTime = data.lastTime;
+		this.orders = data.orders;
+		this.ordered = data.ordered;
+		this.held = data.held;
+		this.assigned = data.assigned;
+		this.allocations = data.allocations;
+	}
+
 	observe(world, spent, unmet, paid)
 	{
 		const seconds = this.lastTime === undefined ? 0 : (world.time - this.lastTime) / 1000;

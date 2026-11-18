@@ -15,6 +15,16 @@ export class Guard
 		this.passive = new Set();
 	}
 
+	save()
+	{
+		return { "passive": this.passive };
+	}
+
+	restore(data)
+	{
+		this.passive = data.passive;
+	}
+
 	requests(world, plan)
 	{
 		if (!world.centres.length)
@@ -65,6 +75,17 @@ export class Relics
 		this.catalog = catalog;
 		this.squads = new Operations("relics", "RELIC", telemetry);
 		this.contested = new Hysteresis(false);
+	}
+
+	save()
+	{
+		return { "squads": this.squads.save(), "contested": this.contested.save() };
+	}
+
+	restore(data)
+	{
+		this.squads.restore(data.squads);
+		this.contested.restore(data.contested);
 	}
 
 	requests(world, plan)

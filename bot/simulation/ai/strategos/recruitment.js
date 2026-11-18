@@ -26,6 +26,17 @@ export class Recruitment
 		].map(candidate => Object.freeze(candidate)));
 	}
 
+	save()
+	{
+		return { "heroOrdered": this.heroOrdered.save(), "healersTrained": this.healersTrained };
+	}
+
+	restore(data)
+	{
+		this.heroOrdered.restore(data.heroOrdered);
+		this.healersTrained = data.healersTrained;
+	}
+
 	requests(world, plan, assessments)
 	{
 		const requests = [];

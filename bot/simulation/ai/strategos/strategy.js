@@ -15,6 +15,21 @@ export class Strategy
 		this.expansion = new Expansion(catalog);
 	}
 
+	save()
+	{
+		return { "plans": this.plans.save(), "posture": this.posture.save(), "labour": this.labour.save(), "guard": this.guard.save(),
+			"expansion": this.expansion.save() };
+	}
+
+	restore(data)
+	{
+		this.plans.restore(data.plans);
+		this.posture.restore(data.posture);
+		this.labour.restore(data.labour);
+		this.guard.restore(data.guard);
+		this.expansion.restore(data.expansion);
+	}
+
 	update(world)
 	{
 		const selected = this.plans.select(world.context);

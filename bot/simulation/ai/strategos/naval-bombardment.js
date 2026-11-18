@@ -12,6 +12,16 @@ export class Bombardment
 		this.current = null;
 	}
 
+	save()
+	{
+		return { "current": this.current };
+	}
+
+	restore(data)
+	{
+		this.current = data.current;
+	}
+
 	firingPoint(world, bombard, structure, sea, range, from)
 	{
 		let best = null;

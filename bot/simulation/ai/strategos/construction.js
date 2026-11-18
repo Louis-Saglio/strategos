@@ -27,6 +27,25 @@ export class Construction
 		]);
 	}
 
+	save()
+	{
+		return { "builders": this.builders.save(), "siting": this.siting.save(),
+			"reports": [...this.reports].map(([need, change]) => [need.purpose, change.save()]), "relieved": this.relieved.save() };
+	}
+
+	restore(data, context)
+	{
+		this.builders.restore(data.builders);
+		this.siting.restore(data.siting);
+		const known = new Map(NEEDS.concat(context.needs, [FARMSTEAD, COLONY_DOCK, FOUNDING]).filter(need => need.purpose).map(need => [need.purpose, need]));
+		this.reports = new Map(data.reports.map(([key, value]) => {
+			const change = new Change();
+			change.restore(value);
+			return [known.get(key), change];
+		}));
+		this.relieved.restore(data.relieved);
+	}
+
 	requests(world, plan, assessments)
 	{
 		const context = { "world": world, "plan": plan, "assessments": assessments, "catalog": this.catalog, "siting": this.siting,

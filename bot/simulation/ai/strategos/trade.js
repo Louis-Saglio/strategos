@@ -12,6 +12,16 @@ export class Trade
 		this.goods = "";
 	}
 
+	save()
+	{
+		return { "goods": this.goods };
+	}
+
+	restore(data)
+	{
+		this.goods = data.goods;
+	}
+
 	requests(world, plan, assessments)
 	{
 		return this.barterRequests(world, plan).concat(this.caravanRequests(world, plan, assessments));

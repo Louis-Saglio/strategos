@@ -53,6 +53,18 @@ export class Telemetry
 		this.production = new Map();
 	}
 
+	save()
+	{
+		return { "lastLine": this.lastLine.save(), "decisions": this.decisions, "production": this.production };
+	}
+
+	restore(data)
+	{
+		this.lastLine.restore(data.lastLine);
+		this.decisions = data.decisions;
+		this.production = data.production;
+	}
+
 	recordProduction(kind, idle)
 	{
 		const entry = this.production.get(kind) || { "decisions": 0, "idle": 0, "trainers": 0 };

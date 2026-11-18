@@ -19,6 +19,17 @@ export class HomeGuard
 		this.held = new Hysteresis(true);
 	}
 
+	save()
+	{
+		return { "held": this.held.save(), "guards": this.guards };
+	}
+
+	restore(data)
+	{
+		this.held.restore(data.held);
+		this.guards = data.guards;
+	}
+
 	assess(world, plan)
 	{
 		const guard = plan.guard;

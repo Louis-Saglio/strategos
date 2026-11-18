@@ -37,6 +37,17 @@ export class Executor
 		};
 	}
 
+	save()
+	{
+		return { "issued": this.issued, "time": this.time };
+	}
+
+	restore(data)
+	{
+		this.issued = data.issued;
+		this.time = data.time;
+	}
+
 	reconcile(time)
 	{
 		if (!this.issued.length)

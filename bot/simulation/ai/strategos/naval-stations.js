@@ -1,6 +1,6 @@
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
-import { Retry } from "simulation/ai/strategos/switches.js";
+import { Retry, retryFrom } from "simulation/ai/strategos/switches.js";
 
 const ANCHOR_RINGS = [80, 110, 140, 170, 200];
 const ANCHOR_SPACING = 30;
@@ -15,6 +15,19 @@ export class Stations
 		this.commitments = commitments;
 		this.anchorages = new Map();
 		this.stations = new Map();
+	}
+
+	save()
+	{
+		return { "anchorages": this.anchorages,
+			"stations": [...this.stations].map(([id, station]) => [id, { "dock": station.dock, "slot": station.slot, "ordered": station.ordered.save() }]) };
+	}
+
+	restore(data)
+	{
+		this.anchorages = data.anchorages;
+		this.stations = new Map(data.stations.map(([id, station]) => [id,
+			{ "dock": station.dock, "slot": station.slot, "ordered": retryFrom(station.ordered) }]));
 	}
 
 	anchorage(world, dock)

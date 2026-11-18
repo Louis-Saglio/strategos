@@ -51,6 +51,18 @@ export class Convoys
 		return units;
 	}
 
+	saved(convoy, context)
+	{
+		const indices = shores => new Map([...shores].map(([ship, shore]) => [ship, context.shoreIndex(shore)]));
+		return Object.assign({}, convoy, { "quay": indices(convoy.quay), "beach": indices(convoy.beach) });
+	}
+
+	restored(convoy, context)
+	{
+		const records = indices => new Map([...indices].map(([ship, index]) => [ship, context.shore(index)]));
+		Object.assign(convoy, { "quay": records(convoy.quay), "beach": records(convoy.beach) });
+	}
+
 	enrol(convoy)
 	{
 		convoy.members = convoy.ships.concat([...convoy.party]);

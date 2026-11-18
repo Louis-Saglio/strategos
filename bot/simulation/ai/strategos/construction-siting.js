@@ -52,6 +52,21 @@ export class Siting
 		this.dockRefused = new Set();
 	}
 
+	save()
+	{
+		return { "noSiteReported": this.noSiteReported.save(), "noSiteTime": this.noSiteTime.save(), "dockSite": this.dockSite,
+			"dockRefused": this.dockRefused, "crampedAt": this.crampedAt };
+	}
+
+	restore(data)
+	{
+		this.noSiteReported.restore(data.noSiteReported);
+		this.noSiteTime.restore(data.noSiteTime);
+		this.dockSite = data.dockSite;
+		this.dockRefused = data.dockRefused;
+		this.crampedAt = data.crampedAt;
+	}
+
 	searchable(world, key)
 	{
 		return this.noSiteTime.due(world.time, RETRY_MS, key);

@@ -36,6 +36,22 @@ export class Defense
 		this.outnumbered = new Hysteresis(false);
 	}
 
+	save()
+	{
+		return { "engaged": this.engaged.save(), "ratio": this.ratio, "lastThreatTime": this.lastThreatTime, "reported": this.reported.save(),
+			"outnumbered": this.outnumbered.save(), "guarding": this.guarding };
+	}
+
+	restore(data)
+	{
+		this.engaged.restore(data.engaged);
+		this.ratio = data.ratio;
+		this.lastThreatTime = data.lastThreatTime;
+		this.reported.restore(data.reported);
+		this.outnumbered.restore(data.outnumbered);
+		this.guarding = data.guarding;
+	}
+
 	requests(world, plan, assessments)
 	{
 		this.foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;

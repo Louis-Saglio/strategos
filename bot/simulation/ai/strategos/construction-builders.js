@@ -22,6 +22,17 @@ export class Builders
 		this.abandoned = [];
 	}
 
+	save()
+	{
+		return { "stalled": this.stalled, "abandoned": this.abandoned };
+	}
+
+	restore(data)
+	{
+		this.stalled = data.stalled;
+		this.abandoned = data.abandoned;
+	}
+
 	wanted(world, template)
 	{
 		if (!world.centres.length && this.catalog.isSettlement(template))

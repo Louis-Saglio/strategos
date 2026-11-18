@@ -1,6 +1,6 @@
 import { arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { Retry } from "simulation/ai/strategos/switches.js";
+import { Retry, retryFrom } from "simulation/ai/strategos/switches.js";
 
 const MIN_SIDE = 4;
 const SAME_BATTLE_RADIUS = 120;
@@ -31,6 +31,19 @@ export class BattleLog
 		this.telemetry = telemetry;
 		this.known = [];
 		this.count = 0;
+	}
+
+	save()
+	{
+		return { "known": this.known.map(battle => ({ "id": battle.id, "reports": battle.reports, "reported": battle.reported.save(),
+			"centre": battle.centre, "seen": battle.seen })), "count": this.count };
+	}
+
+	restore(data)
+	{
+		this.known = data.known.map(battle => ({ "id": battle.id, "reports": battle.reports, "reported": retryFrom(battle.reported),
+			"centre": battle.centre, "seen": battle.seen }));
+		this.count = data.count;
 	}
 
 	clashes(world)

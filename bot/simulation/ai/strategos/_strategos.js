@@ -48,11 +48,71 @@ StrategosBot.prototype.CustomInit = function(gameState)
 		new Upgrades(this.catalog, this.telemetry)];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);
+	const saved = this.saved;
+	this.saved = undefined;
+	if (saved)
+	{
+		this.restore(saved, gameState);
+		return;
+	}
 	this.telemetry.line("STRATEGOS", gameState.getTimeElapsed(), {
 		"civ": this.catalog.civ,
 		"difficulty": this.difficulty,
 		"behavior": this.behavior
 	});
+};
+
+StrategosBot.prototype.Serialize = function()
+{
+	if (this.saved !== undefined)
+		return this.saved;
+	if (!this.catalog)
+		return null;
+	const context = { "shoreIndex": point => this.shoreIndex.indexOf(this.gameState, point) };
+	return {
+		"turn": this.turn,
+		"telemetry": this.telemetry.save(),
+		"catalog": this.catalog.save(),
+		"resourceIndex": this.resourceIndex.save(),
+		"shoreIndex": this.shoreIndex.save(),
+		"lossIndex": this.lossIndex.save(),
+		"musterIndex": this.musterIndex.save(),
+		"battleLog": this.battleLog.save(),
+		"strategy": this.strategy.save(),
+		"behaviours": this.behaviours.map(behaviour => behaviour.save()),
+		"subsystems": this.subsystems.map(subsystem => subsystem.save ? subsystem.save(context) : null),
+		"allocator": this.allocator.save(),
+		"executor": this.executor.save()
+	};
+};
+
+StrategosBot.prototype.Deserialize = function(data, sharedScript)
+{
+	BaseAI.prototype.Deserialize.call(this, data, sharedScript);
+	this.saved = data;
+};
+
+StrategosBot.prototype.restore = function(data, gameState)
+{
+	this.turn = data.turn;
+	this.telemetry.restore(data.telemetry);
+	this.catalog.restore(data.catalog);
+	this.resourceIndex.restore(data.resourceIndex);
+	this.shoreIndex.restore(data.shoreIndex);
+	this.lossIndex.restore(data.lossIndex);
+	this.musterIndex.restore(data.musterIndex);
+	this.battleLog.restore(data.battleLog);
+	this.strategy.restore(data.strategy);
+	const plan = this.strategy.plans.table;
+	const context = { "shore": index => this.shoreIndex.at(gameState, index), "needs": plan.needs };
+	this.behaviours = plan.behaviours.map(Behaviour => new Behaviour(this.catalog, this.telemetry));
+	this.behaviours.forEach((behaviour, index) => behaviour.restore(data.behaviours[index]));
+	this.subsystems.forEach((subsystem, index) => {
+		if (subsystem.restore)
+			subsystem.restore(data.subsystems[index], context);
+	});
+	this.allocator.restore(data.allocator);
+	this.executor.restore(data.executor);
 };
 
 StrategosBot.prototype.OnUpdate = function()

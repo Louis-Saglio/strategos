@@ -478,6 +478,11 @@ WRITTEN_RE = re.compile(r'"(?:claims|purpose)"\s*:')
 # purpose written is a request rewritten.
 ALLOCATOR_MODULE = "allocator.js"
 COPIED_RE = re.compile(r'"source"\s*:\s*request\.source\s*,\s*("purpose"\s*:)\s*request\.purpose\s*[,}]')
+# The same assignment, saved for a saved game (Allocator.save), keeps of the
+# request's claims only its units, copied as they are:
+# `"claims": { "units": request.claims.units }`. Let through in
+# ALLOCATOR_MODULE only, in that form only.
+SAVED_CLAIMS_RE = re.compile(r'("claims"\s*:)\s*\{\s*"units"\s*:\s*request\.claims\.units\s*\}')
 # The module that says what a building need is (issue #54): a record that carries a purpose as data, which one
 # class (Construction) turns into a request. A maker of needs is a function of that module declared, before any
 # class, `export function NAME(purpose, ...)` at the start of a line, whose body up to its closing `}` names
@@ -491,9 +496,11 @@ NEED_PURPOSE = "need.purpose"
 
 
 def copied(name, text):
-    """The offsets, in a text of the file `name`, of the keys `"purpose":` it may write: those of COPIED_RE, in
-    allocator.js; none in any other file."""
-    return {m.start(1) for m in COPIED_RE.finditer(text)} if name == ALLOCATOR_MODULE else set()
+    """The offsets, in a text of the file `name`, of the keys `"purpose":` and `"claims":` it may write: those of
+    COPIED_RE and SAVED_CLAIMS_RE, in allocator.js; none in any other file."""
+    if name != ALLOCATOR_MODULE:
+        return set()
+    return {m.start(1) for pattern in (COPIED_RE, SAVED_CLAIMS_RE) for m in pattern.finditer(text)}
 
 
 def regions(text, pattern):
@@ -881,7 +888,8 @@ def source_kinds(bot_dir):
     names this reading does not know), a builder named otherwise than called
     by its own name (handed to a variable, called on an object), a builder
     called or a purpose named outside a class, a request written by hand
-    outside requests.js (`"claims":`, or `"purpose":` anywhere but in an
+    outside requests.js (`"claims":` anywhere but in an assignment saved
+    by allocator.js, SAVED_CLAIMS_RE, or `"purpose":` anywhere but in an
     assignment of allocator.js, COPIED_RE, and in a maker of needs), a
     class with purposes and no source, a class with a `requests(` method
     and no kind that is not composed of classes that have some

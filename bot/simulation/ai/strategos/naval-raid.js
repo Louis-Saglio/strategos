@@ -18,6 +18,17 @@ export class Raid
 		this.steady = new Set();
 	}
 
+	save(context)
+	{
+		return { "current": this.current && { "shore": context.shoreIndex(this.current.shore), "since": this.current.since }, "steady": this.steady };
+	}
+
+	restore(data, context)
+	{
+		this.current = data.current && { "shore": context.shore(data.current.shore), "since": data.current.since };
+		this.steady = data.steady;
+	}
+
 	raidTarget(world, plan, sea, region, power)
 	{
 		const raid = plan.naval.raid;
