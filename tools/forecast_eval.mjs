@@ -8,17 +8,33 @@
 //            "rates": [[...], ...], "fire": [...]}
 // response: one list per option set, holding per sample {"marks": [[t, oursLost, theirsLost], ...], "edge", "winner"}.
 //
-// forecast.js is a module of the bot (absolute VFS imports, .js extension); it imports
-// nothing, so a copy named .mjs loads as it is.
+// forecast.js is a module of the bot: its imports are absolute VFS paths
+// ("simulation/ai/strategos/X.js") that node cannot resolve. forecast.js and every module it
+// imports, followed transitively from the files next to it, are copied to a temporary
+// directory as X.mjs with those imports rewritten to "./X.mjs", and the copy is loaded.
 import { readFileSync, writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
+const BOT_IMPORT = /(from\s+["'])simulation\/ai\/strategos\/([\w-]+)\.js(["'])/g;
+const source = process.argv[2];
+const botDir = dirname(source);
 const dir = mkdtempSync(join(tmpdir(), "forecast-"));
-const copy = join(dir, "forecast.mjs");
-writeFileSync(copy, readFileSync(process.argv[2], "utf8"));
-const { forecast } = await import(pathToFileURL(copy).href);
+const pending = [basename(source, ".js")];
+const copied = new Set();
+while (pending.length)
+{
+	const name = pending.pop();
+	if (copied.has(name))
+		continue;
+	copied.add(name);
+	const text = readFileSync(join(botDir, name + ".js"), "utf8");
+	for (const match of text.matchAll(BOT_IMPORT))
+		pending.push(match[2]);
+	writeFileSync(join(dir, name + ".mjs"), text.replace(BOT_IMPORT, "$1./$2.mjs$3"));
+}
+const { forecast } = await import(pathToFileURL(join(dir, basename(source, ".js") + ".mjs")).href);
 rmSync(dir, { "recursive": true });
 
 const side = logged => ({
