@@ -19,6 +19,11 @@
  * is active; Nomad only on random maps. The last five are options of
  * particular maps (day time, landscape, sea level rise, trigger difficulty,
  * water level): left alone, the engine picks the first two at random.
+ *
+ * tools/run.py also passes -harness-player-names=JSON, the name of every
+ * player in slot order: left alone, the engine draws each AI's name at random
+ * (PlayerName.pickRandomItems keeps a name only when it is set and not the
+ * default "Player N"), and Petra's chat commands carry those names.
  */
 
 const HARNESS_SETTERS = [
@@ -63,5 +68,13 @@ parseCmdLineArgs = function(settings, cmdLineArgs)
 	for (const [key, set] of HARNESS_SETTERS)
 		if (key in wanted)
 			set(settings, wanted[key]);
+	if ("harness-player-names" in cmdLineArgs)
+	{
+		const names = JSON.parse(cmdLineArgs["harness-player-names"]);
+		if (names.length != settings.playerName.values.length)
+			throw new Error("harness: " + names.length + " player names for " + settings.playerName.values.length + " players");
+		names.forEach((name, i) => { settings.playerName.values[i] = name; });
+		settings.playerName.trigger("values");
+	}
 	return settings;
 };

@@ -453,6 +453,12 @@ def describe_draws(specs):
     return lines
 
 
+def player_names(spec):
+    """The name of every player, from its slot: the engine would draw an AI's name at random
+    (gamesettings/attributes/PlayerName.js, pickRandomItems), and Petra's chat commands carry it."""
+    return [f"{p['ai']}-{i}" for i, p in enumerate(spec["players"], 1)]
+
+
 def engine_args(spec):
     args = [f"-autostart={spec['map']}", f"-autostart-seed={spec['seed']}",
             f"-autostart-aiseed={spec['seed']}", "-autostart-nonvisual",
@@ -473,6 +479,7 @@ def engine_args(spec):
         if p.get("team"):
             args.append(f"-autostart-team={i}:{p['team']}")
     args.append("-harness-settings=" + json.dumps(spec["settings"], sort_keys=True, separators=(",", ":")))
+    args.append("-harness-player-names=" + json.dumps(player_names(spec), separators=(",", ":")))
     if spec.get("rejoin_test") is not None:
         args.append(f"-rejointest={spec['rejoin_test']}")
     args += ["-autostart-player=-1", "-unique-logs", "-nosound", "-mod=public"]
@@ -842,8 +849,8 @@ def check_settings(d, spec):
     pdata = [p for p in applied.get("PlayerData", []) if p]
     if len(pdata) != len(spec["players"]):
         bad.append(f"players: wanted {len(spec['players'])}, engine applied {len(pdata)}")
-    for i, (p, q) in enumerate(zip(spec["players"], pdata), 1):
-        checks = [("Civ", p["civ"], q.get("Civ")),
+    for i, (p, q, name) in enumerate(zip(spec["players"], pdata, player_names(spec)), 1):
+        checks = [("Civ", p["civ"], q.get("Civ")), ("Name", name, q.get("Name")),
                   ("Team", (p["team"] - 1) if p.get("team") else -1, q.get("Team", -1))]
         if p["ai"] == NO_AI:
             checks.append(("AI", False, q.get("AI") or False))

@@ -279,7 +279,13 @@ the changes the engine reported.
 `-S` settings) on top of the public autostart command line. The engine
 loads every file of `autostart/` in name order, so it wraps the public
 `parseCmdLineArgs` without copying it, and sets each setting as the game
-setup screen would; an unknown key aborts the game start.
+setup screen would; an unknown key aborts the game start. It also applies
+`-harness-player-names=JSON`: every player is named after its AI and slot
+(`strategos-1`, `petra-2`, `none-2`; no space, which the chat command
+`/msg NAME` would split), where the engine would draw an AI's name at
+random and Petra's chat commands would differ between two plays of the
+same game; `run.py` checks each name in the replay like the other settings
+(`player1.Name`).
 
 ### Saved games: the rejoin test
 
