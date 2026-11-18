@@ -1,7 +1,7 @@
 import { PATIENCE_MS, REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { centroid, distanceBetween, firstListed, nearest, squareDistance, toward } from "simulation/ai/strategos/geometry.js";
 import { Operations } from "simulation/ai/strategos/operations.js";
-import { attack, attackWalkTo, capture, deleteHolderRequest, garrisonIn, hold, memberRequest, orderRequest, reserving, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { attack, attackWalkTo, capture, deleteHolderRequest, garrisonIn, hold, memberRequest, orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { Change, Hysteresis } from "simulation/ai/strategos/switches.js";
 import { GATHER_EFFICIENCY, captureOutlook, resourcePrices } from "simulation/ai/strategos/valuation.js";
 import { REACH_RADIUS, prospect } from "simulation/ai/strategos/forecast.js";
@@ -174,16 +174,6 @@ export class Offense
 	breakerRequests(world, plan, home)
 	{
 		const requests = [];
-		const breakers = plan.offense.breakers;
-		const wanted = Math.min(breakers.max, Math.floor(world.fighters.length / breakers.perSoldiers));
-		const trains = trainer => trainer.trainable.some(name => this.catalog.isBreaker(name));
-		const trainer = world.trainers.find(candidate => candidate.queueLength === 0 && trains(candidate));
-		if (trainer && !world.trainers.some(candidate => candidate.queueLength > 0 && trains(candidate)) && world.breakers.length < wanted)
-		{
-			const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isBreaker(name));
-			requests.push(reserving(trainRequest("offense", "breaker", trainer.id, template, 1, this.catalog.cost(template),
-				this.catalog.population(template), plan.values.support, 1)));
-		}
 		const followed = this.attacks.list.find(operation => !operation.overseas);
 		if (!followed)
 			return requests;

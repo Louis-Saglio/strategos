@@ -1,5 +1,6 @@
 import { isTreasure } from "simulation/ai/common-api/filters.js";
 import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
+import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { landRegionNear, landRegionsOf, territoryAt } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
 
@@ -168,6 +169,35 @@ function tradingPosts(gameState)
 	return markets.sort((a, b) => a.id - b.id);
 }
 
+function routeGain(distance, mapSize, multiplier)
+{
+	const gain = length => length * length / (1 + TRADE_GAIN_DAMPING * length / mapSize);
+	return multiplier * Math.sqrt(TRADE_GAIN_MAP / mapSize) * gain(distance) / gain(TRADE_GAIN_DISTANCE);
+}
+
+function bestRoute(markets, mapSize, caravan)
+{
+	let best = null;
+	if (!caravan)
+		return best;
+	for (let i = 0; i < markets.length; ++i)
+		for (let j = i + 1; j < markets.length; ++j)
+		{
+			const a = markets[i];
+			const b = markets[j];
+			if (a.region !== b.region)
+				continue;
+			if (!a.own && !b.own)
+				continue;
+			const distance = distanceBetween(a.position, b.position);
+			const gain = routeGain(distance, mapSize, caravan.gain) * (a.own && b.own ? 1 : 1 + Math.max(a.bonus, b.bonus));
+			const rate = gain / Math.max(1, distance / Math.max(1, caravan.speed));
+			if (!best || rate > best.rate || rate === best.rate && a.id + b.id < best.from.id + best.to.id)
+				best = { "from": a, "to": b, "distance": distance, "gain": gain, "rate": rate };
+		}
+	return best;
+}
+
 function treasuresWithin(gameState, anchors, workers)
 {
 	const player = gameState.getPlayerID();
@@ -209,6 +239,8 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 	const sites = {};
 	for (const code of codes)
 		sites[code] = resourceIndex.live(gameState, code, anchors, batteries);
+	const markets = Object.freeze(tradingPosts(gameState));
+	const accessibility = gameState.sharedScript.accessibility;
 	return {
 		"now": {
 			"resources": Object.freeze(resources),
@@ -223,11 +255,12 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 			"sites": Object.freeze(sites),
 			"wealth": resourceIndex.grid(gameState),
 			"regionWealth": (region, code) => resourceIndex.grid(gameState).regions[code] && resourceIndex.grid(gameState).regions[code].get(region) || 0,
-			"markets": Object.freeze(tradingPosts(gameState)),
+			"markets": markets,
 			"treasures": Object.freeze(treasuresWithin(gameState, anchors, staff.workers))
 		},
 		"later": {
-			"offered": () => Object.freeze(buildableBy(staff.workers))
+			"offered": () => Object.freeze(buildableBy(staff.workers)),
+			"bestRoute": () => bestRoute(markets, accessibility.width * accessibility.cellSize, catalog.caravan())
 		}
 	};
 }

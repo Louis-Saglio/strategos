@@ -30,11 +30,7 @@ export function productionFlow(world, catalog, civilianTarget)
 		const settlement = catalog.isSettlement(trainer.template);
 		const civilian = settlement && civilians && trainer.trainable.some(name => catalog.isCivilian(name));
 		const wanted = name => civilian ? catalog.isCivilian(name) : catalog.isFighter(name);
-		let cheapest = null;
-		for (const name of trainer.trainable)
-			if (wanted(name) && (!cheapest || catalog.costSum(name) < catalog.costSum(cheapest) ||
-				(catalog.costSum(name) === catalog.costSum(cheapest) && name < cheapest)))
-				cheapest = name;
+		const cheapest = catalog.cheapest(trainer.trainable, wanted);
 		if (!cheapest)
 			continue;
 		const seconds = catalog.buildTime(cheapest) * Math.pow(TRAINING_BATCH, trainer.batchTimeModifier) / TRAINING_BATCH;

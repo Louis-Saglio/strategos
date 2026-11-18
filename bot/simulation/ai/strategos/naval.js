@@ -6,7 +6,6 @@ import { Fishing } from "simulation/ai/strategos/naval-fishing.js";
 import { Hunt } from "simulation/ai/strategos/naval-hunt.js";
 import { Raid } from "simulation/ai/strategos/naval-raid.js";
 import { Rescue } from "simulation/ai/strategos/naval-rescue.js";
-import { Shipyards } from "simulation/ai/strategos/naval-shipyards.js";
 import { Stations } from "simulation/ai/strategos/naval-stations.js";
 import { Operations } from "simulation/ai/strategos/operations.js";
 
@@ -35,8 +34,7 @@ export class Naval
 		this.telemetry = telemetry;
 		this.operations = new Operations("naval", "NAVAL", telemetry);
 		this.commitments = new Commitments(this.operations);
-		this.shipyards = new Shipyards(catalog);
-		this.fishing = new Fishing(catalog);
+		this.fishing = new Fishing();
 		this.convoys = new Convoys(this.operations);
 		this.crossings = new Crossings(catalog, telemetry, this.convoys, this.commitments);
 		this.rescue = new Rescue(this.commitments);
@@ -52,7 +50,7 @@ export class Naval
 			return this.rescue.castaways(world, plan);
 		if (!world.fleet.length && !world.docks.length)
 			return [];
-		const requests = this.shipyards.requests(world, plan, assessments).concat(this.fishing.requests(world, plan));
+		const requests = this.fishing.requests(world, plan);
 		const invasion = this.crossings.decide(world, plan, assessments);
 		requests.push(...this.convoys.requests(world, plan));
 		requests.push(...this.rescue.stranded(world, plan));

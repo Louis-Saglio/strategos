@@ -10,6 +10,7 @@ import { Guard, Relics } from "simulation/ai/strategos/guard.js";
 import { Medics } from "simulation/ai/strategos/medics.js";
 import { Naval } from "simulation/ai/strategos/naval.js";
 import { Offense } from "simulation/ai/strategos/offense.js";
+import { Recruitment } from "simulation/ai/strategos/recruitment.js";
 import { Research } from "simulation/ai/strategos/research.js";
 import { Strategy } from "simulation/ai/strategos/strategy.js";
 import { Stopwatch, Telemetry } from "simulation/ai/strategos/telemetry.js";
@@ -41,8 +42,9 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.musterIndex = new MusterIndex();
 	this.battleLog = new BattleLog(this.catalog, this.telemetry);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
-	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry), new Economy(this.catalog), new Construction(this.catalog, this.player, this.telemetry),
-		new Research(this.catalog), new Trade(this.catalog, this.telemetry), new Medics(this.catalog, this.telemetry),
+	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry),
+		new Recruitment(this.catalog, this.telemetry), new Economy(), new Construction(this.catalog, this.player, this.telemetry),
+		new Research(this.catalog), new Trade(this.telemetry), new Medics(),
 		new Upgrades(this.catalog, this.telemetry)];
 	this.allocator = new Allocator(this.catalog.codes);
 	this.executor = new Executor(gameState, this.catalog.civ, this.telemetry);

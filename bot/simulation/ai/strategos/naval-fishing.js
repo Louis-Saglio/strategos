@@ -1,41 +1,16 @@
-import { awayFrom, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { gatherRequest, hold, inTier, orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { awayFrom, firstListed, nearest } from "simulation/ai/strategos/geometry.js";
+import { gatherRequest, hold, orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
 
 export class Fishing
 {
-	constructor(catalog)
-	{
-		this.catalog = catalog;
-	}
-
 	requests(world, plan)
 	{
 		if (!world.fish.length)
 			return [];
-		const fishing = plan.naval.fishing;
 		const clearance = plan.naval.fishClearance;
 		const requests = [];
 		const boats = world.fleet.filter(ship => ship.fishing);
-		const foes = world.enemyFighters.concat(world.enemyShips.filter(enemy => enemy.warship));
-		const hostile = position => foes.some(enemy =>
-			squareDistance(enemy.position, position) <= clearance.soldier * clearance.soldier);
-		const waters = world.fish.filter(fish =>
-			!world.batteries.some(structure => squareDistance(structure.position, fish.position) <=
-				(structure.range + clearance.battery) * (structure.range + clearance.battery)) &&
-			!world.enemyStructures.some(structure => squareDistance(structure.position, fish.position) <= clearance.structure * clearance.structure) &&
-			!hostile(fish.position));
-		const slots = waters.reduce((sum, fish) => sum + Math.min(fish.capacity, fishing.perFish), 0);
-		const fishes = name => this.catalog.isFishingBoat(name);
-		const dead = new Set(world.docks.filter(dock => dock.blocked).map(dock => dock.id));
-		const yards = world.trainers.filter(trainer => !dead.has(trainer.id) && trainer.trainable.some(fishes));
-		const building = yards.filter(trainer => trainer.queueLength > 0).length;
-		const yard = yards.find(trainer => trainer.queueLength === 0);
-		if (yard && boats.length + building < Math.min(fishing.maxBoats, slots))
-		{
-			const template = this.catalog.cheapest(yard.trainable, fishes);
-			requests.push(inTier(trainRequest("naval", "fishing-boat", yard.id, template, 1, this.catalog.cost(template),
-				this.catalog.population(template), plan.values.fishing, 1), "production"));
-		}
+		const { foes, hostile, waters } = world.fishingGrounds(clearance);
 		const reserved = new Map();
 		for (const boat of boats)
 		{

@@ -1,3 +1,4 @@
+import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { landRegionNear, seaNear } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
 import { FISH_RADIUS } from "simulation/ai/strategos/world-memory.js";
@@ -49,20 +50,41 @@ function ownShips(gameState, catalog)
 	return fleet.sort((a, b) => a.id - b.id);
 }
 
-export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion)
+function fishingGrounds(liveFish, enemies, clearance)
+{
+	const foes = enemies.enemyFighters.concat(enemies.enemyShips.filter(enemy => enemy.warship));
+	const hostile = position => foes.some(enemy =>
+		squareDistance(enemy.position, position) <= clearance.soldier * clearance.soldier);
+	const waters = liveFish.filter(fish =>
+		!enemies.batteries.some(structure => squareDistance(structure.position, fish.position) <=
+			(structure.range + clearance.battery) * (structure.range + clearance.battery)) &&
+		!enemies.enemyStructures.some(structure => squareDistance(structure.position, fish.position) <= clearance.structure * clearance.structure) &&
+		!hostile(fish.position));
+	return Object.freeze({ "foes": Object.freeze(foes), hostile, "waters": Object.freeze(waters) });
+}
+
+export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion, enemies)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const fleet = ownShips(gameState, catalog);
+	const fish = resourceIndex.liveFish(gameState);
+	const grounds = new Map();
 	return {
 		"now": {
 			"docks": Object.freeze(harbours(gameState, catalog, shoreIndex, homeRegion)),
 			"fleet": Object.freeze(fleet),
 			"ships": Object.freeze(fleet.filter(ship => ship.capacity > 0 || ship.cargo.length)),
 			"fishers": FISHER_WORTH * fleet.filter(ship => ship.fishing && ship.gathering).length,
-			"fish": resourceIndex.liveFish(gameState),
+			"fish": fish,
 			"schools": resourceIndex.schools,
 			"fishRadius": FISH_RADIUS,
 			"shores": shoreIndex.all(gameState),
+			"fishingGrounds": clearance => {
+				const key = [clearance.battery, clearance.structure, clearance.soldier].join(",");
+				if (!grounds.has(key))
+					grounds.set(key, fishingGrounds(fish, enemies(), clearance));
+				return grounds.get(key);
+			},
 			"seaOf": position => accessibility.getAccessValue(position, true),
 			"openWater": (point, sea, reach) => {
 				const size = accessibility.width * accessibility.cellSize;
