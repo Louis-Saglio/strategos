@@ -11,7 +11,7 @@ export class Rescue
 		this.commitments = commitments;
 	}
 
-	castaways(world, priorities)
+	castaways(world, plan)
 	{
 		const requests = [];
 		for (const ship of world.ships)
@@ -24,21 +24,21 @@ export class Rescue
 			if (!shore)
 				continue;
 			if (found.squareDistance > LANDING_RADIUS * LANDING_RADIUS && ship.idle)
-				requests.push(orderRequest("naval", "castaway", ship.id, walkTo(shore.land[0], shore.land[1]), priorities.values.ferry, 1));
+				requests.push(orderRequest("naval", "castaway", ship.id, walkTo(shore.land[0], shore.land[1]), plan.values.ferry, 1));
 			else if (ship.idle)
-				requests.push(unloadAllRequest("naval", "castaway", ship.id, priorities.values.founding, 1));
+				requests.push(unloadAllRequest("naval", "castaway", ship.id, plan.values.founding, 1));
 		}
 		return requests;
 	}
 
-	stranded(world, priorities)
+	stranded(world, plan)
 	{
 		const carrying = world.ships.filter(ship => ship.cargo.length && !this.commitments.holds(ship.id));
 		if (!carrying.length || !world.docks.length)
 			return [];
 		const dock = world.docks[0].position;
-		return carrying.map(ship => unloadAllRequest("naval", "stranded", ship.id, priorities.values.ferry, 1)).concat(carrying
+		return carrying.map(ship => unloadAllRequest("naval", "stranded", ship.id, plan.values.ferry, 1)).concat(carrying
 			.filter(ship => ship.idle && squareDistance(ship.position, dock) > LANDING_RADIUS * LANDING_RADIUS)
-			.map(ship => orderRequest("naval", "stranded", ship.id, walkTo(dock[0], dock[1]), priorities.values.ferry, 1)));
+			.map(ship => orderRequest("naval", "stranded", ship.id, walkTo(dock[0], dock[1]), plan.values.ferry, 1)));
 	}
 }

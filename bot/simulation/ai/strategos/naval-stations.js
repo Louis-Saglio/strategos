@@ -38,7 +38,7 @@ export class Stations
 		return this.anchorages.get(dock.id);
 	}
 
-	requests(world, priorities, issued)
+	requests(world, plan, issued)
 	{
 		const busy = new Set();
 		for (const request of issued)
@@ -82,7 +82,7 @@ export class Stations
 			if (!ship.idle || !station.ordered.due(world.time, ANCHOR_RETRY_MS) ||
 			    squareDistance(ship.position, point) <= ANCHOR_TOLERANCE * ANCHOR_TOLERANCE)
 				continue;
-			requests.push(orderRequest("naval", "station", ship.id, walkTo(point[0], point[1]), priorities.values.ferry, 1));
+			requests.push(orderRequest("naval", "station", ship.id, walkTo(point[0], point[1]), plan.values.ferry, 1));
 		}
 		return requests;
 	}

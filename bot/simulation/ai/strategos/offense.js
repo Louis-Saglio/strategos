@@ -42,17 +42,17 @@ export class Offense
 		this.stormed = new Change();
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
 		const home = world.home;
 		if (!home)
 			return [];
 		if (!world.enemyStructures.length && world.enemyTargets.length)
-			return this.mopUpRequests(world, priorities);
-		const holding = this.holdRequests(world, priorities);
+			return this.mopUpRequests(world, plan);
+		const holding = this.holdRequests(world, plan);
 		const held = new Set(holding.filter(request => request.action.type === "garrison").map(request => request.action.unit));
-		return holding.concat(this.armyRequests(world, priorities, home, held), this.breakerRequests(world, priorities, home),
-			this.strayRequests(world, priorities, home, held));
+		return holding.concat(this.armyRequests(world, plan, assessments, home, held), this.breakerRequests(world, plan, home),
+			this.strayRequests(world, plan, home, held));
 	}
 
 	settle(world, outcomes)
@@ -65,16 +65,16 @@ export class Offense
 		return new Set([].concat(...this.attacks.list.map(operation => operation.members)));
 	}
 
-	strayRequests(world, priorities, home, held)
+	strayRequests(world, plan, home, held)
 	{
 		const enlisted = this.enlisted();
 		return world.fighters
 			.filter(fighter => fighter.region === world.homeRegion && !enlisted.has(fighter.id) && !held.has(fighter.id) &&
 				fighter.state.fighting && !world.ownSide(fighter.position))
-			.map(fighter => this.order("stray", fighter, walkTo(home.position[0], home.position[1]), priorities));
+			.map(fighter => this.order("stray", fighter, walkTo(home.position[0], home.position[1]), plan));
 	}
 
-	mopUpRequests(world, priorities)
+	mopUpRequests(world, plan)
 	{
 		const requests = [];
 		for (const fighter of world.fighters)
@@ -84,18 +84,18 @@ export class Offense
 			const best = nearest(world.enemyTargets, fighter.position, firstListed, target => target.region === fighter.region).item;
 			if (best)
 				requests.push(this.order("mop-up", fighter, attackWalkTo(best.position[0], best.position[1],
-					best.unit ? UNIT_CLASSES : TARGET_CLASSES), priorities));
+					best.unit ? UNIT_CLASSES : TARGET_CLASSES), plan));
 		}
 		if (requests.length && this.mopping.to(true))
 			this.telemetry.line("ATTACK", world.time, { "mode": "mopup", "units": requests.length, "left": world.enemyTargets.length });
 		return requests;
 	}
 
-	beachhead(world, priorities, group, region, reserve)
+	beachhead(world, plan, group, region, reserve)
 	{
-		const plan = priorities.offense.beachhead;
+		const beachhead = plan.offense.beachhead;
 		const defenders = world.enemyFighters.filter(enemy => world.regionOf(enemy.position) === region).length;
-		const holding = group.length < plan.superiority * defenders && reserve.length >= plan.reserve;
+		const holding = group.length < beachhead.superiority * defenders && reserve.length >= beachhead.reserve;
 		if (holding !== (this.held === region))
 		{
 			this.held = holding ? region : null;
@@ -105,7 +105,7 @@ export class Offense
 		return holding;
 	}
 
-	stormRequests(world, priorities, group, region)
+	stormRequests(world, plan, group, region)
 	{
 		const centre = centroid(group);
 		const target = world.enemyStructures.filter(structure => structure.region === region)
@@ -118,11 +118,11 @@ export class Offense
 		if (this.stormed.to(target.id))
 			this.telemetry.line("ATTACK", world.time, { "mode": "storm", "target": target.id, "centre": target.centre, "army": group.length,
 				"enemySoldiers": world.enemySoldiers });
-		return group.map(member => member.target === target.id ? this.order("storm", member, hold(), priorities) :
-			this.order("storm", member, attack(target.id), priorities));
+		return group.map(member => member.target === target.id ? this.order("storm", member, hold(), plan) :
+			this.order("storm", member, attack(target.id), plan));
 	}
 
-	holdRequests(world, priorities)
+	holdRequests(world, plan)
 	{
 		const requests = [];
 		const taken = new Set();
@@ -158,7 +158,7 @@ export class Offense
 				for (const member of chosen)
 				{
 					taken.add(member.id);
-					requests.push(this.order("occupy", member, garrisonIn(structure.id), priorities));
+					requests.push(this.order("occupy", member, garrisonIn(structure.id), plan));
 				}
 				this.telemetry.line("ATTACK", world.time, { "mode": "hold", "structure": structure.id, "units": chosen.length });
 				continue;
@@ -166,16 +166,16 @@ export class Offense
 			if (pending.length)
 				continue;
 			this.telemetry.line("ATTACK", world.time, { "mode": "raze", "structure": structure.id });
-			requests.push(deleteHolderRequest("offense", "raze", structure.id, priorities.values.offense, 1));
+			requests.push(deleteHolderRequest("offense", "raze", structure.id, plan.values.offense, 1));
 		}
 		return requests;
 	}
 
-	breakerRequests(world, priorities, home)
+	breakerRequests(world, plan, home)
 	{
 		const requests = [];
-		const plan = priorities.offense.breakers;
-		const wanted = Math.min(plan.max, Math.floor(world.fighters.length / plan.perSoldiers));
+		const breakers = plan.offense.breakers;
+		const wanted = Math.min(breakers.max, Math.floor(world.fighters.length / breakers.perSoldiers));
 		const trains = trainer => trainer.trainable.some(name => this.catalog.isBreaker(name));
 		const trainer = world.trainers.find(candidate => candidate.queueLength === 0 && trains(candidate));
 		if (trainer && !world.trainers.some(candidate => candidate.queueLength > 0 && trains(candidate)) && world.breakers.length < wanted)
@@ -183,7 +183,7 @@ export class Offense
 			const template = trainer.trainable.filter(name => this.catalog.isBreaker(name))
 				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
 			requests.push(reserving(trainRequest("offense", "breaker", trainer.id, template, 1, this.catalog.cost(template),
-				this.catalog.population(template), priorities.values.support, 1)));
+				this.catalog.population(template), plan.values.support, 1)));
 		}
 		const followed = this.attacks.list.find(operation => !operation.overseas);
 		if (!followed)
@@ -197,17 +197,17 @@ export class Offense
 				action = walkTo(followed.rally[0], followed.rally[1]);
 			else if (followed.state === "return" && !breaker.state.moving)
 				action = walkTo(home.position[0], home.position[1]);
-			requests.push(this.order("siege", breaker, action, priorities));
+			requests.push(this.order("siege", breaker, action, plan));
 		}
 		return requests;
 	}
 
-	armyRequests(world, priorities, home, held)
+	armyRequests(world, plan, assessments, home, held)
 	{
 		const out = this.attacks.list.slice();
 		if (!out.length)
-			return this.launch(world, priorities, home);
-		return [].concat(...out.map(operation => this.advance(world, priorities, operation, home, held)));
+			return this.launch(world, plan, assessments, home);
+		return [].concat(...out.map(operation => this.advance(world, plan, assessments, operation, home, held)));
 	}
 
 	present(world, operation)
@@ -216,7 +216,7 @@ export class Offense
 		return world.fighters.filter(fighter => members.has(fighter.id));
 	}
 
-	advance(world, priorities, operation, home, held)
+	advance(world, plan, assessments, operation, home, held)
 	{
 		if (operation.overseas)
 		{
@@ -230,11 +230,11 @@ export class Offense
 		}
 		let members = this.present(world, operation);
 		operation.members = members.map(fighter => fighter.id);
-		if (operation.state === "attack" && !operation.overseas && this.reinforce(world, priorities, operation, members, home))
+		if (operation.state === "attack" && !operation.overseas && this.reinforce(world, plan, assessments, operation, members, home))
 			members = this.present(world, operation);
 		home = { "position": operation.base };
 		const free = members.filter(member => !held.has(member.id) && !member.state.garrisoning);
-		const reason = operation.state !== "return" && this.retreatReason(world, priorities, operation, free, home);
+		const reason = operation.state !== "return" && this.retreatReason(world, plan, assessments, operation, free, home);
 		if (reason)
 			this.move(world, operation, "return", Object.assign({
 				"alive": members.length, "launched": operation.launchSize, "reason": reason, "threats": world.threats.length
@@ -242,25 +242,25 @@ export class Offense
 				"defenders": this.adverse.defenders, "coming": this.adverse.coming, "cost": Math.round(this.adverse.cost), "gain": Math.round(this.adverse.gain)
 			} : {}));
 		if (operation.state === "rally")
-			return this.rallyRequests(world, priorities, operation, free);
+			return this.rallyRequests(world, plan, operation, free);
 		if (operation.state === "attack")
-			return this.attackRequests(world, priorities, operation, free, home);
-		return this.returnRequests(world, priorities, operation, free, home);
+			return this.attackRequests(world, plan, operation, free, home);
+		return this.returnRequests(world, plan, operation, free, home);
 	}
 
-	reinforce(world, priorities, operation, members, home)
+	reinforce(world, plan, assessments, operation, members, home)
 	{
-		const plan = priorities.offense.reinforce;
-		if (!priorities.guard.holds || !members.length || !world.enemyStructures.some(structure => structure.id === operation.objective.id))
+		const reinforce = plan.offense.reinforce;
+		if (!assessments.guard.holds || !members.length || !world.enemyStructures.some(structure => structure.id === operation.objective.id))
 			return false;
 		const enlisted = this.enlisted();
 		const joiners = world.fighters.filter(fighter => fighter.region === world.homeRegion && !enlisted.has(fighter.id) &&
-			!priorities.guard.ids.has(fighter.id) && !fighter.state.fighting);
-		if (joiners.length < plan.min)
+			!assessments.guard.ids.has(fighter.id) && !fighter.state.fighting);
+		if (joiners.length < reinforce.min)
 			return false;
 		const whole = members.concat(joiners);
-		const outlook = this.worth(world, priorities, whole, operation.objective, home.position, this.forgone(world, joiners),
-			this.superiority(world, priorities, whole), operation.resistance);
+		const outlook = this.worth(world, plan, whole, operation.objective, home.position, this.forgone(world, joiners),
+			this.superiority(world, plan, whole), operation.resistance);
 		if (!outlook.worth)
 			return false;
 		operation.members = operation.members.concat(joiners.map(fighter => fighter.id));
@@ -305,11 +305,11 @@ export class Offense
 		return captureOutlook(members, Object.assign({}, expected, { "fire": this.coverFire(world, expected) }));
 	}
 
-	feasible(world, priorities, members, target, margin, seen)
+	feasible(world, plan, members, target, margin, seen)
 	{
 		if (!target.points)
 			return false;
-		if (target.centre && world.breakers.length >= priorities.offense.breakers.launch)
+		if (target.centre && world.breakers.length >= plan.offense.breakers.launch)
 			return true;
 		return this.outlookOf(world, members, target, seen).reach >= margin * target.points;
 	}
@@ -319,28 +319,28 @@ export class Offense
 		return members.reduce((sum, member) => sum + this.catalog.costSum(member.template), 0);
 	}
 
-	prize(world, priorities, members, target, seen)
+	prize(world, plan, members, target, seen)
 	{
-		if (target.centre && world.breakers.length >= priorities.offense.breakers.launch)
+		if (target.centre && world.breakers.length >= plan.offense.breakers.launch)
 			return target.value;
 		const net = this.outlookOf(world, members, target, seen).power - this.expected(target, seen).regen;
 		return net > 0 ? target.value * Math.min(1, PRIZE_HORIZON_S * net / Math.max(1, target.points)) : 0;
 	}
 
-	plan(priorities, reach, massed)
+	terms(plan, reach, massed)
 	{
-		const exchange = priorities.offense.exchange;
+		const exchange = plan.offense.exchange;
 		return { "reach": reach, "response": exchange.response, "reaction": exchange.reaction, "massed": massed,
 			"horizonS": massed ? exchange.dominance.horizonS : undefined };
 	}
 
-	attrition(world, priorities)
+	attrition(world, plan)
 	{
-		const plan = priorities.offense.exchange.attrition;
+		const attrition = plan.offense.exchange.attrition;
 		let gathering = 0;
 		for (const code of world.codes)
 			gathering += world.gatherers[code];
-		return Math.min(plan.max, Math.max(plan.min, world.enemyGatherers / Math.max(1, gathering)));
+		return Math.min(attrition.max, Math.max(attrition.min, world.enemyGatherers / Math.max(1, gathering)));
 	}
 
 	gatherRate(worker)
@@ -372,30 +372,30 @@ export class Offense
 		return { "income": income, "speed": Math.max(1, speed) };
 	}
 
-	superiority(world, priorities, members)
+	superiority(world, plan, members)
 	{
 		const whole = prospect(this.catalog, members, centroid(members), world.enemyFighters, [],
-			Object.assign(this.plan(priorities, Infinity, true), { "hidden": world.enemyHidden, "handicap": priorities.offense.exchange.handicap }));
+			Object.assign(this.terms(plan, Infinity, true), { "hidden": world.enemyHidden, "handicap": plan.offense.exchange.handicap }));
 		return { "cost": whole.cost, "gain": whole.gain, "opposing": whole.opposing, "ratio": whole.cost > 0 ? whole.gain / whole.cost : Infinity };
 	}
 
-	worth(world, priorities, members, target, from, forgone, field, seen)
+	worth(world, plan, members, target, from, forgone, field, seen)
 	{
-		const exchange = priorities.offense.exchange;
+		const exchange = plan.offense.exchange;
 		const distance = distanceBetween(target.position, from);
 		const walk = distance / forgone.speed;
 		const outlook = prospect(this.catalog, members, target.position, world.enemyFighters, world.enemyStructures,
-			Object.assign(this.plan(priorities, exchange.reach.launch + distance),
+			Object.assign(this.terms(plan, exchange.reach.launch + distance),
 				{ "prey": world.enemyCivilians, "preyReach": exchange.reach.launch, "lead": walk, "handicap": exchange.handicap,
 					"muster": world.enemyMuster }));
-		outlook.prize = this.prize(world, priorities, members, target, seen);
+		outlook.prize = this.prize(world, plan, members, target, seen);
 		outlook.trip = forgone.income * 2 * walk;
 		outlook.army = this.armyValue(members);
-		outlook.attrition = this.attrition(world, priorities);
+		outlook.attrition = this.attrition(world, plan);
 		outlook.field = field;
-		outlook.dominant = field.ratio >= priorities.margin * outlook.attrition;
+		outlook.dominant = field.ratio >= plan.margin * outlook.attrition;
 		outlook.worth = outlook.dominant && outlook.cost <= exchange.maxCost * outlook.army ||
-			outlook.gain + outlook.prize >= priorities.margin * outlook.attrition * (outlook.cost + outlook.trip);
+			outlook.gain + outlook.prize >= plan.margin * outlook.attrition * (outlook.cost + outlook.trip);
 		return outlook;
 	}
 
@@ -412,25 +412,25 @@ export class Offense
 		};
 	}
 
-	outmatched(world, priorities, operation, members)
+	outmatched(world, plan, operation, members)
 	{
 		if (!members.length)
 			return null;
-		const exchange = priorities.offense.exchange;
+		const exchange = plan.offense.exchange;
 		const front = members.filter(member => member.state.fighting);
 		const outlook = prospect(this.catalog, members, centroid(front.length >= FRONT_MIN ? front : members), world.enemyFighters,
-			world.enemyStructures, Object.assign(this.plan(priorities, REACH_RADIUS), { "prey": world.enemyCivilians }));
-		const prize = operation.assaulting ? this.prize(world, priorities, members, operation.objective, operation.resistance) : 0;
+			world.enemyStructures, Object.assign(this.terms(plan, REACH_RADIUS), { "prey": world.enemyCivilians }));
+		const prize = operation.assaulting ? this.prize(world, plan, members, operation.objective, operation.resistance) : 0;
 		return outlook.cost >= exchange.minCost * this.armyValue(members) &&
-			outlook.gain + prize < this.attrition(world, priorities) * outlook.cost / priorities.margin ? outlook : null;
+			outlook.gain + prize < this.attrition(world, plan) * outlook.cost / plan.margin ? outlook : null;
 	}
 
-	chooseTarget(world, priorities, members, from, region, seen, gated)
+	chooseTarget(world, plan, members, from, region, seen, gated)
 	{
 		const ranked = [];
 		for (const target of world.enemyStructures)
 		{
-			if (target.region !== region || !this.feasible(world, priorities, members, target, priorities.margin, seen))
+			if (target.region !== region || !this.feasible(world, plan, members, target, plan.margin, seen))
 				continue;
 			const weight = target.centre ? TARGET_WEIGHTS.centre : target.fire.arrows ? TARGET_WEIGHTS.defensive : TARGET_WEIGHTS.other;
 			const score = weight * target.value / (1 + distanceBetween(target.position, from) / TARGET_DISTANCE_SCALE);
@@ -441,11 +441,11 @@ export class Offense
 		if (!gated)
 			return ranked.length ? ranked[0].target : null;
 		const forgone = this.forgone(world, members);
-		const field = this.superiority(world, priorities, members);
+		const field = this.superiority(world, plan, members);
 		this.refused = null;
-		for (const { target } of ranked.slice(0, priorities.offense.targetsTried))
+		for (const { target } of ranked.slice(0, plan.offense.targetsTried))
 		{
-			const outlook = this.worth(world, priorities, members, target, from, forgone, field, seen);
+			const outlook = this.worth(world, plan, members, target, from, forgone, field, seen);
 			if (outlook.worth)
 			{
 				this.outlook = outlook;
@@ -456,17 +456,16 @@ export class Offense
 		return null;
 	}
 
-	launch(world, priorities, home)
+	launch(world, plan, assessments, home)
 	{
-		const offense = priorities.offense;
 		this.refused = null;
-		if (!priorities.guard.holds || !world.enemyTargets.length)
+		if (!assessments.guard.holds || !world.enemyTargets.length)
 			return [];
 		const enlisted = this.enlisted();
 		const groups = new Map();
 		for (const fighter of world.fighters)
 		{
-			if (fighter.region === world.homeRegion && fighter.state.fighting || priorities.guard.ids.has(fighter.id) || enlisted.has(fighter.id))
+			if (fighter.region === world.homeRegion && fighter.state.fighting || assessments.guard.ids.has(fighter.id) || enlisted.has(fighter.id))
 				continue;
 			if (!groups.has(fighter.region))
 				groups.set(fighter.region, []);
@@ -482,12 +481,12 @@ export class Offense
 		for (const region of regions)
 		{
 			const group = groups.get(region);
-			if (group.length < offense.minArmy)
+			if (group.length < plan.minArmy)
 				continue;
-			if (region !== world.homeRegion && this.beachhead(world, priorities, group, region, groups.get(world.homeRegion) || []))
+			if (region !== world.homeRegion && this.beachhead(world, plan, group, region, groups.get(world.homeRegion) || []))
 				continue;
 			const origin = region === world.homeRegion ? home.position : centroid(group);
-			const found = this.chooseTarget(world, priorities, group, origin, region, this.resistanceMet, region === world.homeRegion);
+			const found = this.chooseTarget(world, plan, group, origin, region, this.resistanceMet, region === world.homeRegion);
 			if (!found && !storm && region !== world.homeRegion && !world.breakers.length && group.length >= STORM_MIN_ARMY &&
 			    group.length >= STORM_SUPERIORITY * world.enemySoldiers)
 				storm = { group, region };
@@ -503,7 +502,7 @@ export class Offense
 			this.telemetry.line("ATTACK", world.time, Object.assign({ "mode": "wait", "army": this.refused.army, "target": this.refused.target,
 				"enemySoldiers": world.enemySoldiers }, this.described(this.refused.outlook)));
 		if (!target)
-			return storm ? this.stormRequests(world, priorities, storm.group, storm.region) : [];
+			return storm ? this.stormRequests(world, plan, storm.group, storm.region) : [];
 		this.attacked.add(target.id);
 		const step = Math.min(RALLY_MAX_DISTANCE, RALLY_FRACTION * (distanceBetween(target.position, base) || 1));
 		const operation = Object.assign(this.attacks.open("attack"), {
@@ -514,32 +513,32 @@ export class Offense
 		this.move(world, operation, "rally", Object.assign({
 			"target": target.id, "value": target.value, "centre": target.centre, "enemySoldiers": world.enemySoldiers
 		}, operation.overseas ? {} : this.described(this.outlook)));
-		return this.rallyRequests(world, priorities, operation, available);
+		return this.rallyRequests(world, plan, operation, available);
 	}
 
-	retreatReason(world, priorities, operation, members, home)
+	retreatReason(world, plan, assessments, operation, members, home)
 	{
-		if (!operation.overseas && !priorities.guard.holds && priorities.guard.value >= priorities.offense.recall * this.armyValue(members))
+		if (!operation.overseas && !assessments.guard.holds && assessments.guard.value >= plan.offense.recall * this.armyValue(members))
 			return "alarm";
 		if (!operation.overseas && members.length < operation.launchSize * RETREAT_FRACTION)
 			return "losses";
 		if (!operation.overseas && operation.state === "attack" && world.time - operation.since >= COMMIT_MS)
 		{
-			this.adverse = this.outmatched(world, priorities, operation, members);
+			this.adverse = this.outmatched(world, plan, operation, members);
 			if (this.adverse)
 				return "outmatched";
 		}
 		if (operation.state === "attack" && !world.enemyStructures.some(structure => structure.id === operation.objective.id) &&
-			!this.retarget(world, priorities, operation, members))
+			!this.retarget(world, plan, operation, members))
 			return "done";
 		return null;
 	}
 
-	retarget(world, priorities, operation, members)
+	retarget(world, plan, operation, members)
 	{
 		if (!members.length)
 			return false;
-		const target = this.chooseTarget(world, priorities, members, centroid(members), operation.region, operation.resistance);
+		const target = this.chooseTarget(world, plan, members, centroid(members), operation.region, operation.resistance);
 		if (!target)
 			return false;
 		operation.objective = target;
@@ -560,17 +559,17 @@ export class Offense
 		});
 	}
 
-	order(purpose, member, action, priorities)
+	order(purpose, member, action, plan)
 	{
-		return orderRequest("offense", purpose, member.id, action, priorities.values.offense, 1);
+		return orderRequest("offense", purpose, member.id, action, plan.values.offense, 1);
 	}
 
-	member(operation, purpose, fighter, engaged, order, priorities)
+	member(operation, purpose, fighter, engaged, order, plan)
 	{
-		return this.attacks.serving(memberRequest("offense", purpose, fighter.id, engaged, order, priorities.values.offense, 1), operation);
+		return this.attacks.serving(memberRequest("offense", purpose, fighter.id, engaged, order, plan.values.offense, 1), operation);
 	}
 
-	rallyRequests(world, priorities, operation, members)
+	rallyRequests(world, plan, operation, members)
 	{
 		const limit = RALLY_RADIUS * RALLY_RADIUS;
 		const arrived = members.filter(member => squareDistance(member.position, operation.rally) <= limit).length;
@@ -578,10 +577,10 @@ export class Offense
 		{
 			this.move(world, operation, "attack", { "arrived": arrived });
 			operation.resistance = { "id": operation.objective.id, "regen": 0, "arrows": 0 };
-			return this.attackRequests(world, priorities, operation, members, { "position": operation.base });
+			return this.attackRequests(world, plan, operation, members, { "position": operation.base });
 		}
 		return members.map(member => this.member(operation, "rally", member, squareDistance(member.position, operation.rally) <= limit,
-			walkTo(operation.rally[0], operation.rally[1]), priorities));
+			walkTo(operation.rally[0], operation.rally[1]), plan));
 	}
 
 	exposure(world, operation, position)
@@ -597,7 +596,7 @@ export class Offense
 		return null;
 	}
 
-	attackRequests(world, priorities, operation, members, home)
+	attackRequests(world, plan, operation, members, home)
 	{
 		const limit = ASSAULT_RADIUS * ASSAULT_RADIUS;
 		const defenders = new Set(world.enemyFighters
@@ -609,9 +608,9 @@ export class Offense
 			operation.resistance.regen = Math.max(operation.resistance.regen, target.regen);
 			operation.resistance.arrows = Math.max(operation.resistance.arrows, target.fire.arrows);
 		}
-		let capturable = this.feasible(world, priorities, members, target,
-			this.threshold(operation, priorities.margin, 1 / priorities.margin), operation.resistance);
-		if (!capturable && this.retarget(world, priorities, operation, members))
+		let capturable = this.feasible(world, plan, members, target,
+			this.threshold(operation, plan.margin, 1 / plan.margin), operation.resistance);
+		if (!capturable && this.retarget(world, plan, operation, members))
 		{
 			target = operation.objective;
 			capturable = true;
@@ -627,7 +626,7 @@ export class Offense
 		{
 			this.move(world, operation, "return",
 				Object.assign(details, { "alive": members.length, "launched": operation.launchSize, "reason": "uncapturable" }));
-			return this.returnRequests(world, priorities, operation, members, home);
+			return this.returnRequests(world, plan, operation, members, home);
 		}
 		if (assault !== operation.assaulting)
 		{
@@ -641,20 +640,20 @@ export class Offense
 				const engaged = member.target === target.id || member.state.fighting && fighting.has(member.target);
 				const near = squareDistance(member.position, target.position) <= limit;
 				return this.member(operation, "assault", member, engaged || !near && member.state.moving,
-					near ? capture(target.id) : attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), priorities);
+					near ? capture(target.id) : attackWalkTo(target.position[0], target.position[1], UNIT_CLASSES), plan);
 			});
 		}
 		return members.map(member => {
 			if (this.exposure(world, operation, member.position))
 				return this.member(operation, "pull-back", member, member.state.walking,
-					walkTo(operation.rally[0], operation.rally[1]), priorities);
+					walkTo(operation.rally[0], operation.rally[1]), plan);
 			const capturing = member.target === target.id;
 			return this.member(operation, "fight", member, !capturing && member.state.moving,
-				attackWalkTo(target.position[0], target.position[1], capturing ? UNIT_CLASSES : TARGET_CLASSES), priorities);
+				attackWalkTo(target.position[0], target.position[1], capturing ? UNIT_CLASSES : TARGET_CLASSES), plan);
 		});
 	}
 
-	returnRequests(world, priorities, operation, members, home)
+	returnRequests(world, plan, operation, members, home)
 	{
 		const limit = HOME_RADIUS * HOME_RADIUS;
 		const away = members.filter(member => squareDistance(member.position, home.position) > limit);
@@ -666,6 +665,6 @@ export class Offense
 			return [];
 		}
 		return away.map(member => this.member(operation, "return", member, member.state.walking,
-			walkTo(home.position[0], home.position[1]), priorities));
+			walkTo(home.position[0], home.position[1]), plan));
 	}
 }

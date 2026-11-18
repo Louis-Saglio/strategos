@@ -37,7 +37,7 @@ export class Defense
 		this.outnumbered = new Hysteresis(false);
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
 		this.foes = world.wild.length ? world.enemyFighters.concat(world.wild) : world.enemyFighters;
 		this.hostiles = world.threats.filter(threat => world.ownSide(threat.position)).concat(world.wild, this.approaching(world));
@@ -47,15 +47,15 @@ export class Defense
 		{
 			this.outnumbered.on = false;
 			this.engaged.on = false;
-			return world.time - this.lastThreatTime >= RELEASE_DELAY_MS ? this.releaseRequests(world, priorities) : [];
+			return world.time - this.lastThreatTime >= RELEASE_DELAY_MS ? this.releaseRequests(world, plan) : [];
 		}
 		const force = world.fighters.length + world.garrisonedSoldiers;
 		const ratio = this.hostiles.length / Math.max(1, force);
 		this.outnumbered.atLeast(ratio, OUTNUMBERED_ENTER, OUTNUMBERED_EXIT);
 		const free = new Map(world.holders.map(holder => [holder.id, holder.free]));
-		const requests = this.engageRequests(world, priorities, free)
-			.concat(this.shelterRequests(world, priorities, free))
-			.concat(this.unloadRequests(world, priorities));
+		const requests = this.engageRequests(world, plan, assessments, free)
+			.concat(this.shelterRequests(world, plan, free))
+			.concat(this.unloadRequests(world, plan));
 		if (this.reported.attempt(world.time, REPORT_PERIOD_MS))
 			this.telemetry.line("DEF", world.time, {
 				"threats": world.threats.length,
@@ -65,9 +65,9 @@ export class Defense
 				"outnumbered": this.outnumbered.on,
 				"engaged": this.engaged.on,
 				"ratio": Math.round(Math.min(this.ratio, 99) * 100) / 100,
-				"hostile": priorities.guard.group.length,
+				"hostile": assessments.guard.group.length,
 				"guard": this.guarding,
-				"holds": priorities.guard.holds,
+				"holds": assessments.guard.holds,
 				"engage": requests.filter(request => request.action.type === "attack").length,
 				"shelter": requests.filter(request => request.action.type === "garrison").length
 			});
@@ -112,14 +112,14 @@ export class Defense
 			this.hostiles.some(threat => squareDistance(threat.position, enemy.position) <= limit));
 	}
 
-	order(purpose, fighter, action, priorities, urgency)
+	order(purpose, fighter, action, plan, urgency)
 	{
-		return orderRequest("defense", purpose, fighter.id, action, priorities.values.defend, urgency || 1);
+		return orderRequest("defense", purpose, fighter.id, action, plan.values.defend, urgency || 1);
 	}
 
-	engageRequests(world, priorities, free)
+	engageRequests(world, plan, assessments, free)
 	{
-		const guard = priorities.guard;
+		const guard = assessments.guard;
 		const group = guard.group.length ? guard.group : this.hostileGroup(world);
 		const centre = guard.group.length ? guard.centre : centroid(group.length ? group : this.hostiles);
 		const near = world.fighters
@@ -130,16 +130,16 @@ export class Defense
 		if (guard.group.length)
 		{
 			this.ratio = guard.ratio;
-			return this.engaged.atLeast(this.ratio, priorities.guardPlan.engage.enter, priorities.guardPlan.engage.exit) ?
-				this.fight(world, priorities, free, guard.needed) : this.fallBack(world, priorities, free, near, centre);
+			return this.engaged.atLeast(this.ratio, plan.defense.engage.enter, plan.defense.engage.exit) ?
+				this.fight(world, plan, free, guard.needed) : this.fallBack(world, plan, free, near, centre);
 		}
 		const cover = coveringHolders(world.holders, centre, COVER_MARGIN);
 		this.ratio = balance(this.catalog, near.map(entry => entry.fighter), group, cover);
-		return this.engaged.atLeast(this.ratio, priorities.margin, 1 / priorities.margin) ?
-			this.respond(world, priorities, free, near, group, cover) : this.fallBack(world, priorities, free, near, centre);
+		return this.engaged.atLeast(this.ratio, plan.margin, 1 / plan.margin) ?
+			this.respond(world, plan, free, near, group, cover) : this.fallBack(world, plan, free, near, centre);
 	}
 
-	respond(world, priorities, free, near, group, cover)
+	respond(world, plan, free, near, group, cover)
 	{
 		const ordered = near.filter(entry => entry.fighter.state.fighting).concat(near.filter(entry => !entry.fighter.state.fighting))
 			.map(entry => entry.fighter);
@@ -156,10 +156,10 @@ export class Defense
 					short = middle;
 			}
 		}
-		return this.fight(world, priorities, free, ordered.slice(0, enough));
+		return this.fight(world, plan, free, ordered.slice(0, enough));
 	}
 
-	fight(world, priorities, free, units)
+	fight(world, plan, free, units)
 	{
 		const limit = BATTLE_RADIUS * BATTLE_RADIUS;
 		const enemies = this.foes.filter(enemy => world.ownSide(enemy.position) &&
@@ -189,12 +189,12 @@ export class Defense
 				const { threat } = this.nearestThreat(world, unit.position);
 				action = unit.state.fighting && allowed.has(unit.target) || !threat ? hold() : attack(threat.id);
 			}
-			requests.push(this.order(retreating.has(unit.id) ? "retreat" : "engage", unit, action, priorities));
+			requests.push(this.order(retreating.has(unit.id) ? "retreat" : "engage", unit, action, plan));
 		}
 		return requests;
 	}
 
-	fallBack(world, priorities, free, near, centre)
+	fallBack(world, plan, free, near, centre)
 	{
 		const requests = [];
 		const cover = this.nearestCover(world, centre) || world.home;
@@ -213,7 +213,7 @@ export class Defense
 					candidate => candidate.arrows && this.nearestThreat(world, candidate.position).distance <= COVER_RADIUS, ENGAGE_RADIUS);
 				if (holder)
 				{
-					requests.push(this.garrison("man", fighter, holder, free, priorities.values.defend, 1));
+					requests.push(this.garrison("man", fighter, holder, free, plan.values.defend, 1));
 					continue;
 				}
 			}
@@ -226,12 +226,12 @@ export class Defense
 			}
 			if (squareDistance(fighter.position, slot) <= SLOT_TOLERANCE * SLOT_TOLERANCE || fighter.state.walking)
 			{
-				requests.push(this.order("line", fighter, hold(), priorities));
+				requests.push(this.order("line", fighter, hold(), plan));
 				continue;
 			}
-			requests.push(this.order("line", fighter, walkTo(slot[0], slot[1]), priorities));
+			requests.push(this.order("line", fighter, walkTo(slot[0], slot[1]), plan));
 		}
-		return requests.concat(this.fight(world, priorities, free, defenders));
+		return requests.concat(this.fight(world, plan, free, defenders));
 	}
 
 	battleLine(cover, centre, fighters)
@@ -263,7 +263,7 @@ export class Defense
 		return nearest(world.holders, position, lowerId, holder => holder.arrows).item;
 	}
 
-	shelterRequests(world, priorities, free)
+	shelterRequests(world, plan, free)
 	{
 		const requests = [];
 		const unarmed = holder => !holder.arrows;
@@ -278,12 +278,12 @@ export class Defense
 			const holder = this.outnumbered.on && this.nearestHolder(world, worker, free, unarmed, SHELTER_RADIUS) ||
 				this.nearestHolder(world, worker, free, any, SHELTER_RADIUS);
 			if (holder)
-				requests.push(this.garrison("shelter", worker, holder, free, priorities.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
+				requests.push(this.garrison("shelter", worker, holder, free, plan.values.shelter, 1 + (DANGER_RADIUS - distance) / DANGER_RADIUS));
 		}
 		return requests;
 	}
 
-	unloadRequests(world, priorities)
+	unloadRequests(world, plan)
 	{
 		const requests = [];
 		for (const holder of world.holders)
@@ -293,15 +293,15 @@ export class Defense
 			const safe = this.nearestThreat(world, holder.position).distance > SAFE_RADIUS;
 			const units = holder.units.filter(id => safe || !this.outnumbered.on && holder.soldiers.includes(id) && !(holder.heal > 0 && holder.hurt.includes(id)));
 			if (units.length)
-				requests.push(unloadRequest("defense", "unload", holder.id, units, priorities.values.defend, 1));
+				requests.push(unloadRequest("defense", "unload", holder.id, units, plan.values.defend, 1));
 		}
 		return requests;
 	}
 
-	releaseRequests(world, priorities)
+	releaseRequests(world, plan)
 	{
 		return world.holders
 			.filter(holder => holder.garrisoned > 0 && !holder.forward)
-			.map(holder => unloadAllRequest("defense", "release", holder.id, priorities.values.shelter, 1));
+			.map(holder => unloadAllRequest("defense", "release", holder.id, plan.values.shelter, 1));
 	}
 }

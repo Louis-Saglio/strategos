@@ -19,17 +19,17 @@ export class Economy
 		this.heroOrdered = new Retry();
 	}
 
-	requests(world, priorities)
+	requests(world, plan, assessments)
 	{
 		const assigned = Object.assign({}, world.gatherers);
 		const reserved = new Map();
-		return this.heroRequests(world, priorities).concat(this.trainingRequests(world, priorities))
-			.concat(this.treasureRequests(world, priorities))
-			.concat(this.gatherRequests(world, priorities, assigned, reserved))
-			.concat(this.rebalanceRequests(world, priorities, assigned, reserved));
+		return this.heroRequests(world, plan).concat(this.trainingRequests(world, plan, assessments))
+			.concat(this.treasureRequests(world, plan))
+			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved))
+			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved));
 	}
 
-	heroRequests(world, priorities)
+	heroRequests(world, plan)
 	{
 		if (world.heroes.length || !this.heroOrdered.due(world.time, HERO_RETRY_MS))
 			return [];
@@ -46,7 +46,7 @@ export class Economy
 			if (!stocked && best.worth < HERO_EDGE * world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0))
 				return [];
 			return [reserving(trainRequest("economy", "hero", trainer.id, best.name, 1, cost, this.catalog.population(best.name),
-				priorities.values.research, 1))];
+				plan.values.research, 1))];
 		}
 		return [];
 	}
@@ -57,11 +57,11 @@ export class Economy
 			this.heroOrdered.record(world.time);
 	}
 
-	trainingRequests(world, priorities)
+	trainingRequests(world, plan, assessments)
 	{
 		const requests = [];
 		const civilians = world.workers.filter(worker => !worker.soldier).length;
-		const soldiersOnly = civilians >= priorities.military.civilianTarget || priorities.military.raided;
+		const soldiersOnly = civilians >= assessments.posture.civilianTarget || assessments.posture.raided;
 		let context = null;
 		for (const trainer of world.trainers)
 		{
@@ -72,7 +72,7 @@ export class Economy
 			if (soldiersOnly && !soldiers.length)
 				continue;
 			if (!civilian && soldiers.length && !context)
-				context = this.unitContext(world, priorities);
+				context = this.unitContext(world, assessments);
 			const labour = civilian || !soldiers.length;
 			const template = labour ? this.cheapestWorker(trainer.trainable) : this.bestSoldier(world, soldiers, context);
 			if (!template)
@@ -84,7 +84,7 @@ export class Economy
 				cost[code] = unitCost[code] * count;
 			const tier = trainer.queueLength === 0 ? "production" : "investment";
 			requests.push(inTier(trainRequest("economy", labour ? "workers" : "soldiers", trainer.id, template, count, cost,
-				this.catalog.population(template) * count, priorities.values.trainWorker, 1), tier));
+				this.catalog.population(template) * count, plan.values.trainWorker, 1), tier));
 		}
 		return requests;
 	}
@@ -103,7 +103,7 @@ export class Economy
 		return Math.max(1, affordable > 0 ? Math.min(count, affordable) : count);
 	}
 
-	unitContext(world, priorities)
+	unitContext(world, assessments)
 	{
 		const counts = new Map();
 		const roles = new Map();
@@ -118,7 +118,7 @@ export class Economy
 		return {
 			"enemy": enemyProfile(world, this.catalog),
 			"prices": resourcePrices(world),
-			"pressure": priorities.military.plentiful ? 1 : populationPressure(world),
+			"pressure": assessments.posture.plentiful ? 1 : populationPressure(world),
 			counts,
 			roles,
 			armySize
@@ -159,7 +159,7 @@ export class Economy
 		return best;
 	}
 
-	treasureRequests(world, priorities)
+	treasureRequests(world, plan)
 	{
 		const collected = new Set();
 		for (const worker of world.workers)
@@ -176,12 +176,12 @@ export class Economy
 			if (!best)
 				continue;
 			taken.add(best.id);
-			requests.push(orderRequest("economy", "treasure", best.id, collect(treasure.id), priorities.values.treasure, 1));
+			requests.push(orderRequest("economy", "treasure", best.id, collect(treasure.id), plan.values.treasure, 1));
 		}
 		return requests;
 	}
 
-	gatherRequests(world, priorities, assigned, reserved)
+	gatherRequests(world, plan, assessments, assigned, reserved)
 	{
 		const requests = [];
 		const idle = world.workers.filter(worker => worker.idle);
@@ -192,9 +192,9 @@ export class Economy
 		for (const worker of idle)
 		{
 			const ranked = worker.gatherTypes
-				.filter(code => priorities.gatherShares[code] > 0)
+				.filter(code => assessments.gatherShares[code] > 0)
 				.map(code => {
-					const deficit = priorities.gatherShares[code] * total - assigned[code];
+					const deficit = assessments.gatherShares[code] * total - assigned[code];
 					const edge = advantage(worker, code);
 					return { "code": code, "deficit": deficit, "rank": deficit > 0 ? deficit * edge : deficit / edge };
 				})
@@ -206,7 +206,7 @@ export class Economy
 					continue;
 				reserved.set(site.id, (reserved.get(site.id) || 0) + 1);
 				assigned[code] += 1;
-				requests.push(gatherRequest("economy", "gather", worker.id, site.id, code, priorities.values.assignIdleWorker,
+				requests.push(gatherRequest("economy", "gather", worker.id, site.id, code, plan.values.assignIdleWorker,
 					1 + Math.max(0, deficit) / Math.max(1, total)));
 				break;
 			}
@@ -232,13 +232,13 @@ export class Economy
 		return (worker, code) => average[code] > 0 && worker.meanRates[code] > 0 ? worker.meanRates[code] / average[code] : 0.01;
 	}
 
-	rebalanceRequests(world, priorities, assigned, reserved)
+	rebalanceRequests(world, plan, assessments, assigned, reserved)
 	{
 		const requests = [];
 		const advantage = this.advantages(world);
 		const total = world.labour;
 		const gap = Math.max(REBALANCE_MIN_GAP, REBALANCE_GAP_SHARE * total);
-		const balance = code => assigned[code] - priorities.gatherShares[code] * total;
+		const balance = code => assigned[code] - assessments.gatherShares[code] * total;
 		const moved = new Set();
 		for (let step = 0; step < REBALANCE_PER_DECISION; ++step)
 		{
@@ -266,7 +266,7 @@ export class Economy
 			reserved.set(best.site.id, (reserved.get(best.site.id) || 0) + 1);
 			assigned[surplus] -= 1;
 			assigned[deficit] += 1;
-			requests.push(gatherRequest("economy", "rebalance", best.worker.id, best.site.id, deficit, priorities.values.rebalance, 1));
+			requests.push(gatherRequest("economy", "rebalance", best.worker.id, best.site.id, deficit, plan.values.rebalance, 1));
 		}
 		return requests;
 	}

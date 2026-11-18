@@ -595,7 +595,8 @@ tools/league.py --table tmp/league-NAME                         # the table agai
 knows (`petra/5/aggressive`, `brennus`); `"bot"` is a commit of this
 repository, the bot as it was then; `"bot"` with `"set"` is that commit
 with values of its strategy table overridden (dotted paths into `BASE`
-of `strategy.js`, named `OPENING` in older commits), a plan variant. Commits are pinned so a member stays
+of `strategy-plans.js`; of `strategy.js` in commits from before the strategy
+was split, where the oldest name it `OPENING`), a plan variant. Commits are pinned so a member stays
 the same opponent whatever the working tree becomes; a member that no
 longer moves when the bot changes can be dropped, a new one is one entry.
 `"civ"` and `"biome"` pin what a member needs (Brennus plays gaul on

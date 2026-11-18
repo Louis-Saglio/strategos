@@ -20,11 +20,11 @@ export class Crossings
 		this.tried = new Retry();
 	}
 
-	plan(world, priorities)
+	decide(world, plan, assessments)
 	{
-		this.planSettlement(world, priorities);
-		this.planFerry(world, priorities);
-		return this.planInvasion(world, priorities);
+		this.planSettlement(world, plan, assessments);
+		this.planFerry(world, assessments);
+		return this.planInvasion(world, plan, assessments);
 	}
 
 	freeTransports(world, sea, origin)
@@ -36,9 +36,9 @@ export class Crossings
 			.map(entry => entry.ship);
 	}
 
-	planSettlement(world, priorities)
+	planSettlement(world, plan, assessments)
 	{
-		const colony = priorities.colony;
+		const colony = assessments.colony;
 		if (!colony || this.commitments.underWay("settle").some(convoy => convoy.objective === colony.region) ||
 		    world.settlers.some(settler => settler.region === colony.region))
 			return;
@@ -52,7 +52,7 @@ export class Crossings
 			worker.buildable.some(structure));
 		if (!ship || able.length < MIN_SETTLERS || !this.tried.attempt(world.time, RETRY_MS, "settle"))
 			return;
-		const wanted = Math.max(MIN_SETTLERS, Math.min(colony.kind === "centre" ? priorities.naval.founders : priorities.naval.settlers,
+		const wanted = Math.max(MIN_SETTLERS, Math.min(colony.kind === "centre" ? plan.naval.founders : plan.naval.settlers,
 			Math.floor(able.length / SETTLER_SHARE)));
 		const party = able
 			.map(worker => ({ worker, "distance": squareDistance(worker.position, dock.position) }))
@@ -63,9 +63,9 @@ export class Crossings
 			{ "region": colony.region, "position": colony.position }, MIN_SETTLERS, { "build": colony.kind });
 	}
 
-	planFerry(world, priorities)
+	planFerry(world, assessments)
 	{
-		const ferry = priorities.ferry;
+		const ferry = assessments.ferry;
 		if (!ferry || this.commitments.underWay("ferry").length >= MAX_FERRIES)
 			return;
 		const dock = world.docks.find(candidate => candidate.region === ferry.from && candidate.sea === ferry.sea);
@@ -92,15 +92,14 @@ export class Crossings
 			{ "region": ferry.to, "position": arrival.position }, MIN_SETTLERS, { "code": ferry.code });
 	}
 
-	planInvasion(world, priorities)
+	planInvasion(world, plan, assessments)
 	{
 		let verdict = { "why": this.commitments.underWay("invade").length ? "under way" :
 			world.threats.length >= HOME_CALM_THREATS ? "threats" : world.ships.length < world.enemyWarships ? "sea" :
 			!world.enemyTargets.length ? "no target" : "no army" };
 		if (verdict.why !== "no army")
 			return verdict;
-		const offense = priorities.offense;
-		const plan = priorities.naval;
+		const naval = plan.naval;
 		const groups = new Map();
 		for (const fighter of world.fighters)
 		{
@@ -130,20 +129,20 @@ export class Crossings
 				continue;
 			}
 			const landed = present.has(objective.region) ? present.get(objective.region).fighters : 0;
-			const least = landed >= offense.minArmy ? plan.reinforcement : offense.minArmy;
+			const least = landed >= plan.minArmy ? naval.reinforcement : plan.minArmy;
 			const state = { "landed": landed, "enemy": world.enemySoldiers };
 			if (group.length < least)
 			{
 				note("small", state);
 				continue;
 			}
-			if (group.length + landed < plan.superiority * world.enemySoldiers)
+			if (group.length + landed < naval.superiority * world.enemySoldiers)
 			{
 				note("inferior", state);
 				continue;
 			}
-			if (landed < offense.minArmy && group.length < plan.edge * world.enemySoldiers &&
-			    group.length < plan.massShare * world.populationMax)
+			if (landed < plan.minArmy && group.length < naval.edge * world.enemySoldiers &&
+			    group.length < naval.massShare * world.populationMax)
 			{
 				note("no edge", state);
 				continue;
@@ -156,10 +155,10 @@ export class Crossings
 				continue;
 			}
 			const origin = dock ? dock.position : beach.water;
-			const ships = this.freeTransports(world, objective.sea, origin).slice(priorities.colony || priorities.ferry ? 1 : 0);
+			const ships = this.freeTransports(world, objective.sea, origin).slice(assessments.colony || assessments.ferry ? 1 : 0);
 			const capacity = ships.reduce((sum, ship) => sum + ship.capacity, 0);
-			if (capacity < Math.min(least, group.length) || landed < offense.minArmy &&
-			    capacity < plan.carried * Math.min(group.length, plan.maxCapacity))
+			if (capacity < Math.min(least, group.length) || landed < plan.minArmy &&
+			    capacity < naval.carried * Math.min(group.length, naval.maxCapacity))
 			{
 				note("no ships", Object.assign(state, { "capacity": capacity, "ships": ships.length }));
 				continue;
@@ -187,8 +186,8 @@ export class Crossings
 				used.push(ship);
 				room += ship.capacity;
 			}
-			const front = priorities.forward && priorities.forward.region === objective.region && priorities.forward.sea === objective.sea ?
-				priorities.forward : null;
+			const front = assessments.forward && assessments.forward.region === objective.region && assessments.forward.sea === objective.sea ?
+				assessments.forward : null;
 			const covered = !front && !shorePoints(world, objective.region, objective.sea, objective.position, 1, sheltered).length;
 			const remote = covered ? remoteShore(world, objective.region, objective.sea) : null;
 			const to = front ? { "region": objective.region, "position": front.position } :

@@ -9,7 +9,7 @@ how many it removed or added:
 
 - declared: numeric literals inside the module-level `const NAME = ...;`
   declarations, exported or not (one for `const REACH = 150;`, every numeric leaf of a
-  table such as `BASE` in strategy.js), with the number of such
+  table such as `BASE` in strategy-plans.js), with the number of such
   declarations and of those holding no number (class names, template
   paths, state lists);
 - inline: numeric literals anywhere else in the code, other than 0, 1 and
