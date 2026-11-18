@@ -731,7 +731,7 @@ def composition(where, body, read):
     those of its parts.
 
     A subsystem may be composed: its class builds no request and returns
-    those of the classes it creates (Naval: the shipyards, the convoys, the
+    those of the classes it creates (Naval: the fishing, the convoys, the
     hunt...), each in a file of its own and read as a class like any other,
     so the kinds of the subsystem are the kinds of its parts and the class
     that composes them adds none. `read` is {class name: [(file, sources,

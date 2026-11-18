@@ -1,5 +1,5 @@
 import { centroid, firstListed, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { noting, orderRequest, trainRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
 const SAFE_RADIUS = 35;
@@ -10,48 +10,10 @@ const HOME_CLEARANCE = 14;
 
 export class Medics
 {
-	constructor(catalog, telemetry)
-	{
-		this.catalog = catalog;
-		this.telemetry = telemetry;
-		this.trained = 0;
-	}
-
 	requests(world, plan)
 	{
 		const wounded = world.fighters.filter(fighter => fighter.hitpoints < fighter.maxHitpoints);
-		return this.trainRequests(world, plan, wounded).concat(this.followRequests(world, plan, wounded));
-	}
-
-	trainRequests(world, plan, wounded)
-	{
-		const missing = wounded.reduce((sum, fighter) => sum + fighter.maxHitpoints - fighter.hitpoints, 0);
-		const wanted = Math.min(plan.medics.max, Math.floor(world.fighters.length / plan.medics.soldiersPerHealer), Math.floor(missing / plan.medics.woundsPerHealer));
-		if (world.healers.length >= wanted)
-			return [];
-		for (const trainer of world.trainers)
-		{
-			if (trainer.queueLength > 0)
-				continue;
-			const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isHealer(name));
-			if (!template)
-				continue;
-			return [noting(trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),
-				plan.values.support, 1), { "train": template, "wounds": Math.round(missing), "soldiers": world.fighters.length })];
-		}
-		return [];
-	}
-
-	settle(world, outcomes)
-	{
-		for (const { request, issued } of outcomes)
-		{
-			if (!issued || request.purpose !== "healer")
-				continue;
-			if (!this.trained)
-				this.telemetry.line("MEDIC", world.time, request.note);
-			this.trained += 1;
-		}
+		return this.followRequests(world, plan, wounded);
 	}
 
 	followRequests(world, plan, wounded)

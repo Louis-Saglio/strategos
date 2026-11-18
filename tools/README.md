@@ -452,7 +452,7 @@ committed list at its limit, or was played without `--commands`).
 `coverage` (also printed at the end of `play`) reads the `[ALLOC]` ledgers
 of a play. The allocator counts every request it grants or denies, and the
 bot prints the counts every 60 s:
-`"outcomes": {"construction/house/construct!:granted": 3, "economy/soldiers/train:resources-food": 2, ...}`.
+`"outcomes": {"construction/house/construct!:granted": 3, "recruitment/soldiers/train:resources-food": 2, ...}`.
 A key is `source/purpose/action:outcome`:
 
 - `source` — the subsystem asking;
@@ -462,7 +462,7 @@ A key is `source/purpose/action:outcome`:
   `walk`, `hold`, `attack-walk`...), or `reserve` for a reservation: a
   request that claims resources or population and orders nothing, so it
   has no action and never reaches the executor (`construction/colony-fund`,
-  `naval/ship-room`); followed by `!` when the request is of the production
+  `recruitment/ship-room`); followed by `!` when the request is of the production
   tier;
 - `outcome` — `granted`, or the reason of the denial (`unit-taken`,
   `slot-taken`, `population`, `resources-CODE`).
@@ -486,8 +486,8 @@ argument of one of its own methods that hands it on (`this.order("stray",
 ...)`). A purpose is read when it is a string literal or a choice between
 two (`yard ? "shipyard" : "dock"`). A subsystem may be composed of parts,
 each a class in a file of its own that builds its requests under the
-subsystem's source (`Naval` in `naval.js`: the shipyards, the fishing, the
-convoys, the hunt... in `naval-*.js`): every part is read as a class like
+subsystem's source (`Naval` in `naval.js`: the fishing, the convoys, the
+crossings, the hunt... in `naval-*.js`): every part is read as a class like
 any other, and the class that composes them builds no request and adds no
 kind. A purpose may also be data: a building need (`construction-needs.js`)
 is a record made by `buildingNeed("house", {...})`, and `Construction`
@@ -595,7 +595,7 @@ Three things pass that reading without a word:
 
 The set grants 68 of the 84 kinds. Never in a ledger within 14 minutes:
 
-- `trade/trader`, `trade/goods`, `trade/route` — traders are trained once
+- `recruitment/trader`, `trade/goods`, `trade/route` — traders are trained once
   two finished land markets, one of ours and another of ours or of an
   ally, make a route that pays 0.5 a second, 0.3 when stone or metal runs
   out at home; in the three team games tried with 3000 resources the
@@ -613,8 +613,8 @@ The set grants 68 of the 84 kinds. Never in a ledger within 14 minutes:
 - `construction/colony-centre`, `construction/forward-base` — a civic
   centre founded by settlers landed on another island, or at the front of
   an invasion;
-- `naval/siege-ship`, `naval/bombard` — ships that bombard structures;
-  `naval/ship-room` — population kept for ships at the population limit;
+- `recruitment/siege-ship`, `naval/bombard` — ships that bombard structures;
+  `recruitment/ship-room` — population kept for ships at the population limit;
 - `naval/disembark`, `naval/stranded`, `naval/castaway` — a convoy that
   gives up its embarkation, a loaded ship outside any convoy, loaded ships
   of a player without a civic centre.
