@@ -499,14 +499,14 @@ function shipyardSite(context, template)
 	return siting.shore(world, template, world.homeRegion, world.crossing.sea, world.home.position, plan.docks.yardSpacing);
 }
 
-const WONDER = buildingNeed("wonder", { "wanted": wonderWanted, "template": wonderTemplate, "ready": wonderReady, "site": ring,
+export const WONDER = buildingNeed("wonder", { "wanted": wonderWanted, "template": wonderTemplate, "ready": wonderReady, "site": ring,
 	"value": "wonder" });
 
 const WONDER_STOCK = 2;
 
 function wonderWanted(context)
 {
-	return context.plan.raiseWonder && !(owned(context.world, bound(context, isWonder)) > 0);
+	return !(owned(context.world, bound(context, isWonder)) > 0);
 }
 
 function isWonder(context, name)
@@ -691,5 +691,7 @@ function foundingSite(context, template)
 	return siting.settlement(world, plan, template, centroid(world.workers), FOUNDING_MAX_DISTANCE, undefined);
 }
 
+export const PLAN_NEEDS = Object.freeze({ "slot": "plans" });
+
 export const NEEDS = Object.freeze([HOUSE, FIELDS, DROPSITES, BARRACKS, WORKS, PHASE_BUILDING, SIEGE_WORKSHOP, MARKET, EXPANSION, OUTPOST, DOCK,
-	SHIPYARD, WONDER, ELITE, TRADE_POST, COLONY, FORWARD_BASE]);
+	SHIPYARD, PLAN_NEEDS, ELITE, TRADE_POST, COLONY, FORWARD_BASE]);

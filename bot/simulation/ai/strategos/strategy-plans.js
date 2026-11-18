@@ -1,3 +1,6 @@
+import { WONDER } from "simulation/ai/strategos/construction-needs.js";
+import { Guard, Relics } from "simulation/ai/strategos/guard.js";
+
 const BASE = {
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "investment": 12, "support": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
 	"margin": 1.25,
@@ -35,15 +38,14 @@ const BASE = {
 		"fishClearance": { "battery": 15, "structure": 70, "soldier": 65, "berth": 12, "flight": 90 },
 		"bombard": { "ships": 6, "margin": 6, "clearance": 10, "bearings": 18, "searoom": 12, "tried": 40, "arrive": 20 },
 		"fishing": { "maxBoats": 12, "perFish": 2 } },
-	"protectHero": false,
-	"seekRelics": false,
-	"raiseWonder": false
+	"behaviours": Object.freeze([]),
+	"needs": Object.freeze([])
 };
 
 const PLANS = [
-	{ "name": "regicide", "applies": context => context.victory.includes("regicide"), "set": { "protectHero": true } },
-	{ "name": "relics", "applies": context => context.victory.includes("capture_the_relic"), "set": { "seekRelics": true } },
-	{ "name": "wonder", "applies": context => context.victory.includes("wonder"), "set": { "raiseWonder": true } }
+	{ "name": "regicide", "applies": context => context.victory.includes("regicide"), "set": {}, "behaviours": [Guard], "needs": [] },
+	{ "name": "relics", "applies": context => context.victory.includes("capture_the_relic"), "set": {}, "behaviours": [Relics], "needs": [] },
+	{ "name": "wonder", "applies": context => context.victory.includes("wonder"), "set": {}, "behaviours": [], "needs": [WONDER] }
 ];
 
 function overlay(base, set)
@@ -59,17 +61,20 @@ export class Plans
 {
 	constructor()
 	{
-		this.names = Object.freeze([]);
+		this.names = null;
 		this.table = BASE;
 	}
 
 	select(context)
 	{
 		const plans = PLANS.filter(plan => plan.applies(context));
-		if (plans.length === this.names.length && plans.every((plan, index) => plan.name === this.names[index]))
+		if (this.names && plans.length === this.names.length && plans.every((plan, index) => plan.name === this.names[index]))
 			return false;
 		this.names = Object.freeze(plans.map(plan => plan.name));
-		this.table = plans.reduce((table, plan) => overlay(table, plan.set), BASE);
+		this.table = overlay(plans.reduce((table, plan) => overlay(table, plan.set), BASE), {
+			"behaviours": Object.freeze([...new Set(plans.flatMap(plan => plan.behaviours))]),
+			"needs": Object.freeze([...new Set(plans.flatMap(plan => plan.needs))])
+		});
 		return true;
 	}
 }

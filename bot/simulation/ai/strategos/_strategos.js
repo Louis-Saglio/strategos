@@ -6,7 +6,6 @@ import { Construction } from "simulation/ai/strategos/construction.js";
 import { Defense } from "simulation/ai/strategos/defense.js";
 import { Economy } from "simulation/ai/strategos/economy.js";
 import { Executor } from "simulation/ai/strategos/executor.js";
-import { Guard, Relics } from "simulation/ai/strategos/guard.js";
 import { Medics } from "simulation/ai/strategos/medics.js";
 import { Naval } from "simulation/ai/strategos/naval.js";
 import { Offense } from "simulation/ai/strategos/offense.js";
@@ -42,7 +41,8 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.musterIndex = new MusterIndex();
 	this.battleLog = new BattleLog(this.catalog, this.telemetry);
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
-	this.subsystems = [new Guard(), new Relics(this.catalog, this.telemetry), new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry),
+	this.behaviours = [];
+	this.subsystems = [new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry),
 		new Recruitment(this.catalog, this.telemetry), new Economy(), new Construction(this.catalog, this.player, this.telemetry),
 		new Research(this.catalog), new Trade(this.telemetry), new Medics(),
 		new Upgrades(this.catalog, this.telemetry)];
@@ -75,10 +75,12 @@ StrategosBot.prototype.decide = function()
 	stopwatch.lap("BattleLog");
 	this.strategy.update(world);
 	const { plan, assessments } = this.strategy;
+	this.enlist(plan.behaviours);
 	stopwatch.lap("Strategy");
+	const subsystems = this.behaviours.concat(this.subsystems);
 	const requests = [];
 	const emitted = [];
-	for (const subsystem of this.subsystems)
+	for (const subsystem of subsystems)
 	{
 		const own = subsystem.requests(world, plan, assessments);
 		emitted.push(own);
@@ -87,7 +89,7 @@ StrategosBot.prototype.decide = function()
 	}
 	const outcomes = this.allocator.allocate(world, requests);
 	this.executor.execute(world, outcomes.filter(entry => entry.outcome === GRANTED && entry.request.action));
-	this.settle(world, emitted, outcomes);
+	this.settle(world, subsystems, emitted, outcomes);
 	stopwatch.lap("allocateExecute");
 	this.telemetry.recordDecision(stopwatch);
 	for (const trainer of world.trainers)
@@ -96,12 +98,18 @@ StrategosBot.prototype.decide = function()
 	this.report(world, assessments);
 };
 
-StrategosBot.prototype.settle = function(world, emitted, outcomes)
+StrategosBot.prototype.enlist = function(behaviours)
+{
+	const serving = new Map(this.behaviours.map(behaviour => [behaviour.constructor, behaviour]));
+	this.behaviours = behaviours.map(Behaviour => serving.get(Behaviour) || new Behaviour(this.catalog, this.telemetry));
+};
+
+StrategosBot.prototype.settle = function(world, subsystems, emitted, outcomes)
 {
 	const outcomeOf = new Map();
 	for (const entry of outcomes)
 		outcomeOf.set(entry.request, entry);
-	this.subsystems.forEach((subsystem, index) => {
+	subsystems.forEach((subsystem, index) => {
 		if (subsystem.settle)
 			subsystem.settle(world, emitted[index].map(request => outcomeOf.get(request)));
 	});

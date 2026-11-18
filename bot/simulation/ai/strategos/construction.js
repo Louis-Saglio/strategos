@@ -1,6 +1,6 @@
 import { centroid } from "simulation/ai/strategos/geometry.js";
 import { Builders } from "simulation/ai/strategos/construction-builders.js";
-import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
+import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
 import { HAUL_RETURN, Siting } from "simulation/ai/strategos/construction-siting.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { buildRequest, fundRequest, inTier, noting } from "simulation/ai/strategos/requests.js";
@@ -37,7 +37,7 @@ export class Construction
 			return (founding ? [founding] : []).concat(this.builders.repairRequests(world, plan));
 		}
 		const requests = [];
-		for (const need of NEEDS)
+		for (const need of NEEDS.flatMap(need => need === PLAN_NEEDS ? plan.needs : [need]))
 		{
 			const decide = this.decisions.get(need);
 			const request = decide ? decide(context) : this.ask(need, context);
