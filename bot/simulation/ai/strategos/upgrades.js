@@ -16,6 +16,17 @@ export class Upgrades
 		this.last = new Retry();
 	}
 
+	save()
+	{
+		return { "ordered": this.ordered.save(), "last": this.last.save() };
+	}
+
+	restore(data)
+	{
+		this.ordered.restore(data.ordered);
+		this.last.restore(data.last);
+	}
+
 	requests(world, plan)
 	{
 		if (!world.upgradable.length || !this.last.due(world.time, RETRY_MS))

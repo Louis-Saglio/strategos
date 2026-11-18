@@ -34,6 +34,17 @@ export class Catalog
 		this.researched = undefined;
 	}
 
+	save()
+	{
+		return { "researched": this.researched, "combats": this.combats };
+	}
+
+	restore(data)
+	{
+		this.researched = data.researched;
+		this.combats = data.combats;
+	}
+
 	refreshTurnCaches()
 	{
 		const time = this.gameState.getTimeElapsed();

@@ -13,6 +13,21 @@ export class Expansion
 		this.frontSearched = new Retry();
 	}
 
+	save()
+	{
+		return { "colonySearched": this.colonySearched.save(), "frontSearched": this.frontSearched.save(), "ferried": this.ferried,
+			"colonySite": this.colonySite, "front": this.front };
+	}
+
+	restore(data)
+	{
+		this.colonySearched.restore(data.colonySearched);
+		this.frontSearched.restore(data.frontSearched);
+		this.ferried = data.ferried;
+		this.colonySite = data.colonySite;
+		this.front = data.front;
+	}
+
 	assess(world, plan, labour)
 	{
 		const ferry = this.ferry(world, plan, labour);

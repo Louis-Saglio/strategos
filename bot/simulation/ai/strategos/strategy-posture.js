@@ -13,6 +13,22 @@ export class Posture
 		this.phaseWanted = 0;
 	}
 
+	save()
+	{
+		return { "plenty": this.plenty.save(), "underThreat": this.underThreat.save(), "phaseWanted": this.phaseWanted, "raidedAt": this.raidedAt,
+			"stance": this.stance, "blockedSince": this.blockedSince };
+	}
+
+	restore(data)
+	{
+		this.plenty.restore(data.plenty);
+		this.underThreat.restore(data.underThreat);
+		this.phaseWanted = data.phaseWanted;
+		this.raidedAt = data.raidedAt;
+		this.stance = data.stance;
+		this.blockedSince = data.blockedSince;
+	}
+
 	assess(world, plan)
 	{
 		const military = plan.military;

@@ -42,6 +42,22 @@ export class Offense
 		this.stormed = new Change();
 	}
 
+	save()
+	{
+		return { "attacks": this.attacks.save(), "attacked": this.attacked, "resistanceMet": this.resistanceMet, "mopping": this.mopping.save(),
+			"stormed": this.stormed.save(), "held": this.held };
+	}
+
+	restore(data)
+	{
+		this.attacks.restore(data.attacks);
+		this.attacked = data.attacked;
+		this.resistanceMet = data.resistanceMet;
+		this.mopping.restore(data.mopping);
+		this.stormed.restore(data.stormed);
+		this.held = data.held;
+	}
+
 	requests(world, plan, assessments)
 	{
 		const home = world.home;

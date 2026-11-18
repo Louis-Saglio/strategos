@@ -37,6 +37,17 @@ export class Operations
 		return Object.assign(request, { "operation": operation.id });
 	}
 
+	save()
+	{
+		return { "serial": this.serial, "list": this.list };
+	}
+
+	restore(data)
+	{
+		this.serial = data.serial;
+		this.list = data.list;
+	}
+
 	settle(outcomes)
 	{
 		const granted = new Map(this.list.map(operation => [operation.id, []]));

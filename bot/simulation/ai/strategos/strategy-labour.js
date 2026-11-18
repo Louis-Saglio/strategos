@@ -18,6 +18,23 @@ export class Labour
 			this.gap[code] = 0;
 	}
 
+	save()
+	{
+		return { "gap": this.gap, "seeded": this.seeded, "shares": this.shares, "reported": this.reported, "shortCode": this.shortCode,
+			"tradedKey": this.tradedKey, "traded": this.traded };
+	}
+
+	restore(data)
+	{
+		this.gap = data.gap;
+		this.seeded = data.seeded;
+		this.shares = data.shares;
+		this.reported = data.reported;
+		this.shortCode = data.shortCode;
+		this.tradedKey = data.tradedKey;
+		this.traded = data.traded;
+	}
+
 	assess(world, plan, civilianTarget)
 	{
 		const labour = plan.labour;

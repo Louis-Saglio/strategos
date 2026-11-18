@@ -65,16 +65,32 @@ export class Plans
 		this.table = BASE;
 	}
 
+	save()
+	{
+		return this.names;
+	}
+
+	restore(names)
+	{
+		if (names)
+			this.choose(PLANS.filter(plan => names.includes(plan.name)));
+	}
+
 	select(context)
 	{
 		const plans = PLANS.filter(plan => plan.applies(context));
 		if (this.names && plans.length === this.names.length && plans.every((plan, index) => plan.name === this.names[index]))
 			return false;
+		this.choose(plans);
+		return true;
+	}
+
+	choose(plans)
+	{
 		this.names = Object.freeze(plans.map(plan => plan.name));
 		this.table = overlay(plans.reduce((table, plan) => overlay(table, plan.set), BASE), {
 			"behaviours": Object.freeze([...new Set(plans.flatMap(plan => plan.behaviours))]),
 			"needs": Object.freeze([...new Set(plans.flatMap(plan => plan.needs))])
 		});
-		return true;
 	}
 }

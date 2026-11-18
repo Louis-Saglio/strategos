@@ -10,6 +10,16 @@ export class Hunt
 		this.hunted = new Map();
 	}
 
+	save()
+	{
+		return { "hunted": this.hunted };
+	}
+
+	restore(data)
+	{
+		this.hunted = data.hunted;
+	}
+
 	requests(world, plan)
 	{
 		if (!world.enemyShips.length)

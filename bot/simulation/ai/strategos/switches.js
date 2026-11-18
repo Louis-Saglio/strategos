@@ -21,6 +21,16 @@ export class Hysteresis
 		this.on = value < this.threshold(enter, exit);
 		return this.on;
 	}
+
+	save()
+	{
+		return this.on;
+	}
+
+	restore(on)
+	{
+		this.on = on;
+	}
 }
 
 export class Retry
@@ -47,6 +57,23 @@ export class Retry
 		this.record(time, key);
 		return true;
 	}
+
+	save()
+	{
+		return this.last;
+	}
+
+	restore(last)
+	{
+		this.last = last;
+	}
+}
+
+export function retryFrom(last)
+{
+	const retry = new Retry();
+	retry.restore(last);
+	return retry;
 }
 
 export class Change
@@ -62,5 +89,15 @@ export class Change
 			return false;
 		this.value = value;
 		return true;
+	}
+
+	save()
+	{
+		return this.value;
+	}
+
+	restore(value)
+	{
+		this.value = value;
 	}
 }

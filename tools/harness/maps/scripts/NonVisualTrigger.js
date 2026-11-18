@@ -69,6 +69,47 @@
  * 5 structure, 6 civic centre, 7 ship; state 0 idle, 1 gathering,
  * 2 fighting, 3 other (moving, building...). Positions in metres.
  *
+ * A simulation restored from a saved state (a loaded game, the second
+ * simulation of the engine's rejoin test) differs from the simulation that
+ * was never saved in four ways, which the harness repairs on that path only
+ * (a game that is never restored never takes it). It runs one turn, then
+ * gives its AIs the full representation of the game
+ * (AIInterface.GetFullRepresentation with flushEvents false; the game start
+ * calls it with flushEvents true) with that turn's events, and:
+ * - the entities changed during the turn stay marked as changed in
+ *   AIInterface (sent again next turn, and the serialised states differ):
+ *   cleared, as GetRepresentation does every turn;
+ * - it describes every entity, also those an AI that ran from the start
+ *   never had: without an owner (INVALID_PLAYER: the finished units of a
+ *   batch that could not spawn, Trainer.Item.Spawn giving the others their
+ *   owner at once), which AIProxy never reports: removed, and their
+ *   proxies left as the unsaved game has them;
+ * - an entity the AIs knew that is destroyed during the turn is in no
+ *   representation, so its Destroy event names an entity the restored AIs
+ *   never had (no entityObj, its modifications left in the shared
+ *   script): its representation, taken when its owner becomes
+ *   INVALID_PLAYER (with the owner it had), is given to the AIs as a
+ *   non-enumerable entry of state.entities with a Create event before
+ *   that turn's others, so the shared script knows it, then destroys it
+ *   as in the unsaved game;
+ * - the stock Trainer does not save an item's spawnNotified
+ *   (Trainer.Item.SerializableAttributes), so a batch that could not spawn
+ *   before the save pushes "Can't find free space to spawn trained units"
+ *   again in the restored simulation only (a GUI notification, in the
+ *   serialised state): Trainer.Deserialize sets it again as Spawn left it,
+ *   on every item that still holds units (those it created and could not
+ *   spawn).
+ *
+ * With HARNESS_FULL_AI_VIEW (run.py --full-ai-view, implied by
+ * --rejoin-test) every turn sends the AIs the full representation of every
+ * entity they already know (AIProxy.GetFullRepresentation) instead of the
+ * changes the engine reported: some changes are never reported (UnitAI
+ * rewrites its order queue in several places without
+ * MT_UnitAIOrderDataChanged), so the view of an AI depends on the history
+ * of the game, while a simulation restored from a saved state starts from
+ * the full representation. With it, both see a function of the game state
+ * alone. It changes what the AIs see, hence the games; off by default.
+ *
  * The resignation ends hopeless games early; it acts only through the
  * defeat of the resigning side, like a resignation in the GUI.
  *
@@ -87,6 +128,7 @@ const HARNESS_RESIGN_RATIO = 0;
 const HARNESS_RESIGN_HOLD_MS = 120000;
 const HARNESS_COMMANDS = 0;
 const HARNESS_TURN_MS = 200;
+const HARNESS_FULL_AI_VIEW = 0;
 const HARNESS_MILITARY_CLASSES = ["Soldier", "Siege", "Ship"];
 
 const HARNESS_KINDS = [
@@ -380,6 +422,87 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.harnessKillIds = [];
 	cmpTrigger.harnessBehind = {};
 	cmpTrigger.harnessCensus = {};
+	let harnessRestored = false;
+	const harnessFallen = new Map();
+	const harnessBaseAIDeserialize = AIInterface.prototype.Deserialize;
+	AIInterface.prototype.Deserialize = function(data)
+	{
+		harnessBaseAIDeserialize.call(this, data);
+		harnessRestored = true;
+	};
+	const harnessBaseOwnershipChanged = AIProxy.prototype.OnOwnershipChanged;
+	AIProxy.prototype.OnOwnershipChanged = function(msg)
+	{
+		if (harnessRestored && msg.to == INVALID_PLAYER && msg.from != INVALID_PLAYER)
+		{
+			const fallen = this.GetFullRepresentation();
+			fallen.owner = msg.from;
+			harnessFallen.set(msg.entity, fallen);
+		}
+		return harnessBaseOwnershipChanged.call(this, msg);
+	};
+	const harnessBaseTrainerDeserialize = Trainer.prototype.Deserialize;
+	Trainer.prototype.Deserialize = function(data)
+	{
+		harnessBaseTrainerDeserialize.call(this, data);
+		for (const item of this.queue.values())
+			if (item.entities?.length)
+				item.spawnNotified = true;
+	};
+	const harnessBaseFullRepresentation = AIInterface.prototype.GetFullRepresentation;
+	AIInterface.prototype.GetFullRepresentation = function(flushEvents)
+	{
+		const state = harnessBaseFullRepresentation.call(this, flushEvents);
+		if (!flushEvents)
+		{
+			for (const id in this.changedEntities)
+			{
+				const cmpAIProxy = Engine.QueryInterface(+id, IID_AIProxy);
+				if (cmpAIProxy)
+					cmpAIProxy.changes = null;
+			}
+			this.changedEntities = {};
+			for (const id in state.entities)
+			{
+				const cmpOwnership = Engine.QueryInterface(+id, IID_Ownership);
+				if (cmpOwnership && cmpOwnership.GetOwner() != INVALID_PLAYER)
+					continue;
+				delete state.entities[id];
+				const cmpAIProxy = Engine.QueryInterface(+id, IID_AIProxy);
+				cmpAIProxy.needsFullGet = true;
+				cmpAIProxy.changes = null;
+			}
+			const born = new Set(state.events.Create.map(evt => evt.entity));
+			const known = [];
+			for (const evt of state.events.Destroy)
+			{
+				if (!harnessFallen.has(evt.entity) || born.has(evt.entity) || state.entities[evt.entity])
+					continue;
+				Object.defineProperty(state.entities, evt.entity, { "value": harnessFallen.get(evt.entity), "enumerable": false });
+				known.push({ "entity": evt.entity });
+			}
+			state.events.Create = known.concat(state.events.Create);
+		}
+		harnessRestored = false;
+		harnessFallen.clear();
+		return state;
+	};
+	if (HARNESS_FULL_AI_VIEW)
+	{
+		const harnessBaseRepresentation = AIInterface.prototype.GetRepresentation;
+		AIInterface.prototype.GetRepresentation = function()
+		{
+			for (const id of Engine.GetEntitiesWithInterface(IID_AIProxy))
+			{
+				const cmpAIProxy = Engine.QueryInterface(id, IID_AIProxy);
+				if (cmpAIProxy.needsFullGet)
+					continue;
+				cmpAIProxy.changes = cmpAIProxy.GetFullRepresentation();
+				this.changedEntities[id] = 1;
+			}
+			return harnessBaseRepresentation.call(this);
+		};
+	}
 	const harnessBaseKilledBy = Health.prototype.KilledBy;
 	Health.prototype.KilledBy = function(attacker, attackerOwner)
 	{

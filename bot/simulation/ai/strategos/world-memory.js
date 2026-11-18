@@ -23,6 +23,20 @@ export class ResourceIndex
 		this.schools = Object.freeze([]);
 	}
 
+	save()
+	{
+		return { "sites": this.sites, "cursor": this.cursor, "fish": this.fish, "schools": this.schools, "wealth": this.wealth };
+	}
+
+	restore(data)
+	{
+		this.sites = data.sites;
+		this.cursor = data.cursor;
+		this.fish = data.fish;
+		this.schools = data.schools;
+		this.wealth = data.wealth;
+	}
+
 	liveFish(gameState)
 	{
 		const accessibility = gameState.sharedScript.accessibility;
@@ -219,6 +233,20 @@ export class LossIndex
 		this.struck = new Map();
 	}
 
+	save()
+	{
+		return { "pending": this.pending, "rates": this.rates, "lastTime": this.lastTime, "turn": this.turn, "struck": this.struck };
+	}
+
+	restore(data)
+	{
+		this.pending = data.pending;
+		this.rates = data.rates;
+		this.lastTime = data.lastTime;
+		this.turn = data.turn;
+		this.struck = data.struck;
+	}
+
 	kind(ent)
 	{
 		if (ent.hasClass("Structure"))
@@ -294,6 +322,19 @@ export class MusterIndex
 		this.renamed = new Set();
 	}
 
+	save()
+	{
+		return { "known": this.known, "since": this.since, "recruits": this.recruits, "renamed": this.renamed };
+	}
+
+	restore(data)
+	{
+		this.known = data.known;
+		this.since = data.since;
+		this.recruits = data.recruits;
+		this.renamed = data.renamed;
+	}
+
 	record(events)
 	{
 		for (const evt of events && events.EntityRenamed || [])
@@ -341,6 +382,27 @@ export class ShoreIndex
 		this.points = null;
 		this.busy = new Map();
 		this.blocked = new Set();
+	}
+
+	save()
+	{
+		return { "busy": this.busy, "blocked": this.blocked };
+	}
+
+	restore(data)
+	{
+		this.busy = data.busy;
+		this.blocked = data.blocked;
+	}
+
+	indexOf(gameState, point)
+	{
+		return point ? this.all(gameState).indexOf(point) : -1;
+	}
+
+	at(gameState, index)
+	{
+		return index < 0 ? null : this.all(gameState)[index];
 	}
 
 	watch(id, queueLength, time)

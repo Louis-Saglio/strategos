@@ -10,7 +10,10 @@ tools/analyze.py summary.
 
 Every match is bounded twice: the harness ends it at -l in-game minutes,
 and a wall-clock cap kills it if it runs slower than MIN_RATE turns per
-second (cap = 60 s + 300 * MIN / MIN_RATE). Before starting, the batch's
+second (cap = 60 s + 300 * MIN / MIN_RATE). A rejoin test runs two
+simulations from its turn N on, much slower: its cap counts the N first
+turns at MIN_RATE and the rest at REJOIN_MIN_RATE (cap = 60 s + N /
+MIN_RATE + (300 * MIN - N) / REJOIN_MIN_RATE). Before starting, the batch's
 worst-case duration is estimated from the calibrated host throughput; at
 the end, games killed by the wall-clock cap are reported as failures.
 
@@ -101,8 +104,28 @@ Options:
                  turn (`[HARNESS] cmd` lines; the replay does not record the
                  commands of an AI); tools/identity.py compares two plays on
                  them. Off by default: a few thousand lines a game
-  -t SEC         wall-clock cap per match (default: derived from -l, see
-                 below; a larger value is accepted with a warning)
+  --rejoin-test TURN  the engine's rejoin test (-rejointest=TURN): at
+                 simulation turn TURN (200 ms each) the engine starts a second
+                 simulation from the serialised state of the first, AIs
+                 included, runs both to the end and compares their serialised
+                 states every turn; the first difference aborts the game with
+                 "Serialization test failure" (a FAILURE of the batch). A
+                 --matches line may set its own "rejoin_test". Only for maps
+                 that are not random maps (skirmishes/..., scenarios/...): the
+                 engine cannot rebuild a random map for the second simulation;
+                 on local only (-H local). Implies --full-ai-view
+  --full-ai-view  the harness gives the AIs the full representation of every
+                 entity they know, every turn, instead of the engine's changes
+                 (some of which it never reports, e.g. order data rewritten in
+                 place): what an AI sees is then a function of the game state
+                 alone, as in a game just loaded, so that a rejoin test can
+                 compare the AIs. It changes what the AIs see, hence the
+                 games: a rejoin test is compared with the same match played
+                 with --full-ai-view and no rejoin test
+  -t SEC         wall-clock cap per match (default: derived from -l and,
+                 for a rejoin test, its turn, see above; a larger value is
+                 accepted with a warning, a value below the derived cap of
+                 a rejoin test is refused: that game could not finish)
   -m AI=SOURCE   mod source for an AI (repeatable)
   -H HOSTS       comma-separated hosts from tools/hosts.json (default: all
                  verified and reachable); local is a host
@@ -181,6 +204,11 @@ CONDITIONAL_SETTINGS = {"WonderDuration", "RelicCount", "RelicDuration", "Regici
 DERIVED_SETTINGS = {"Biome", "Size", "PlayerPlacement", "VictoryConditions", "Seed", "AISeed", "PlayerData",
                     "mapName", "mapPreview", "TriggerScripts", "CircularMap"}
 MIN_RATE = 20
+# A rejoin test from its turn on: both simulations run and the whole state is
+# serialised and hashed four times a turn. Measured in tmp/rejoin58/final (5
+# games at once on boobynator): 2.1 to 3.0 turns/s for a 1v1, about 1.1 for a
+# 2v2 near the end of a 14-minute game.
+REJOIN_MIN_RATE = 1
 SSH = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "ServerAliveInterval=30"]
 
 
@@ -188,8 +216,11 @@ def die(msg):
     sys.exit(f"run: {msg}")
 
 
-def wall_cap(limit_min):
-    return 60 + (300 * limit_min) // MIN_RATE
+def wall_cap(limit_min, rejoin=None):
+    turns = 300 * limit_min
+    if rejoin is None or rejoin >= turns:
+        return 60 + turns // MIN_RATE
+    return 60 + rejoin // MIN_RATE + (turns - rejoin) // REJOIN_MIN_RATE
 
 
 # ------------------------------------------------------------------ specs
@@ -355,6 +386,12 @@ def expand(base, seed, given=None):
 def expand_once(base, seed, given, attempt):
     spec = {"seed": seed, "limit_minutes": base["limit_minutes"]}
     spec["map"] = given.get("map") or draw(base["maps"], seed, "map")
+    rejoin = given.get("rejoin_test", base.get("rejoin_test"))
+    if rejoin is not None:
+        if spec["map"].startswith("random/"):
+            die(f"{given.get('tag', seed)}: the rejoin test cannot run on the random map {spec['map']} "
+                "(the engine does not regenerate a random map for its second simulation)")
+        spec["rejoin_test"] = rejoin
     info = map_info(spec["map"])
     is_random = spec["map"].startswith("random/")
     spec["size"] = (given.get("size") or draw(base["sizes"], seed, "size", attempt)) if is_random else None
@@ -436,6 +473,8 @@ def engine_args(spec):
         if p.get("team"):
             args.append(f"-autostart-team={i}:{p['team']}")
     args.append("-harness-settings=" + json.dumps(spec["settings"], sort_keys=True, separators=(",", ":")))
+    if spec.get("rejoin_test") is not None:
+        args.append(f"-rejointest={spec['rejoin_test']}")
     args += ["-autostart-player=-1", "-unique-logs", "-nosound", "-mod=public"]
     args += [f"-mod={m}" for m in spec["mods"]]
     return args
@@ -473,7 +512,7 @@ def is_scenario(map_name):
     return any(os.path.isfile(os.path.join(SCENARIOS, "maps", map_name + ext)) for ext in (".json", ".xml"))
 
 
-def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False, commands=False):
+def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False, commands=False, full_view=False):
     """Copy every needed mod into OUTDIR/mods/. Returns (mount order, provenance)."""
     mods_dir = os.path.join(outdir, "mods")
     if os.path.exists(mods_dir):
@@ -540,11 +579,17 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=F
         die(f"{os.path.join(HARNESS, 'maps/scripts/NonVisualTrigger.js')}: {set_commands} line(s) "
             "`const HARNESS_COMMANDS = N;` where one is expected: --commands cannot be set, and a play recorded "
             "as made with the command lines would have none")
+    text, set_view = re.subn(r"const HARNESS_FULL_AI_VIEW = \d+;", f"const HARNESS_FULL_AI_VIEW = {int(full_view)};", text)
+    if set_view != 1:
+        die(f"{os.path.join(HARNESS, 'maps/scripts/NonVisualTrigger.js')}: {set_view} line(s) "
+            "`const HARNESS_FULL_AI_VIEW = N;` where one is expected")
     with open(trig, "w", encoding="utf-8") as fh:
         fh.write(text)
     prov[mod_name(HARNESS)] = {"source": HARNESS, "commit": git_info(REPO), "content": content_hash(hdest),
                                "limit_minutes": limit, "map_interval_ms": map_interval,
                                "resign_ratio": resign, "commands": bool(commands)}
+    if full_view:
+        prov[mod_name(HARNESS)]["full_ai_view"] = True
     order.append(mod_name(HARNESS))
     return order, prov
 
@@ -656,6 +701,31 @@ tar -cf - stdout.log exit_code home
 REMOTE_B64 = base64.b64encode(REMOTE.encode()).decode()
 
 
+REJOIN_FAILURE = b"Serialization test failure"
+
+
+def run_rejoin_test(command, d, env, out):
+    """A rejoin test's first "Serialization test failure" is an engine
+    assertion (debug_warn) whose error prompt never returns in a headless
+    game (the engine forks to run /usr/bin/xmessage; without it the child
+    hangs): the dumps are written before it, so the game is stopped there,
+    with its whole process group, instead of waiting for the wall cap."""
+    import resource
+    import signal
+    log = os.path.join(d, "stdout.log")
+    proc = subprocess.Popen(command, cwd=d, env=env, stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT,
+                            start_new_session=True,
+                            preexec_fn=lambda: resource.setrlimit(resource.RLIMIT_CORE, (0, 0)))
+    while proc.poll() is None:
+        time.sleep(2)
+        with open(log, "rb") as fh:
+            if REJOIN_FAILURE in fh.read():
+                time.sleep(2)
+                os.killpg(proc.pid, signal.SIGKILL)
+                break
+    return proc.wait()
+
+
 class TransportError(Exception):
     pass
 
@@ -677,9 +747,13 @@ def run_match(outdir, spec, host, hosts, wall):
                    XDG_CONFIG_HOME=f"{home}/.config", XDG_CACHE_HOME=f"{home}/.cache",
                    XDG_STATE_HOME=f"{home}/.local/state")
         with open(os.path.join(d, "stdout.log"), "wb") as out:
-            rc = subprocess.run(["timeout", "--signal=TERM", "--kill-after=30", str(wall), "nice", "-n", "10",
-                                 "ionice", "-c", "3", "pyrogenesis"] + args, cwd=d, env=env,
-                                stdin=subprocess.DEVNULL, stdout=out, stderr=subprocess.STDOUT).returncode
+            command = ["timeout", "--signal=TERM", "--kill-after=30", str(wall), "nice", "-n", "10",
+                       "ionice", "-c", "3", "pyrogenesis"] + args
+            if spec.get("rejoin_test") is None:
+                rc = subprocess.run(command, cwd=d, env=env, stdin=subprocess.DEVNULL, stdout=out,
+                                    stderr=subprocess.STDOUT).returncode
+            else:
+                rc = run_rejoin_test(command, d, env, out)
         shutil.rmtree(os.path.join(home, ".cache"), ignore_errors=True)
         shutil.rmtree(os.path.join(home, ".local/share/0ad/mods"), ignore_errors=True)
     else:
@@ -715,6 +789,11 @@ def run_match(outdir, spec, host, hosts, wall):
     result = {"tag": tag, "seed": spec["seed"], "host": host, "exit_code": rc, "wall_seconds": wall_s,
               "turns": turns, "spec": spec}
     result.update(check_settings(d, spec))
+    if spec.get("rejoin_test") is not None:
+        with open(os.path.join(d, "stdout.log"), "rb") as fh:
+            log = fh.read()
+        result["rejoin_test"] = {"turn": spec["rejoin_test"], "started": b"Initializing the secondary simulation" in log,
+                                 "failure": REJOIN_FAILURE in log}
     with open(os.path.join(d, "result.json"), "w", encoding="utf-8") as fh:
         json.dump(result, fh, indent=1)
     return result
@@ -837,7 +916,24 @@ def report_settings(results):
     sys.stderr.flush()
 
 
-def run_batch(outdir, specs, slots, hosts, wall):
+def report_rejoin(results):
+    tested = [r for r in results if "rejoin_test" in r]
+    if not tested:
+        return
+    failed = [r["tag"] for r in tested if r["rejoin_test"]["failure"]]
+    unstarted = [r["tag"] for r in tested if not r["rejoin_test"]["started"]]
+    if failed:
+        print(f"run: FAILURE: the rejoin test found a difference in {len(failed)} game(s) ({' '.join(failed)}): "
+              "the engine's dumps are in each game's home/.local/state/0ad/log/serializationtest/ (tools/rejoin.py compares a batch with its plain games)", file=sys.stderr)
+    if unstarted:
+        print(f"run: WARNING: the rejoin test never started in {len(unstarted)} game(s) ({' '.join(unstarted)}): "
+              "the game ended before its turn", file=sys.stderr)
+    if not failed:
+        print(f"run: rejoin test: no difference in {len(tested) - len(unstarted)} game(s)", file=sys.stderr)
+    sys.stderr.flush()
+
+
+def run_batch(outdir, specs, slots, hosts, caps):
     """Each slot is a worker pulling matches from one queue; a match whose
     remote transport fails is put back once for another slot, and a host that
     fails twice in a row is dropped from the batch."""
@@ -860,7 +956,7 @@ def run_batch(outdir, specs, slots, hosts, wall):
             except queue.Empty:
                 return
             try:
-                r = run_match(outdir, spec, host, hosts, wall)
+                r = run_match(outdir, spec, host, hosts, caps[spec["tag"]])
                 with lock:
                     failures[host] = 0
                     done.append(r)
@@ -882,7 +978,7 @@ def run_batch(outdir, specs, slots, hosts, wall):
             f.result()
     while not q.empty():
         spec, attempt = q.get()
-        r = run_match(outdir, spec, "local", hosts, wall)
+        r = run_match(outdir, spec, "local", hosts, caps[spec["tag"]])
         done.append(r)
         print(f"[{len(done)}/{total}] {r['tag']} host=local (fallback) exit={r['exit_code']}", flush=True)
     return done
@@ -918,6 +1014,8 @@ def main():
     ap.add_argument("--map-interval", type=int, default=30000)
     ap.add_argument("-R", dest="resign", type=float, default=0.1)
     ap.add_argument("--commands", action="store_true")
+    ap.add_argument("--rejoin-test", type=int)
+    ap.add_argument("--full-ai-view", action="store_true")
     ap.add_argument("--verify-host")
     ap.add_argument("--calibrate", nargs=2, metavar=("HOST", "KS"))
     ap.add_argument("rest", nargs="*")
@@ -930,12 +1028,9 @@ def main():
     if not a.limit or a.limit <= 0:
         die("-l MIN is required and must be > 0: choose the shortest in-game limit that answers the "
             "question (AGENTS.md, Game duration)")
-    derived = wall_cap(a.limit)
+    given_wall = a.wall
     if a.wall is None:
-        a.wall = derived
-    elif a.wall > derived:
-        print(f"run: WARNING -t {a.wall}s exceeds the derived cap {derived}s (a game slower than "
-              f"{MIN_RATE} turns/s is a defect to investigate, not to wait for)", file=sys.stderr)
+        a.wall = wall_cap(a.limit)
 
     hosts = load_hosts()
     sources = dict(s.split("=", 1) for s in a.sources)
@@ -969,7 +1064,7 @@ def main():
         die(f"-s {a.sizes!r}: sizes are tile counts")
     base = {"maps": maps, "biomes": a.biomes.split(","), "sizes": sizes, "placements": a.placement.split(","),
             "victories": parse_victories(a.victory), "settings": settings, "limit_minutes": a.limit,
-            "players": players, "rotate": a.rotate}
+            "players": players, "rotate": a.rotate, "rejoin_test": a.rejoin_test}
     if a.matches:
         with open(a.matches, encoding="utf-8") as fh:
             lines = [json.loads(line) for line in fh if line.strip()]
@@ -991,9 +1086,23 @@ def main():
               f"{' '.join(tags[:8])}{' ...' if len(tags) > 8 else ''}", file=sys.stderr)
     if not specs:
         die("no match to run")
+    caps = {}
+    for s in specs:
+        need = wall_cap(s["limit_minutes"], s.get("rejoin_test"))
+        if given_wall is not None and "rejoin_test" in s and given_wall < need:
+            die(f"{s['tag']}: -t {given_wall}s is below the {need}s a rejoin test at turn {s['rejoin_test']} "
+                f"with -l {s['limit_minutes']} needs ({MIN_RATE} turns/s before it, {REJOIN_MIN_RATE} after): "
+                "drop -t, or choose a later turn or a shorter -l")
+        caps[s["tag"]] = need if given_wall is None else given_wall
+    derived = max(wall_cap(s["limit_minutes"], s.get("rejoin_test")) for s in specs)
+    if given_wall is not None and given_wall > derived:
+        print(f"run: WARNING -t {given_wall}s exceeds the derived cap {derived}s (a game slower than "
+              f"{MIN_RATE} turns/s, {REJOIN_MIN_RATE} in a rejoin test, is a defect to investigate, not to wait for)",
+              file=sys.stderr)
     ais = {p["ai"] for s in specs for p in s["players"]}
     order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval, a.resign,
-                                scenarios=any(is_scenario(s["map"]) for s in specs), commands=a.commands)
+                                scenarios=any(is_scenario(s["map"]) for s in specs), commands=a.commands,
+                                full_view=a.full_ai_view or any("rejoin_test" in s for s in specs))
     syntax_check(os.path.join(outdir, "mods"))
     for s in specs:
         s["mods"] = [m for m in order]
@@ -1059,10 +1168,14 @@ def main():
         return
 
     names = a.hosts.split(",") if a.hosts else list(hosts)
+    if any("rejoin_test" in s for s in specs) and names != ["local"]:
+        die("the rejoin test runs on local only: give -H local")
     slots, info, build = select_slots(names, hosts, a.jobs, a.unverified)
     batch = {"date": datetime.datetime.now().isoformat(timespec="seconds"), "repo": REPO,
              "repo_commit": git_info(REPO), "build": build, "mods": prov, "hosts": info,
-             "wall_cap": a.wall, "argv": sys.argv[1:], "matches": specs}
+             "wall_cap": max(caps.values()), "argv": sys.argv[1:], "matches": specs}
+    if len(set(caps.values())) > 1:
+        batch["wall_caps"] = caps
     with open(os.path.join(outdir, "batch.json"), "w", encoding="utf-8") as fh:
         json.dump(batch, fh, indent=1)
     print(f"run: {len(specs)} matches on {len(slots)} slots "
@@ -1078,15 +1191,21 @@ def main():
             f" if every game reaches the {a.limit}-min limit"
     else:
         est = "no calibration to estimate from"
-    print(f"run: limit {a.limit} in-game min, wall cap {a.wall}s per match; {est}", flush=True)
+    if any("rejoin_test" in s for s in specs):
+        est += ", rejoin tests not counted (from their turn on, a few turns/s)"
+    low, high = min(caps.values()), max(caps.values())
+    print(f"run: limit {a.limit} in-game min, wall cap {low if low == high else f'{low}-{high}'}s per match; {est}",
+          flush=True)
     t0 = time.time()
-    results = run_batch(outdir, specs, slots, hosts, a.wall)
+    results = run_batch(outdir, specs, slots, hosts, caps)
     killed = [r["tag"] for r in results if r["exit_code"] in (124, 137)]
     print(f"run: batch done in {time.time() - t0:.0f}s", flush=True)
     if killed:
-        print(f"run: FAILURE: {len(killed)} game(s) hit the {a.wall}s wall-clock cap ({' '.join(killed)}): "
+        print(f"run: FAILURE: {len(killed)} game(s) hit their wall-clock cap "
+              f"({' '.join(f'{t}:{caps[t]}s' for t in killed)}): "
               "investigate (hang, stall, slowdown); do not rerun with a bigger cap", file=sys.stderr, flush=True)
     report_settings(results)
+    report_rejoin(results)
     subprocess.run([sys.executable, os.path.join(TOOLS, "analyze.py"), outdir] + [s["tag"] for s in specs])
 
 

@@ -13,6 +13,7 @@ Development tooling for Strategos. Not part of the bot.
 | `forecast.py` + `forecast_eval.mjs` | check the bot's combat forecast against the battles of recorded games; fit its constants |
 | `duel.py` | check the core of the combat forecast against the duels of the duel scenario; fit its constants |
 | `compare.py` | paired comparison of two batches run on the same matches |
+| `rejoin.py` | check that a game restored from a save plays the rest as the unsaved game: the engine's rejoin test against the same games played without it |
 | `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request (source and purpose) the set grants |
 | `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
@@ -217,7 +218,8 @@ a side whose assets stay below RATIO x the strongest other side's for
 2 minutes is defeated, as a player resigning in the GUI, and the line
 `[HARNESS] resign {"t","team","players","ratio"}` is printed; the game
 then ends as the other side's win. This is the only way the harness acts
-on a game before the limit.
+on a game before the limit (besides `--full-ai-view`, below, which changes
+what the AIs see).
 
 At game end it prints `[HARNESS] census {"<player id>": {"commands":
 {<type>: n}, "train": {<template>: units}, "construct": {<template>: n},
@@ -241,11 +243,122 @@ Read-only: the 10 games of the identity set that had been played at the
 same limit without it (2 against two Petra, 8 naval) are bit-identical
 with it.
 
+Wrappers of the public `AIInterface`, `AIProxy` and `Trainer` serve the
+rejoin test (below). A simulation restored from a saved state differs
+from the unsaved one in four ways, which the harness repairs on that path
+only (a game that is never restored never takes it). It runs one turn,
+then gives its AIs the full representation of the game
+(`GetFullRepresentation(false)`; the game start calls it with `true`) with
+that turn's events, and:
+
+- the entities changed during the turn stay marked as changed in
+  `AIInterface` (sent again next turn; the serialised states differ):
+  cleared, as `GetRepresentation` does every turn;
+- it describes every entity, also those `AIProxy` never reports because
+  they have no owner (the finished units of a batch that could not spawn:
+  `Trainer.Item.Spawn` gives the others their owner at once): removed;
+- an entity the AIs knew that is destroyed during the turn is in no
+  representation, so its `Destroy` event names an entity the restored AIs
+  never had (seen: a soldier's death missing from the bot's losses, and
+  its modifications left in the shared script): its representation, taken
+  when its owner becomes `INVALID_PLAYER`, is added with a `Create` event
+  before the turn's others, so the shared script knows it and destroys it
+  as in the unsaved game;
+- the stock `Trainer` does not save an item's `spawnNotified`
+  (`Trainer.Item.SerializableAttributes`), so a batch that could not spawn
+  before the save notifies "Can't find free space to spawn trained units"
+  again in the restored simulation only (a GUI notification, part of the
+  serialised state): `Trainer.Deserialize` sets it again as `Spawn` left
+  it, on every item still holding units it created and could not spawn.
+
+With `run.sh --full-ai-view` (`HARNESS_FULL_AI_VIEW`), every turn sends the
+AIs the full representation of every entity they already know instead of
+the changes the engine reported.
+
 `autostart/harness_settings.js` applies `-harness-settings=JSON` (the
 `-S` settings) on top of the public autostart command line. The engine
 loads every file of `autostart/` in name order, so it wraps the public
 `parseCmdLineArgs` without copying it, and sets each setting as the game
 setup screen would; an unknown key aborts the game start.
+
+### Saved games: the rejoin test
+
+A saved game holds what each AI's `Serialize` returns; loading it calls
+`Deserialize` on a new AI object, then `Init`. The engine tests this
+itself (`source/simulation2/Simulation2.cpp`, `CSimulation2Impl::Update`):
+`-serializationtest` restores a second simulation from the first one's
+state before every turn and compares the two after that one turn;
+`-rejointest=N` restores it once, at turn N, then runs both to the end and
+compares their whole serialised state, AIs included
+(`CCmpAIManager.cpp`, `SerializeState`), every turn — the check that a game
+resumed from a save at turn N plays the rest as the unsaved game does.
+`run.sh --rejoin-test N` runs it (`"rejoin_test": N` in a `--matches` line
+sets it per match), and `tools/rejoin.py PLAIN TEST` reads the result:
+
+```sh
+tools/run.sh -l 14 --commands --full-ai-view -H local --matches M.jsonl OUT/plain
+tools/run.sh -l 14 --commands -H local --matches M_with_rejoin_test.jsonl OUT/test
+tools/rejoin.py OUT/plain OUT/test
+```
+
+What the engine and the public AI interface allow:
+
+- **Not on random maps**: the second simulation loads the map file and does
+  not regenerate a random map (`Simulation2.cpp`: "Serialization test mode
+  does not support random maps", an assertion). The identity set is all
+  random maps; the test runs on the skirmish maps (`-M skirmishes/NAME`).
+- **Not with Petra**: right after the second simulation is restored the
+  engine serialises it again, before any AI has run `Init`, and Petra's
+  `Serialize` then throws (`this.queueManager is undefined`) and aborts
+  the game. A test game has Strategos players only (or `none`).
+- **The view of the AIs** (`--full-ai-view`, implied by `--rejoin-test`):
+  the engine reports to the AIs the changes of each entity, and misses
+  some (UnitAI rewrites its order queue in several places without
+  `MT_UnitAIOrderDataChanged`), so what an AI believes depends on the
+  history of the game, while the restored simulation starts from the full
+  representation. Without the option the test fails at the first decision
+  after N on that alone (seen: a worker's order target read as its tree in
+  the first simulation and as the civic centre it was walking to in the
+  restored one). With it, every turn gives every AI the full
+  representation of every entity it knows, in both simulations, so the
+  view is a function of the game state alone; it changes the games, so a
+  test game is compared with the same match played with `--full-ai-view`
+  and no test. It also means a game loaded on the stock engine is not the
+  unsaved game bit for bit, whatever the AI saves.
+- The first difference is an engine assertion (`debug_warn`) whose prompt
+  never returns in a headless game (it forks for `/usr/bin/xmessage`;
+  without it the child hangs): `run.py` stops the game, with its process
+  group and core dumps off, as soon as `Serialization test failure` is in
+  its log. The engine has then written both states before and after that
+  turn to `home/.local/state/0ad/log/serializationtest/*/` (`state.*`
+  binary, `debug.*` text, `hash.*`). The rejoin test runs on `local` only.
+- After N both simulations print to the same log, the first one's lines of
+  each turn followed by the second's. `rejoin.py` checks, per game, that
+  the second simulation started and the engine found no difference, that
+  both games exited cleanly without an ERROR or WARNING line, and that every
+  turn before N prints what the plain game prints and every turn from N on
+  prints it twice (harness and bot lines, commands and end statistics
+  included, `[PERF]` excepted): the test does not change the first
+  simulation, and the restored one plays the same game.
+- The restore turn itself: the AIs of a restored simulation get the game
+  after its first turn with that turn's events, which the harness repairs
+  (above); a game loaded on the stock engine has these differences too.
+- The stock `Trainer` does not save whether a blocked batch has notified
+  (above): without the harness's repair, the restored simulation itself
+  diverges from the first one the turn after N whenever a batch could not
+  spawn before N (seen: a dock's ship, "Can't find free space to spawn
+  trained units" in the restored simulation only, both bots' states
+  equal). A game loaded on the stock engine notifies again too.
+- The cost: from N on both simulations run and the whole state is
+  serialised four times and hashed four times a turn: 2 to 3 turns/s for
+  a 1v1 on a 2-player skirmish map (about 20 times slower than the plain
+  game), about 1 for a 2v2 late in the game. `run.py` derives the wall cap of a rejoin game
+  from N and `-l` (the turns before N at 20 turns/s, those after at
+  `REJOIN_MIN_RATE`, 1 turn/s) and refuses a `-t` below it; keep the
+  restored part short (N late, or `-l` just after it): every turn after N
+  costs a second or so.
+- What it cannot see: state a bot never saves and never uses again before
+  the end of the game, and anything the chosen turn N does not hold.
 
 ### scenarios/ — the strategos-scenarios mod
 
@@ -515,7 +628,8 @@ is not whole and exits 1:
   through, in `allocator.js` only and in this form only: an assignment,
   which copies the kind of the request a unit was granted to, `"source":
   request.source, "purpose": request.purpose,`, and names none of its
-  own), a class with a `requests(` method that names no purpose, unless it
+  own, and the same assignment saved for a saved game, which keeps of the
+  claims only the units, `"claims": { "units": request.claims.units }`), a class with a `requests(` method that names no purpose, unless it
   is composed: it creates (`new NAME(`) at least one class of the bot that
   names purposes, and those classes are each declared once and all name
   the same source (a class handed its parts instead of creating them and

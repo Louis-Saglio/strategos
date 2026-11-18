@@ -20,6 +20,16 @@ export class Crossings
 		this.tried = new Retry();
 	}
 
+	save()
+	{
+		return { "tried": this.tried.save() };
+	}
+
+	restore(data)
+	{
+		this.tried.restore(data.tried);
+	}
+
 	decide(world, plan, assessments)
 	{
 		this.planSettlement(world, plan, assessments);
