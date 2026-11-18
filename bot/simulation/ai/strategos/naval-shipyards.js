@@ -62,7 +62,7 @@ export class Shipyards
 		const arsenal = world.trainers.find(trainer => !dead.has(trainer.id) && trainer.queueLength === 0 && trainer.trainable.some(bombards));
 		if (arsenal && world.crossing && guns + building < naval.bombard.ships && world.ships.length >= naval.raid.minShips)
 		{
-			const gun = arsenal.trainable.filter(bombards).sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			const gun = this.catalog.cheapest(arsenal.trainable, bombards);
 			if (payable(gun))
 				requests.push(trainRequest("naval", "siege-ship", arsenal.id, gun, 1, this.catalog.cost(gun), this.catalog.population(gun),
 					plan.values.support, 1));

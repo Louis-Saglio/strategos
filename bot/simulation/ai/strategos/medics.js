@@ -33,8 +33,7 @@ export class Medics
 		{
 			if (trainer.queueLength > 0)
 				continue;
-			const template = trainer.trainable.filter(name => this.catalog.isHealer(name))
-				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isHealer(name));
 			if (!template)
 				continue;
 			return [noting(trainRequest("medics", "healer", trainer.id, template, 1, this.catalog.cost(template), this.catalog.population(template),

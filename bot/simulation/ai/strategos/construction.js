@@ -1,69 +1,13 @@
-import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
-import { awayFrom, centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
+import { centroid } from "simulation/ai/strategos/geometry.js";
+import { Builders } from "simulation/ai/strategos/construction-builders.js";
+import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
+import { HAUL_RETURN, Siting } from "simulation/ai/strategos/construction-siting.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { buildRequest, deleteRequest, fundRequest, inTier, noting, pressing, repairRequest } from "simulation/ai/strategos/requests.js";
-import { rankedSites } from "simulation/ai/strategos/sites.js";
-import { Change, Retry } from "simulation/ai/strategos/switches.js";
-import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
-import { territoryAt } from "simulation/ai/strategos/terrain.js";
+import { buildRequest, fundRequest, inTier, noting } from "simulation/ai/strategos/requests.js";
+import { Change } from "simulation/ai/strategos/switches.js";
 
-const BUILDING_MARGIN = 3;
-const TIGHT_MARGIN = 1;
-const FINE_STEP = 3;
-const CRAMPED_MEMORY_MS = 60000;
-const FIELD_MARGIN = 1;
-const HOUSE_RING_WIDTH = 120;
-const CENTRE_CLEARANCE = 8;
-const SECONDS_PER_BUILDER = 25;
-const MAX_BUILDERS = 6;
-const KEEP_AWAY = { "food": 10, "wood": 6, "stone": 14, "metal": 14 };
-const SAME_TYPE_KEEP_AWAY = 3;
-const WILD_FOOD_PER_GATHERER = 150;
-const DROPSITE_REACH = 28;
 const DROPSITE_MIN_GATHERERS = 3;
-const CLUSTER_RADIUS = 20;
-const DROPSITE_SEARCH = 160;
-const DROPSITE_DISTANCE_BIAS = 40;
-const DROPSITE_CELLS_TRIED = 4;
-const HAUL_CELL = 16;
-const HAUL_FAR = 50;
-const HAUL_SITES_TRIED = 4;
-const HAUL_SEARCH = 40;
-const HAUL_HORIZON_S = 240;
-const HAUL_RETURN = 1.5;
 const HAUL_MAX_URGENCY = 3;
-const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
-const SETTLEMENT_SPACING_MARGIN = 10;
-const SETTLEMENT_MAX_DISTANCE = 360;
-const SETTLEMENT_TRIES = 6;
-const FOUNDING_MAX_DISTANCE = 200;
-const OUTPOST_MIN_BUILDERS = 3;
-const SHORT_URGENCY = 5;
-const DOCK_OFFSETS = [0.5, 0.25, 0.75];
-const DOCK_SITES_TRIED = 40;
-const DOCK_OFFING = 30;
-const DOCK_MATCH = 25;
-const DOCK_SEA_ROOM = 18;
-const DOCK_BLOCKED_CLEARANCE = 80;
-const DOCK_SCHOOLS_COUNTED = 8;
-const DOCK_SCHOOL_BONUS = 20;
-const MARKET_SURPLUS = 500;
-const STALLED_MS = 150000;
-const UNSTARTED_GRACE_MS = 30000;
-const ABANDONED_MEMORY_MS = 600000;
-const REPAIR_TIME_RATIO = 2;
-const REPAIR_MAX_BUILDERS = 3;
-const REPAIR_MIN_MISSING = 0.1;
-const REPAIR_SAFE_RADIUS = 90;
-const WONDER_STOCK = 2;
-const TRADE_POST_CLEARANCE = 150;
-const WORKER_RATE = 0.5;
-const SPACING_MARGIN = 8;
-const ELITE_EDGE = 1.2;
-const ELITE_STOCK = 2;
-const TERRITORY_PATH = "TerritoryInfluence/Radius";
-const TERRITORY_VALUE = 5000;
-const WONDER_BUILDERS = 20;
 
 export class Construction
 {
@@ -72,1128 +16,175 @@ export class Construction
 		this.catalog = catalog;
 		this.player = player;
 		this.telemetry = telemetry;
-		this.noSiteReported = new Retry();
-		this.noSiteTime = new Retry();
-		this.works = new Change();
+		this.builders = new Builders(catalog, telemetry);
+		this.siting = new Siting(catalog, player, telemetry, this.builders);
+		this.reports = new Map();
 		this.relieved = new Change();
-		this.dockSite = null;
-		this.dockRefused = new Set();
-		this.stalled = new Map();
-		this.abandoned = [];
-	}
-
-	searchable(world, template)
-	{
-		return this.noSiteTime.due(world.time, RETRY_MS, template);
-	}
-
-	noSite(world, template)
-	{
-		this.noSiteTime.record(world.time, template);
-		if (this.noSiteReported.attempt(world.time, REPORT_MS, template))
-			this.telemetry.line("BUILD", world.time, { "noSite": template });
-		return null;
+		this.decisions = new Map([
+			[FIELDS, context => this.fieldRequest(context)],
+			[DROPSITES, context => this.dropsiteRequest(context)],
+			[COLONY, context => this.colonyRequest(context)]
+		]);
 	}
 
 	requests(world, plan, assessments)
 	{
+		const context = { "world": world, "plan": plan, "assessments": assessments, "catalog": this.catalog, "siting": this.siting,
+			"builders": this.builders, "placement": world.centres.length ? new Placement(world, this.player) : null };
 		if (!world.centres.length)
 		{
-			const founding = this.foundingRequest(world, plan);
-			return (founding ? [founding] : []).concat(this.repairRequests(world, plan));
+			const founding = this.ask(FOUNDING, context);
+			return (founding ? [founding] : []).concat(this.builders.repairRequests(world, plan));
 		}
 		const requests = [];
-		const placement = new Placement(world, this.player);
-		for (const ask of [this.housingRequest, this.farmingRequest, this.dropsiteRequest, this.productionRequest, this.worksRequest,
-			this.phaseBuildingRequest, this.siegeWorkshopRequest, this.marketRequest, this.expansionRequest, this.outpostCentreRequest,
-			this.dockRequest, this.wonderRequest, this.eliteRequest, this.tradePostRequest])
+		for (const need of NEEDS)
 		{
-			const request = ask.call(this, world, plan, assessments, placement);
+			const decide = this.decisions.get(need);
+			const request = decide ? decide(context) : this.ask(need, context);
 			if (request)
 				requests.push(request);
 		}
-		return requests.concat(this.colonyRequests(world, plan, assessments), this.forwardRequests(world, plan, assessments),
-			this.repairRequests(world, plan), this.mendRequests(world, plan), this.abandonRequests(world, plan));
-	}
-
-	mendRequests(world, plan)
-	{
-		if (!world.damaged.length)
-			return [];
-		const requests = [];
-		const assigned = new Map();
-		for (const worker of world.workers)
-			if (worker.state.repairing && worker.target !== undefined)
-				assigned.set(worker.target, (assigned.get(worker.target) || 0) + 1);
-		const hostiles = world.threats.concat(world.wild);
-		const safe = REPAIR_SAFE_RADIUS * REPAIR_SAFE_RADIUS;
-		const taken = new Set();
-		const forward = new Set(world.decaying.map(structure => structure.id));
-		const ordered = world.damaged
-			.filter(structure => !forward.has(structure.id) && (structure.missing >= REPAIR_MIN_MISSING || assigned.has(structure.id)))
-			.sort((a, b) => b.missing * b.value - a.missing * a.value || a.id - b.id);
-		for (const structure of ordered)
-		{
-			if (hostiles.some(hostile => squareDistance(hostile.position, structure.position) <= safe))
-				continue;
-			const seconds = structure.missing * REPAIR_TIME_RATIO * this.catalog.buildTime(structure.template);
-			const wanted = Math.max(1, Math.min(REPAIR_MAX_BUILDERS, Math.ceil(seconds / SECONDS_PER_BUILDER)));
-			const missing = wanted - (assigned.get(structure.id) || 0);
-			if (missing <= 0)
-				continue;
-			for (const id of this.pickBuilders(world, structure.template, structure.position, missing, taken))
-			{
-				taken.add(id);
-				requests.push(repairRequest("construction", "mend", id, structure.id, plan.values.build, Math.min(1, structure.missing + 0.5)));
-			}
-		}
-		return requests;
-	}
-
-	abandonRequests(world, plan)
-	{
-		const requests = [];
-		const watched = new Map();
-		for (const foundation of world.foundations)
-		{
-			const known = this.stalled.get(foundation.id);
-			const entry = known && foundation.progress <= known.progress ? known : { "progress": foundation.progress, "since": world.time };
-			watched.set(foundation.id, entry);
-			if (world.time - entry.since < STALLED_MS)
-				continue;
-			const footprint = this.catalog.footprint(foundation.template);
-			requests.push(noting(deleteRequest("construction", "abandon", foundation.id, plan.values.build, 1), { "abandoned": {
-				"box": { "x": foundation.position[0], "z": foundation.position[1], "halfWidth": footprint.width / 2,
-					"halfDepth": footprint.depth / 2, "until": world.time + ABANDONED_MEMORY_MS },
-				"report": { "abandoned": foundation.template, "x": Math.round(foundation.position[0]), "z": Math.round(foundation.position[1]) }
-			} }));
-		}
-		this.stalled = watched;
-		this.abandoned = this.abandoned.filter(box => box.until > world.time);
-		return requests;
+		return requests.concat(this.builders.repairRequests(world, plan), this.builders.mendRequests(world, plan),
+			this.builders.abandonRequests(world, plan));
 	}
 
 	settle(world, outcomes)
 	{
-		for (const { request, issued } of outcomes)
-		{
-			if (!issued || !request.note)
-				continue;
-			if (request.note.dockSite)
-				this.dockSite = request.note.dockSite;
-			if (request.note.abandoned)
-			{
-				this.abandoned.push(request.note.abandoned.box);
-				this.telemetry.line("BUILD", world.time, request.note.abandoned.report);
-			}
-		}
+		this.siting.settle(outcomes);
+		this.builders.settle(world, outcomes);
 	}
 
-	offered(world)
+	ask(need, context)
 	{
-		const names = new Set();
-		for (const worker of world.workers)
-			for (const name of worker.buildable)
-				names.add(name);
-		return names;
-	}
-
-	cheapest(world, accept)
-	{
-		let best = null;
-		let bestCost = Infinity;
-		for (const name of this.offered(world))
-		{
-			if (!this.catalog.isPlaceableOnLand(name) || !accept(name))
-				continue;
-			const cost = this.catalog.costSum(name);
-			if (cost < bestCost || (cost === bestCost && name < best))
-			{
-				best = name;
-				bestCost = cost;
-			}
-		}
-		return best;
-	}
-
-	count(world, accept)
-	{
-		let total = 0;
-		for (const name in world.structureCounts)
-			if (accept(name))
-				total += world.structureCounts[name];
-		for (const foundation of world.foundations)
-			if (accept(foundation.template))
-				total += 1;
-		for (const pending of world.pendingConstructions)
-			if (accept(pending.template))
-				total += 1;
-		return total;
-	}
-
-	wantedBuilders(world, template)
-	{
-		if (!world.centres.length && this.catalog.isSettlement(template))
-			return world.workers.length;
-		const limit = this.catalog.isWonder(template) ? WONDER_BUILDERS : MAX_BUILDERS;
-		return Math.max(1, Math.min(limit, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
-	}
-
-	foundingParty(world, template)
-	{
-		const wanted = this.wantedBuilders(world, template);
-		return world.centres.length ? Math.min(MAX_BUILDERS, wanted) : wanted;
-	}
-
-	halfSize(template)
-	{
-		const footprint = this.catalog.footprint(template);
-		return Math.max(footprint.width, footprint.depth) / 2;
-	}
-
-	constructRequest(world, purpose, template, site, value, urgency)
-	{
-		const builders = this.pickBuilders(world, template, [site.x, site.z], this.foundingParty(world, template));
-		if (!builders.length)
+		const world = context.world;
+		if (need.wanted && !need.wanted(context))
 			return null;
-		return buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), value, urgency);
-	}
-
-	production(request)
-	{
-		return request ? inTier(request, "production") : request;
-	}
-
-	reservedBoxes(world)
-	{
-		return world.pendingConstructions.map(pending => {
-			const footprint = this.catalog.footprint(pending.template);
-			return { "x": pending.x, "z": pending.z, "halfWidth": footprint.width / 2, "halfDepth": footprint.depth / 2 };
-		}).concat(this.abandoned);
-	}
-
-	resourceZones(world, spared)
-	{
-		const zones = [];
-		for (const code of world.codes)
-			for (const site of world.sites[code])
-				if (isFinite(site.amount))
-					zones.push({ "position": site.position, "radius": code === spared ? SAME_TYPE_KEEP_AWAY : KEEP_AWAY[code] || 0 });
-		return zones;
-	}
-
-	farmBelts(world)
-	{
-		const farm = this.cheapest(world, name => this.catalog.isFarm(name));
-		if (!farm)
-			return [];
-		const belt = 2 * this.halfSize(farm) + FIELD_MARGIN + 2;
-		return world.anchors
-			.filter(anchor => anchor.types.includes("food"))
-			.map(anchor => ({ "position": anchor.position, "radius": anchor.radius + belt }));
-	}
-
-	populationHeadroom(world)
-	{
-		let incoming = 0;
-		for (const foundation of world.foundations)
+		if (need.coming ? need.coming(context) : need.fits && coming(world, name => need.fits(context, name)))
+			return null;
+		const template = need.template ? need.template(context) : landCheapest(context, name => need.fits(context, name));
+		if (!template || need.ready && !need.ready(context, template))
+			return null;
+		if (need.report && this.reported(need).to(template))
+			this.telemetry.line("BUILD", world.time, need.report(context, template));
+		for (const place of need.places ? need.places(context, template) : [{ "key": template }])
 		{
-			const watch = this.stalled.get(foundation.id);
-			if (!watch || foundation.progress > 0 || world.time - watch.since < UNSTARTED_GRACE_MS)
-				incoming += foundation.populationBonus;
+			const site = this.siting.sought(world, place.key, () => need.site(context, template, place));
+			if (!site)
+				continue;
+			const builders = need.builders ? need.builders(context) : this.builders.crew(world, template, site);
+			if (!builders.length)
+				continue;
+			const request = buildRequest("construction", need.purpose, template, site, builders, this.catalog.cost(template),
+				context.plan.values[need.value], need.urgency ? need.urgency(context) : 1);
+			if (site.note)
+				noting(request, site.note);
+			const tier = need.tier && need.tier(context);
+			return tier ? inTier(request, tier) : request;
 		}
-		for (const pending of world.pendingConstructions)
-			incoming += this.catalog.populationBonus(pending.template);
-		return {
-			"capacity": world.populationLimit + incoming,
-			"headroom": world.populationLimit + incoming - world.population - world.queuedPopulation
+		return null;
+	}
+
+	reported(need)
+	{
+		if (!this.reports.has(need))
+			this.reports.set(need, new Change());
+		return this.reports.get(need);
+	}
+
+	construct(world, purpose, template, site, value, urgency)
+	{
+		const builders = this.builders.crew(world, template, site);
+		return builders.length ? buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), value, urgency) : null;
+	}
+
+	fieldRequest(context)
+	{
+		const { world, plan, placement } = context;
+		const fields = hunger(context);
+		if (!fields)
+			return null;
+		const farm = site => {
+			const request = this.construct(world, "farm", fields.farm, site, plan.values.farm, fields.urgency);
+			return request && inTier(request, "production");
 		};
-	}
-
-	housingRequest(world, plan, assessments, placement)
-	{
-		const { capacity, headroom } = this.populationHeadroom(world);
-		const need = plan.housing.base + plan.housing.perTrainer * world.trainers.length;
-		if (headroom >= need || capacity >= world.populationMax)
-			return null;
-		const template = this.bestHouse(world);
-		if (!template)
-			return null;
-		if (!this.searchable(world, template))
-			return null;
-		const site = this.ringSite(world, placement, template);
-		if (!site)
-			return this.noSite(world, template);
-		return this.production(this.constructRequest(world, "house", template, site, plan.values.house, 1 + Math.max(0, need - headroom) / need));
-	}
-
-	bestHouse(world)
-	{
-		let best = null;
-		let bestRate = 0;
-		for (const name of this.offered(world))
-		{
-			const bonus = this.catalog.populationBonus(name);
-			if (bonus <= 0 || !this.catalog.isPlaceableOnLand(name))
-				continue;
-			const rate = bonus / Math.max(1, this.catalog.costSum(name));
-			if (rate > bestRate || (rate === bestRate && name < best))
-			{
-				best = name;
-				bestRate = rate;
-			}
-		}
-		return best;
-	}
-
-	farmingRequest(world, plan, assessments, placement)
-	{
-		const farm = this.cheapest(world, name => this.catalog.isFarm(name));
-		if (!farm)
-			return null;
-		const desired = assessments.gatherShares.food * (world.labour + world.queuedPopulation);
-		let wild = 0;
-		for (const site of world.sites.food)
-			if (isFinite(site.amount))
-				wild += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
-		const farms = this.count(world, name => this.catalog.isFarm(name));
-		const supply = wild + farms * this.catalog.maxGatherers(farm) + world.fishers;
-		if (supply >= desired)
-			return null;
-		const urgency = 1 + (desired - supply) / Math.max(1, desired);
-		const footprint = this.catalog.footprint(farm);
-		const half = this.halfSize(farm);
-		const reserved = this.reservedBoxes(world);
-		const zones = this.resourceZones(world, "food");
-		for (const anchor of world.anchors.filter(candidate => candidate.types.includes("food")))
-		{
-			const minRadius = anchor.radius + FIELD_MARGIN + half;
-			const site = placement.around(anchor.position, minRadius, minRadius + 2 * half + 4, footprint, FIELD_MARGIN, reserved, zones);
-			if (site)
-				return this.production(this.constructRequest(world, "farm", farm, site, plan.values.farm, urgency));
-		}
-		const farmstead = this.farmsteadRequest(world, plan, placement, farm, urgency);
+		const near = this.siting.field(world, placement, fields.farm, true);
+		if (near)
+			return farm(near);
+		const farmstead = this.ask(FARMSTEAD, context);
 		if (farmstead)
-			return this.production(farmstead);
-		for (const anchor of world.anchors.filter(candidate => candidate.types.includes("food")))
-		{
-			const minRadius = anchor.radius + FIELD_MARGIN + half;
-			const site = placement.around(anchor.position, minRadius, FARMSTEAD_SEARCH.to, footprint, FIELD_MARGIN, reserved, []);
-			if (site)
-				return this.production(this.constructRequest(world, "farm", farm, site, plan.values.farm, urgency));
-		}
-		return null;
+			return farmstead;
+		const far = this.siting.field(world, placement, fields.farm, false);
+		return far ? farm(far) : null;
 	}
 
-	farmsteadRequest(world, plan, placement, farm, urgency)
+	dropsiteRequest(context)
 	{
-		const isFoodDropsite = name => this.catalog.dropsiteTypes(name).includes("food") && !this.catalog.isFarm(name);
-		if (world.pendingConstructions.some(pending => isFoodDropsite(pending.template)) ||
-		    world.foundations.some(foundation => isFoodDropsite(foundation.template)))
-			return null;
-		const template = this.cheapest(world, isFoodDropsite);
-		if (!template)
-			return null;
-		const centre = world.home;
-		if (!this.searchable(world, template))
-			return null;
-		const site = placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
-			this.catalog.footprint(template), 2 * this.halfSize(farm) * 0.75, this.reservedBoxes(world),
-			this.resourceZones(world, null));
-		if (!site)
-			return this.noSite(world, template);
-		return this.constructRequest(world, "farmstead", template, site, plan.values.farm, urgency);
-	}
-
-	productionRequest(world, plan, assessments, placement)
-	{
-		const trains = name => this.catalog.populationBonus(name) <= 0 && this.catalog.trainsWorkers(name);
-		if (world.pendingConstructions.some(pending => trains(pending.template)) ||
-		    world.foundations.some(foundation => trains(foundation.template)))
-			return null;
-		const template = this.cheapest(world, name => trains(name) && this.catalog.trainsOnlySoldierWorkers(name)) || this.cheapest(world, trains);
-		if (!template)
-			return null;
-		const recruit = this.catalog.trainsFrom(template).filter(unit => this.catalog.isWorker(unit))
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!recruit)
-			return null;
-		const cost = this.catalog.cost(recruit);
-		const busy = productionFlow(world, this.catalog, assessments.posture.civilianTarget);
-		if (world.codes.some(code => cost[code] > 0 && world.demand.income[code] <= busy[code]))
-			return null;
-		return this.nearCentreRequest(world, placement, "barracks", template, plan.values.support);
-	}
-
-	ringSite(world, placement, template)
-	{
-		const reserved = this.reservedBoxes(world);
-		const footprint = this.catalog.footprint(template);
-		const spacing = this.catalog.spacing(template);
-		const apart = spacing ? world.footprints.filter(other => other.classes.includes(spacing.fromClass))
-			.map(other => ({ "position": other.position, "radius": spacing.min + SPACING_MARGIN })) : [];
-		const belts = this.farmBelts(world).concat(apart);
-		for (const centre of world.centres)
-		{
-			const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
-			for (const zones of [this.resourceZones(world, null).concat(belts), belts, apart])
-			{
-				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
-				if (site)
-					return site;
-			}
-		}
-		const options = [{ "margin": BUILDING_MARGIN, "zones": belts }, { "margin": TIGHT_MARGIN, "zones": belts },
-			{ "margin": TIGHT_MARGIN, "zones": apart }, { "margin": 0, "zones": apart }];
-		let best = null;
-		for (const centre of world.centres)
-		{
-			const minRadius = centre.radius + TIGHT_MARGIN + this.halfSize(template);
-			const site = placement.ranked(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, options, reserved, FINE_STEP);
-			if (site && (!best || site.rank < best.rank))
-				best = site;
-			if (best && best.rank === 0)
-				break;
-		}
-		if (!best)
-			this.crampedAt = world.time;
-		return best;
-	}
-
-	nearCentreRequest(world, placement, purpose, template, value)
-	{
-		if (!this.searchable(world, template))
-			return null;
-		const site = this.ringSite(world, placement, template);
-		if (!site)
-			return this.noSite(world, template);
-		return this.constructRequest(world, purpose, template, site, value, 1);
-	}
-
-	expansionRequest(world, plan)
-	{
-		const expansion = plan.expansion;
-		const isSettlement = name => this.catalog.isSettlement(name);
-		const settlements = this.count(world, isSettlement);
-		const cramped = this.crampedAt !== undefined && world.time - this.crampedAt < CRAMPED_MEMORY_MS;
-		const wanted = Math.min(expansion.max, Math.max(cramped ? settlements + 1 : 0,
-			1 + Math.floor(Math.max(0, world.population - expansion.firstPopulation) / expansion.populationPerSettlement)));
-		if (settlements >= wanted || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
-		    world.foundations.some(foundation => isSettlement(foundation.template)))
-			return null;
-		const template = [...this.offered(world)].filter(isSettlement)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template || !this.searchable(world, template))
-			return null;
-		return this.settlementRequest(world, plan, "expansion", template, world.home.position, SETTLEMENT_MAX_DISTANCE,
-			plan.values.investment, world.homeRegion, null);
-	}
-
-	obtainable(world, template)
-	{
-		const cost = this.catalog.cost(template);
-		return world.barter.open || world.codes.every(code => cost[code] <= world.resources[code] || world.gatherers[code] > 0);
-	}
-
-	outpostCentreRequest(world, plan, assessments)
-	{
-		const isSettlement = name => this.catalog.isSettlement(name);
-		if (world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
-		    world.foundations.some(foundation => isSettlement(foundation.template)))
-			return null;
-		const template = [...this.offered(world)].filter(isSettlement)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template || !this.obtainable(world, template))
-			return null;
-		for (const region of world.regions)
-		{
-			if (region.id === world.homeRegion || region.centres > 0 || region.enemyStructures > 0 || region.workers < OUTPOST_MIN_BUILDERS ||
-			    world.regionArea(region.id) < plan.centreArea)
-				continue;
-			const key = template + "@" + region.id;
-			if (!this.searchable(world, key))
-				continue;
-			const dock = world.docks.find(candidate => candidate.region === region.id);
-			if (!dock)
-				continue;
-			const request = this.settlementRequest(world, plan, "outpost", template, dock.position, SETTLEMENT_MAX_DISTANCE,
-				plan.values.investment, region.id, null, key);
-			if (request && assessments.short.length)
-				return this.production(pressing(request, SHORT_URGENCY));
-			if (request)
-				return request;
-		}
-		return null;
-	}
-
-	fishingSea(world, plan)
-	{
-		const fishing = plan.docks.fishing;
-		const home = world.home.position;
-		const counts = new Map();
-		for (const school of world.schools)
-		{
-			if (squareDistance(school, home) > fishing.reach * fishing.reach)
-				continue;
-			const sea = world.seaOf(school);
-			if (world.seas.includes(sea))
-				counts.set(sea, (counts.get(sea) || 0) + 1);
-		}
-		const best = [...counts].sort((a, b) => b[1] - a[1] || a[0] - b[0])[0];
-		return best && best[1] >= fishing.schools ? best[0] : undefined;
-	}
-
-	dockRequest(world, plan, assessments)
-	{
-		const ports = world.docks.filter(dock => dock.region === world.homeRegion && !dock.blocked);
-		const yard = ports.length === 1 && !!world.crossing && world.fishers >= plan.docks.yardFishers;
-		if (ports.length && !yard)
-			return null;
-		const colony = assessments.colony;
-		const fishing = this.fishingSea(world, plan);
-		const sea = colony ? colony.sea : world.crossing ? world.crossing.sea : fishing;
-		const population = Math.min(
-			assessments.short.length ? 0 : Infinity,
-			colony ? plan.docks.colonyPopulation : Infinity,
-			world.crossing ? plan.docks.population : Infinity,
-			fishing !== undefined ? plan.docks.fishing.population : Infinity);
-		if (sea === undefined || sea === null || world.population < population)
-			return null;
-		return this.shoreRequest(world, plan, assessments, yard ? "shipyard" : "dock", world.homeRegion, yard ? world.crossing.sea : sea,
-			world.home.position, [...this.offered(world)], null, yard ? plan.docks.yardSpacing : 0);
-	}
-
-	shoreRequest(world, plan, assessments, purpose, region, sea, origin, buildable, builders, spacing)
-	{
-		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
-		const pending = world.pendingConstructions.some(order => isDock(order.template));
-		const rising = world.foundations.some(foundation => isDock(foundation.template));
-		const tried = this.dockSite;
-		if (tried)
-		{
-			tried.seen = tried.seen || pending;
-			if (rising || world.docks.some(dock => squareDistance(dock.position, [tried.x, tried.z]) <= DOCK_MATCH * DOCK_MATCH))
-				this.dockSite = null;
-			else if (tried.seen && !pending)
-			{
-				this.dockRefused.add(tried.key);
-				this.telemetry.line("BUILD", world.time, { "refused": tried.template, "x": Math.round(tried.x), "z": Math.round(tried.z) });
-				this.dockSite = null;
-			}
-		}
-		if (pending || rising)
-			return null;
-		const template = buildable.filter(isDock)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template || !this.searchable(world, template))
-			return null;
-		const grid = world.grids.passability;
-		const shores = [];
-		for (let index = 0; index < world.shores.length; ++index)
-		{
-			const shore = world.shores[index];
-			if (shore.region !== region || shore.sea !== sea)
-				continue;
-			const owner = territoryAt(world.grids.territory, shore.land[0], shore.land[1]).owner;
-			if (owner !== 0 && owner !== this.player)
-				continue;
-			const offing = awayFrom(shore.water, shore.land, DOCK_OFFING);
-			if (!world.openWater(offing, sea, DOCK_SEA_ROOM) ||
-			    world.docks.some(dock => squareDistance(dock.position, shore.land) <
-				Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0) * Math.max(spacing || 0, dock.blocked ? DOCK_BLOCKED_CLEARANCE : 0)))
-				continue;
-			const reach = world.fishRadius * world.fishRadius;
-			const schools = spacing ? 0 :
-				Math.min(DOCK_SCHOOLS_COUNTED, world.schools.filter(school => squareDistance(school, shore.water) <= reach).length);
-			const distance = Math.max(0, distanceBetween(shore.land, origin) - DOCK_SCHOOL_BONUS * schools);
-			shores.push({ shore, index, "distance": distance });
-		}
-		shores.sort((a, b) => a.distance - b.distance || a.index - b.index);
-		for (const { shore, index } of shores.slice(0, DOCK_SITES_TRIED))
-			for (const offset of DOCK_OFFSETS)
-			{
-				const key = index + ":" + offset;
-				if (this.dockRefused.has(key))
-					continue;
-				const x = shore.land[0] + offset * (shore.water[0] - shore.land[0]);
-				const z = shore.land[1] + offset * (shore.water[1] - shore.land[1]);
-				const i = Math.floor(x / grid.cellSize);
-				const j = Math.floor(z / grid.cellSize);
-				if (i < 0 || j < 0 || i >= grid.width || j >= grid.height || grid.data[i + j * grid.width] & world.grids.buildingShore)
-				{
-					this.dockRefused.add(key);
-					continue;
-				}
-				const site = { "x": x, "z": z, "angle": 0 };
-				const urgent = assessments.short.length > 0;
-				const urgency = urgent ? SHORT_URGENCY : 1;
-				const request = builders ?
-					buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), plan.values.investment, urgency) :
-					this.constructRequest(world, purpose, template, site, plan.values.investment, urgency);
-				if (request)
-					noting(request, { "dockSite": { key, template, x, z, region, "seen": false } });
-				return urgent ? this.production(request) : request;
-			}
-		return this.noSite(world, template);
-	}
-
-	colonyRequests(world, plan, assessments)
-	{
-		const colony = assessments.colony;
-		if (!colony || world.docks.some(dock => dock.region === colony.region))
-			return [];
-		const builders = world.settlers.filter(settler => settler.region === colony.region && !settler.state.repairing);
-		if (!builders.length)
-			return this.colonyHold(world, plan, assessments, colony);
-		const origin = centroid(builders);
-		const ids = builders.map(settler => settler.id);
-		const isSettlement = name => this.catalog.isSettlement(name);
-		const template = colony.kind === "centre" && builders[0].buildable.filter(isSettlement)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (template && this.obtainable(world, template))
-		{
-			if (world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
-			    world.foundations.some(foundation => isSettlement(foundation.template)))
-				return [];
-			const key = template + "@" + colony.region;
-			const centre = this.searchable(world, key) && this.settlementRequest(world, plan, "colony-centre", template, origin, SETTLEMENT_MAX_DISTANCE,
-				plan.values.investment, colony.region, ids, key);
-			if (centre)
-				return [centre];
-		}
-		const request = this.shoreRequest(world, plan, assessments, "colony-dock", colony.region, colony.sea, origin, builders[0].buildable, ids);
-		return request ? [request] : [];
-	}
-
-	forwardRequests(world, plan, assessments)
-	{
-		const front = assessments.forward;
-		const isSettlement = name => this.catalog.isSettlement(name);
-		if (!front || world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
-		    world.foundations.some(foundation => isSettlement(foundation.template)))
-			return [];
-		const landed = world.settlers.filter(settler => settler.region === front.region && !settler.state.repairing);
-		if (!landed.length)
-			return [];
-		if (landed.length < plan.forwardBase.settlers)
-			return [];
-		const origin = front.position;
-		const builders = landed
-			.map(settler => ({ settler, "distance": squareDistance(settler.position, origin) }))
-			.sort((a, b) => a.distance - b.distance || a.settler.id - b.settler.id)
-			.slice(0, plan.forwardBase.builders)
-			.map(entry => entry.settler);
-		const template = builders[0].buildable.filter(isSettlement)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		const key = template + "@" + front.region;
-		if (!template || !this.obtainable(world, template) || !this.searchable(world, key))
-			return [];
-		const placement = new Placement(world, this.player);
-		placement.allowNeutral(true);
-		placement.man(front.region);
-		const site = placement.around(origin, 0, plan.forwardBase.reach, this.catalog.footprint(template), BUILDING_MARGIN,
-			this.reservedBoxes(world), []);
-		const spacing = this.catalog.spacing(template);
-		const apart = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN;
-		if (!site || world.enemyCentres.concat(world.centres).some(centre =>
-			squareDistance(centre.position, [site.x, site.z]) < apart * apart))
-		{
-			this.noSite(world, key);
-			return [];
-		}
-		const ids = builders.map(settler => settler.id);
-		return [this.production(buildRequest("construction", "forward-base", template, site, ids, this.catalog.cost(template),
-			plan.values.investment, SHORT_URGENCY))];
-	}
-
-	colonyHold(world, plan, assessments, colony)
-	{
-		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
-		if (!assessments.short.length || colony.kind !== "dock" || world.settlers.some(settler => settler.region === colony.region) ||
-		    world.pendingConstructions.some(order => isDock(order.template)) || world.foundations.some(foundation => isDock(foundation.template)))
-			return [];
-		const template = world.offered.filter(isDock)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template)
-			return [];
-		return [this.production(fundRequest("construction", "colony-fund", this.catalog.cost(template), plan.values.investment,
-			SHORT_URGENCY))];
-	}
-
-	foundingRequest(world, plan)
-	{
-		const isSettlement = name => this.catalog.isSettlement(name);
-		if (!world.workers.length || !world.codes.every(code => world.wealth.totals[code]) ||
-		    world.pendingConstructions.some(pending => isSettlement(pending.template)) ||
-		    world.foundations.some(foundation => isSettlement(foundation.template)))
-			return null;
-		const template = [...this.offered(world)].filter(isSettlement)
-			.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
-		if (!template || !this.searchable(world, template))
-			return null;
-		return this.settlementRequest(world, plan, "founding", template, centroid(world.workers), FOUNDING_MAX_DISTANCE, plan.values.founding, undefined, null);
-	}
-
-	settlementRequest(world, plan, purpose, template, home, reach, value, region, builders, key)
-	{
-		const spacing = this.catalog.spacing(template);
-		const minimum = (spacing ? spacing.min : 0) + SETTLEMENT_SPACING_MARGIN + world.wealth.cellSize * Math.SQRT2;
-		const spaced = spacing ? world.footprints.filter(footprint => footprint.classes.includes(spacing.fromClass)) : [];
-		const grid = world.wealth;
-		const candidates = rankedSites(grid, world.codes, plan.sites.wealthCap, null, 1,
-			position => {
-				const fromHome = distanceBetween(position, home);
-				if (fromHome > reach || region !== undefined && world.regionOf(position) !== region ||
-				    spaced.some(footprint => squareDistance(footprint.position, position) < minimum * minimum))
-					return null;
-				const fromEnemy = Math.min(Infinity, ...world.enemyCentres.map(centre => distanceBetween(centre.position, position)));
-				if (fromEnemy < plan.sites.enemyClearance || fromEnemy <= fromHome)
-					return null;
-				const owner = territoryAt(world.grids.territory, position[0], position[1]).owner;
-				return owner !== 0 && owner !== this.player ? null : fromHome;
-			},
-			(wealth, position, fromHome) => wealth > 0 ? wealth * (1 - fromHome / (2 * reach)) : null);
-		const placement = new Placement(world, this.player);
-		placement.allowNeutral(true);
-		const zones = this.resourceZones(world, null);
-		for (const candidate of candidates.slice(0, SETTLEMENT_TRIES))
-		{
-			const site = placement.around(candidate.position, 0, grid.cellSize, this.catalog.footprint(template), BUILDING_MARGIN,
-				this.reservedBoxes(world), zones);
-			if (site && !builders)
-				return this.constructRequest(world, purpose, template, site, value, 1);
-			if (site)
-				return buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), value, 1);
-		}
-		return this.noSite(world, key || template);
-	}
-
-	wonderRequest(world, plan, assessments, placement)
-	{
-		if (!plan.raiseWonder)
-			return null;
-		const isWonder = name => this.catalog.isWonder(name);
-		if (this.count(world, isWonder) > 0)
-			return null;
-		const template = this.cheapest(world, isWonder);
-		if (!template)
-			return null;
-		const cost = this.catalog.cost(template);
-		if (world.codes.some(code => world.resources[code] < WONDER_STOCK * cost[code]))
-			return null;
-		return this.nearCentreRequest(world, placement, "wonder", template, plan.values.wonder);
-	}
-
-	siegeWorkshopRequest(world, plan, assessments, placement)
-	{
-		if (world.fighters.length < plan.minArmy ||
-		    world.trainers.some(trainer => trainer.trainable.some(name => this.catalog.isBreaker(name))))
-			return null;
-		const trains = name => this.catalog.populationBonus(name) <= 0 && this.catalog.trainsBreakers(name);
-		if (world.pendingConstructions.some(pending => trains(pending.template)) ||
-		    world.foundations.some(foundation => trains(foundation.template)))
-			return null;
-		const template = this.cheapest(world, trains);
-		return template ? this.nearCentreRequest(world, placement, "siege-workshop", template, plan.values.support) : null;
-	}
-
-	phaseBuildingRequest(world, plan, assessments, placement)
-	{
-		if (!assessments.advancePhase)
-			return null;
-		for (const need of world.phaseNeeds)
-		{
-			const hasClass = name => this.catalog.template(name).hasClass(need.class);
-			const coming = world.pendingConstructions.filter(pending => hasClass(pending.template)).length +
-				world.foundations.filter(foundation => hasClass(foundation.template)).length;
-			if (coming >= need.missing)
-				continue;
-			const eligible = name => hasClass(name) && this.catalog.populationBonus(name) <= 0 && !this.catalog.isFarm(name);
-			const template = this.cheapest(world, name => eligible(name) && this.count(world, other => other === name) === 0) ||
-				(need.check === "variants" ? null : this.cheapest(world, eligible));
-			if (template)
-				return this.nearCentreRequest(world, placement, "phase-building", template, plan.values.phase);
-		}
-		return null;
-	}
-
-	marketRequest(world, plan, assessments, placement)
-	{
-		const isMarket = name => this.catalog.isBarterMarket(name);
-		if (world.barter.open || this.count(world, isMarket) > 0)
-			return null;
-		const { surplus, shortfall } = exchangeOutlook(world);
-		if (!world.codes.some(code => shortfall[code] > 0) || !world.codes.some(code => surplus[code] >= MARKET_SURPLUS))
-			return null;
-		const template = this.cheapest(world, isMarket);
-		if (!template)
-			return null;
-		return this.nearCentreRequest(world, placement, "market", template, plan.values.support);
-	}
-
-	worksRequest(world, plan, assessments, placement)
-	{
-		let best = null;
-		const prices = resourcePrices(world);
-		const priced = cost => world.codes.reduce((sum, code) => sum + prices[code] * cost[code], 0);
-		const cramped = this.crampedAt !== undefined && world.time - this.crampedAt < CRAMPED_MEMORY_MS;
-		const pressure = populationPressure(world);
-		const house = this.bestHouse(world);
-		const housePrice = house ? priced(this.catalog.cost(house)) / this.catalog.populationBonus(house) : 0;
-		const heroic = world.heroes.length > 0 || world.trainers.some(trainer => trainer.trainable.some(unit => this.catalog.isHero(unit)));
-		for (const name of this.offered(world))
-		{
-			if (!this.catalog.isPlaceableSpaced(name) || name === house || this.catalog.isSettlement(name))
-				continue;
-			const owned = this.count(world, other => other === name);
-			const repeatable = isFinite(this.catalog.limitRoom(name)) && this.catalog.limitRoom(name) > 0 &&
-				owned === (world.structureCounts[name] || 0);
-			if (owned > 0 && !repeatable)
-				continue;
-			const template = this.catalog.template(name);
-			const auras = this.catalog.auras(name);
-			let benefit = 0;
-			if (template.get("Researcher"))
-				for (const tech of this.catalog.researchable(template))
-				{
-					let gain = techBenefit(world, this.catalog, tech);
-					for (const aura of auras)
-						if (this.catalog.aura(aura).requiredTechnology === tech)
-							gain += this.catalog.aura(aura).coverage * effectBenefit(world, this.catalog, this.catalog.aura(aura));
-					benefit += Math.max(0, gain - priced(this.catalog.techCost(tech, name)));
-				}
-			for (const aura of auras)
-			{
-				benefit += auraBenefit(world, this.catalog, aura, false);
-				if (cramped)
-					for (const modification of this.catalog.aura(aura).modifications)
-						if (modification.value === TERRITORY_PATH && modification.multiply > 1)
-							benefit += (modification.multiply - 1) * TERRITORY_VALUE;
-			}
-			const trickle = this.catalog.trickle(name);
-			for (const code of world.codes)
-				benefit += trickle[code] * (TECH_HORIZON_S + POPULATION_PRICE * pressure / WORKER_RATE);
-			let potential = 0;
-			for (const option of this.catalog.upgrades(name))
-			{
-				const better = this.catalog.trickle(option.template);
-				const gain = world.codes.reduce((sum, code) => sum + Math.max(0, better[code] - trickle[code]), 0) *
-					(TECH_HORIZON_S + POPULATION_PRICE * pressure / WORKER_RATE);
-				potential = Math.max(potential, gain - priced(option.cost));
-			}
-			benefit += potential;
-			if (!owned && this.catalog.populationBonus(name) > 0 && housePrice > 0)
-				benefit += Math.min(this.catalog.populationBonus(name), Math.max(0, world.populationMax - world.populationLimit)) * housePrice;
-			if (!heroic)
-			{
-				const heroes = this.catalog.trainsFrom(name).filter(unit => this.catalog.isHero(unit));
-				let worth = 0;
-				for (const unit of heroes)
-					worth = Math.max(worth, heroWorth(world, this.catalog, unit) - HERO_EDGE * priced(this.catalog.cost(unit)));
-				benefit += worth;
-			}
-			const ratio = benefit / Math.max(1, priced(this.catalog.cost(name)));
-			if (ratio > 1 && (!best || ratio > best.ratio || (ratio === best.ratio && name < best.name)))
-				best = { name, ratio };
-		}
-		if (!best)
-			return null;
-		if (this.works.to(best.name))
-			this.telemetry.line("BUILD", world.time, { "works": best.name, "ratio": Math.round(best.ratio * 100) / 100 });
-		return this.nearCentreRequest(world, placement, "works", best.name, plan.values.investment);
-	}
-
-	tradePostRequest(world, plan, assessments, placement)
-	{
-		if (!assessments.scarce.length || !world.markets.some(market => market.own) || world.centres.length < 2)
-			return null;
-		const isMarket = name => this.catalog.isBarterMarket(name);
-		if (world.pendingConstructions.some(pending => isMarket(pending.template)) ||
-		    world.foundations.some(foundation => isMarket(foundation.template)))
-			return null;
-		let far = null;
-		let reach = 0;
-		for (const centre of world.centres)
-		{
-			if (world.regionOf(centre.position) !== world.homeRegion)
-				continue;
-			const nearest = Math.min(...world.markets.map(market => distanceBetween(market.position, centre.position)));
-			const longest = Math.max(...world.markets.map(market => distanceBetween(market.position, centre.position)));
-			if (nearest >= TRADE_POST_CLEARANCE && longest > reach)
-			{
-				far = centre;
-				reach = longest;
-			}
-		}
-		const template = this.cheapest(world, isMarket);
-		if (!far || reach < plan.tradePost.minDistance || !template || !this.searchable(world, template))
-			return null;
-		const minRadius = far.radius + CENTRE_CLEARANCE + this.halfSize(template);
-		const site = placement.around(far.position, minRadius, minRadius + HOUSE_RING_WIDTH, this.catalog.footprint(template), BUILDING_MARGIN,
-			this.reservedBoxes(world), this.farmBelts(world));
-		if (!site)
-			return this.noSite(world, template);
-		return this.constructRequest(world, "trade-post", template, site, plan.values.support, 1);
-	}
-
-	eliteRequest(world, plan, assessments, placement)
-	{
-		const enemy = enemyProfile(world, this.catalog);
-		const perSlot = name => unitStrength(world, this.catalog, name, enemy) / Math.max(1, this.catalog.population(name));
-		const known = new Set();
-		let current = 0;
-		let hero = world.heroes.length > 0;
-		for (const trainer of world.trainers)
-			for (const name of trainer.trainable)
-			{
-				known.add(name);
-				hero = hero || this.catalog.isHero(name);
-				if (this.catalog.isFighter(name))
-					current = Math.max(current, perSlot(name));
-			}
-		let best = null;
-		for (const name of this.offered(world))
-		{
-			if (!this.catalog.isPlaceableSpaced(name) || this.catalog.isSettlement(name) || this.count(world, candidate => candidate === name) > 0)
-				continue;
-			const units = this.catalog.trainsFrom(name).filter(unit => !known.has(unit));
-			const stronger = units.some(unit => this.catalog.isFighter(unit) && perSlot(unit) >= ELITE_EDGE * current);
-			if (!stronger && !(!hero && units.some(unit => this.catalog.isHero(unit))))
-				continue;
-			const cost = this.catalog.costSum(name);
-			if (!best || cost < best.cost || cost === best.cost && name < best.name)
-				best = { name, cost };
-		}
-		if (!best)
-			return null;
-		const cost = this.catalog.cost(best.name);
-		if (world.codes.some(code => world.resources[code] < ELITE_STOCK * (cost[code] || 0)) ||
-		    world.pendingConstructions.length > 0)
-			return null;
-		return this.nearCentreRequest(world, placement, "elite", best.name, plan.values.support);
-	}
-
-	dropsiteRequest(world, plan, assessments, placement)
-	{
+		const { world, plan, assessments, placement } = context;
 		const total = world.workers.length;
 		let best = null;
 		for (const code of world.codes)
 		{
 			const serves = name => this.catalog.dropsiteTypes(name).includes(code) && !this.catalog.isFarm(name);
-			if (world.pendingConstructions.some(pending => serves(pending.template)) ||
-			    world.foundations.some(foundation => serves(foundation.template)))
+			if (coming(world, serves))
 				continue;
-			const template = this.cheapest(world, serves);
+			const template = landCheapest(context, serves);
 			if (!template)
 				continue;
-			const relief = this.haulRelief(world, placement, code, template);
+			const relief = this.siting.relief(world, placement, code, template);
 			if (relief && (!best || relief.payback > best.payback))
 				best = relief;
 			if (relief || assessments.gatherShares[code] * total < DROPSITE_MIN_GATHERERS)
 				continue;
-			const sites = world.sites[code].filter(site => isFinite(site.amount));
-			if (!sites.length || Math.min(...sites.map(site => site.anchorDistance)) <= DROPSITE_REACH)
-				continue;
-			const half = this.halfSize(template);
-			const zones = this.resourceZones(world, code).concat(this.farmBelts(world));
-			const reserved = this.reservedBoxes(world);
-			for (const centre of this.richestCells(world, code).concat([this.densest(sites).position]))
-			{
-				const site = placement.around(centre, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
-					this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
-				if (site)
-					return this.constructRequest(world, "dropsite", template, site, plan.values.investment, 1);
-			}
+			const site = this.siting.cluster(world, placement, code, template);
+			if (site)
+				return this.construct(world, "dropsite", template, site, plan.values.investment, 1);
 		}
 		if (!best)
 			return null;
-		const request = this.production(this.constructRequest(world, "haul-dropsite", best.template, best.site, plan.values.investment,
-			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN)));
-		if (request && this.relieved.to(best.site.x + "," + best.site.z))
+		const request = this.construct(world, "haul-dropsite", best.template, best.site, plan.values.investment,
+			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN));
+		if (!request)
+			return null;
+		if (this.relieved.to(best.site.x + "," + best.site.z))
 			this.telemetry.line("BUILD", world.time, { "haul": best.template, "x": Math.round(best.site.x), "z": Math.round(best.site.z),
 				"gatherers": best.gatherers, "gain": Math.round(best.gain * 100) / 100, "payback": Math.round(best.payback * 100) / 100 });
-		return request;
+		return inTier(request, "production");
 	}
 
-	haulers(world, code)
+	colonyRequest(context)
 	{
-		const haulers = [];
-		for (const worker of world.workers)
-		{
-			if (worker.gathering !== code || !worker.targetPosition || !(worker.haul > HAUL_FAR))
-				continue;
-			const rate = worker.profile.rates[worker.kind] || 0;
-			const capacity = worker.profile.capacities[code] || 0;
-			if (rate > 0 && capacity > 0 && worker.profile.speed > 0)
-				haulers.push({ "target": worker.targetPosition, "haul": worker.haul, "rate": rate, "fill": capacity / rate,
-					"speed": worker.profile.speed });
-		}
-		return haulers;
-	}
-
-	haulGain(haulers, position, radius)
-	{
-		let gain = 0;
-		let output = 0;
-		let gatherers = 0;
-		for (const hauler of haulers)
-		{
-			const next = Math.max(0, distanceBetween(hauler.target, position) - radius);
-			if (next >= hauler.haul)
-				continue;
-			const working = distance => hauler.fill / (hauler.fill + 2 * distance / hauler.speed);
-			gain += hauler.rate * (working(next) - working(hauler.haul));
-			output += hauler.rate * working(next);
-			gatherers += 1;
-		}
-		return { gain, output, gatherers };
-	}
-
-	wealthNear(world, code, position)
-	{
-		const grid = world.wealth;
-		const totals = grid.totals[code];
-		const weighted = grid.weighted[code];
-		if (!totals || !weighted)
-			return 0;
-		const reach = (HAUL_SEARCH + DROPSITE_REACH) * (HAUL_SEARCH + DROPSITE_REACH);
-		const i0 = Math.floor(position[0] / grid.cellSize);
-		const j0 = Math.floor(position[1] / grid.cellSize);
-		let wealth = 0;
-		for (let j = Math.max(0, j0 - 2); j <= Math.min(grid.height - 1, j0 + 2); ++j)
-			for (let i = Math.max(0, i0 - 2); i <= Math.min(grid.width - 1, i0 + 2); ++i)
-			{
-				const index = i + j * grid.width;
-				const amount = totals[index];
-				if (amount > 0 && squareDistance([weighted[2 * index] / amount, weighted[2 * index + 1] / amount], position) <= reach)
-					wealth += amount;
-			}
-		return wealth;
-	}
-
-	haulRelief(world, placement, code, template)
-	{
-		const haulers = this.haulers(world, code);
-		if (!haulers.length)
+		const { world, plan, assessments } = context;
+		const colony = assessments.colony;
+		if (!colony || world.docks.some(dock => dock.region === colony.region))
 			return null;
-		const cells = new Map();
-		for (const hauler of haulers)
+		const builders = landed(world, colony.region);
+		if (!builders.length)
+			return this.colonyHold(context, colony);
+		const template = colony.kind === "centre" && this.catalog.cheapest(builders[0].buildable, name => isSettlement(context, name));
+		if (template && obtainable(context, template))
 		{
-			const key = Math.floor(hauler.target[0] / HAUL_CELL) + "," + Math.floor(hauler.target[1] / HAUL_CELL);
-			if (!cells.has(key))
-				cells.set(key, { "x": 0, "z": 0, "count": 0 });
-			const cell = cells.get(key);
-			cell.x += hauler.target[0];
-			cell.z += hauler.target[1];
-			cell.count += 1;
+			if (coming(world, name => isSettlement(context, name)))
+				return null;
+			const site = this.siting.sought(world, template + "@" + colony.region, () => this.siting.settlement(world, plan, template,
+				centroid(builders), SETTLEMENT_MAX_DISTANCE, colony.region));
+			if (site)
+				return buildRequest("construction", "colony-centre", template, site, builders.map(settler => settler.id),
+					this.catalog.cost(template), plan.values.investment, 1);
 		}
-		const cost = this.catalog.costSum(template);
-		const centres = [...cells.values()]
-			.map((cell, index) => {
-				const position = [cell.x / cell.count, cell.z / cell.count];
-				return { position, index, "gain": this.haulGain(haulers, position, 0).gain };
-			})
-			.filter(centre => centre.gain * HAUL_HORIZON_S >= HAUL_RETURN * cost)
-			.sort((a, b) => b.gain - a.gain || a.index - b.index)
-			.slice(0, HAUL_SITES_TRIED);
-		if (!centres.length)
+		return this.ask(COLONY_DOCK, context);
+	}
+
+	colonyHold(context, colony)
+	{
+		const { world, plan, assessments } = context;
+		const isDock = name => this.catalog.isShoreStructure(name) && this.catalog.trainsTransports(name);
+		if (!assessments.short.length || colony.kind !== "dock" || world.settlers.some(settler => settler.region === colony.region) ||
+		    coming(world, isDock))
 			return null;
-		const half = this.halfSize(template);
-		const zones = this.resourceZones(world, code);
-		const reserved = this.reservedBoxes(world);
-		for (const centre of centres)
-		{
-			const site = placement.around(centre.position, half + SAME_TYPE_KEEP_AWAY, half + HAUL_SEARCH,
-				this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
-			if (!site)
-				continue;
-			const { gain, output, gatherers } = this.haulGain(haulers, [site.x, site.z], half);
-			const lasting = Math.min(HAUL_HORIZON_S, this.wealthNear(world, code, [site.x, site.z]) / Math.max(0.1, output));
-			const payback = gain * lasting / cost;
-			if (payback >= HAUL_RETURN)
-				return { template, site, gain, payback, gatherers };
-		}
-		return null;
-	}
-
-	richestCells(world, code)
-	{
-		const grid = world.wealth;
-		const totals = grid.totals[code];
-		const weighted = grid.weighted[code];
-		if (!totals || !weighted)
-			return [];
-		const home = world.home.position;
-		const served = world.anchors.filter(anchor => anchor.types.includes(code));
-		const cells = [];
-		for (let index = 0; index < totals.length; ++index)
-		{
-			const amount = totals[index];
-			if (!(amount > 0))
-				continue;
-			const position = [weighted[2 * index] / amount, weighted[2 * index + 1] / amount];
-			const distance = distanceBetween(position, home);
-			if (distance > DROPSITE_SEARCH || territoryAt(world.grids.territory, position[0], position[1]).owner !== this.player ||
-			    served.some(anchor => squareDistance(anchor.position, position) <= DROPSITE_REACH * DROPSITE_REACH))
-				continue;
-			cells.push({ position, "score": amount / (distance + DROPSITE_DISTANCE_BIAS), index });
-		}
-		cells.sort((a, b) => b.score - a.score || a.index - b.index);
-		return cells.slice(0, DROPSITE_CELLS_TRIED).map(cell => cell.position);
-	}
-
-	densest(sites)
-	{
-		const limit = CLUSTER_RADIUS * CLUSTER_RADIUS;
-		let best = sites[0];
-		let bestCount = -1;
-		for (const site of sites)
-		{
-			let count = 0;
-			for (const other of sites)
-				if (squareDistance(site.position, other.position) <= limit)
-					count += 1;
-			if (count > bestCount)
-			{
-				best = site;
-				bestCount = count;
-			}
-		}
-		return best;
-	}
-
-	pickBuilders(world, template, position, count, taken)
-	{
-		const region = world.regionOf(position);
-		return world.workers
-			.filter(worker => (taken ? worker.buildable.length > 0 : worker.buildable.includes(template)) &&
-				!worker.state.repairing && !worker.state.fighting &&
-				!(taken && taken.has(worker.id)) && (region < 2 || worker.region === region))
-			.map(worker => ({ "id": worker.id, "armed": worker.soldier ? 1 : 0, "distance": squareDistance(worker.position, position) }))
-			.sort((a, b) => a.armed - b.armed || a.distance - b.distance || a.id - b.id)
-			.slice(0, count)
-			.map(worker => worker.id);
-	}
-
-	repairRequests(world, plan)
-	{
-		const requests = [];
-		const assigned = new Map();
-		for (const worker of world.workers)
-			if (worker.state.repairing && worker.target !== undefined)
-				assigned.set(worker.target, (assigned.get(worker.target) || 0) + 1);
-		const taken = new Set();
-		for (const foundation of world.foundations)
-		{
-			const missing = this.wantedBuilders(world, foundation.template) - (assigned.get(foundation.id) || 0);
-			if (missing <= 0)
-				continue;
-			for (const id of this.pickBuilders(world, foundation.template, foundation.position, missing, taken))
-			{
-				taken.add(id);
-				requests.push(repairRequest("construction", "build", id, foundation.id, plan.values.build, 1));
-			}
-		}
-		return requests;
+		const template = this.catalog.cheapest(world.offered, isDock);
+		if (!template)
+			return null;
+		return inTier(fundRequest("construction", "colony-fund", this.catalog.cost(template), plan.values.investment, SHORT_URGENCY),
+			"production");
 	}
 }

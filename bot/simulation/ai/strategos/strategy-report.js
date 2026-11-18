@@ -18,7 +18,7 @@ export function strategyReport(names, plan, assessments)
 		},
 		"guardPlan": { "enter": plan.guard.enter, "exit": plan.guard.exit, "engage": plan.defense.engage, "horizonS": plan.guard.horizonS,
 			"near": plan.guard.near },
-		"expansion": plan.expansion,
+		"expansion": plan.settlements,
 		"medics": plan.medics,
 		"trade": { "minRate": plan.trade.minRate, "richRate": plan.trade.richRate, "minDistance": plan.tradePost.minDistance, "max": plan.trade.max,
 			"populationPerTrader": plan.trade.populationPerTrader, "scarceWealth": plan.labour.tradeScarceWealth,

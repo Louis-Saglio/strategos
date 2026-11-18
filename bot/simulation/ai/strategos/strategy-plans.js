@@ -19,7 +19,7 @@ const BASE = {
 	"colony": { "maxHomeArea": 150000, "minArea": 6000, "max": 5, "distanceScale": 400, "starvedWeight": 4 },
 	"forward": { "clearance": 250, "shore": 120 },
 	"housing": { "base": 3, "perTrainer": 4 },
-	"expansion": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
+	"settlements": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
 	"docks": { "population": 40, "colonyPopulation": 20, "fishing": { "population": 20, "schools": 4, "reach": 300 }, "yardFishers": 18, "yardSpacing": 110 },
 	"forwardBase": { "settlers": 15, "builders": 20, "reach": 120 },
 	"tradePost": { "minDistance": 400 },

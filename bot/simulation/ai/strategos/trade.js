@@ -64,8 +64,7 @@ export class Trade
 			{
 				if (trainer.queueLength > 0)
 					continue;
-				const template = trainer.trainable.filter(name => this.catalog.isTrader(name))
-					.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+				const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isTrader(name));
 				if (!template)
 					continue;
 				requests.push(trainRequest("trade", "trader", trainer.id, template, 1, this.catalog.cost(template),
