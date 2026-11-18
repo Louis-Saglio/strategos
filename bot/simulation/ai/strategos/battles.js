@@ -1,7 +1,6 @@
 import { arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
-import { balance } from "simulation/ai/strategos/tactics.js";
 
 const MIN_SIDE = 4;
 const SAME_BATTLE_RADIUS = 120;
@@ -101,8 +100,7 @@ export class BattleLog
 					clash.opponents.map(unit => unit.id).concat(opposing.map(entry => entry.unit.id))],
 				"marks": outlook.marks.map(mark => [mark.t, round(mark.ours), round(mark.theirs)]),
 				"edge": Math.round(outlook.edge),
-				"winner": outlook.winner,
-				"balance": round(Math.min(99, balance(this.catalog, clash.units, clash.opponents, cover)))
+				"winner": outlook.winner
 			});
 			battle.reports += 1;
 		}

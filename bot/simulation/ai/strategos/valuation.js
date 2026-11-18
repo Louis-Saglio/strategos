@@ -1,11 +1,11 @@
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
-import { ARROW_HIT_SHARE } from "simulation/ai/strategos/tactics.js";
 
 export const TECH_HORIZON_S = 180;
 export const GATHER_EFFICIENCY = 0.6;
 const WALK_SHARE = 0.35;
 const CAPTURE_ENGAGED_SHARE = 0.9;
+const CAPTURE_ARROW_HIT_SHARE = 0.5;
 const RATE_PREFIX = "ResourceGatherer/Rates/";
 const CAPACITY_PREFIX = "ResourceGatherer/Capacities/";
 const SPEED_KEY = "ResourceGatherer/BaseSpeed";
@@ -80,7 +80,7 @@ export function captureOutlook(members, centre)
 			fragility += centre.fire.damage[kind] * Math.pow(RESISTANCE_BASE, member.resistance[kind] || 0) / member.hitpoints;
 	}
 	const net = power - centre.regen;
-	const losses = members.length ? ARROW_HIT_SHARE * centre.fire.arrows / centre.fire.repeat * fragility / members.length : 0;
+	const losses = members.length ? CAPTURE_ARROW_HIT_SHARE * centre.fire.arrows / centre.fire.repeat * fragility / members.length : 0;
 	const decay = members.length ? losses * power / members.length : 0;
 	return {
 		"power": power,

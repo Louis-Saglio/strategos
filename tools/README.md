@@ -669,7 +669,8 @@ left out); `rates` is what one unit of a group deals per second to each
 group of the other side, `fire` the arrow damage per second the covering
 structures would deal to each group, `ids` the units of each side in the
 order of the groups. `marks` is the prediction (`[seconds, ours lost,
-theirs lost]`), `balance` the dps x hit points ratio the defence uses.
+theirs lost]`). The lines of bots before #57 also carry `balance`, the dps
+x hit points ratio the defence then used.
 
 `forecast.py` takes as truth the listed units that the harness saw die
 (the `ids` of `[HARNESS] kills`) in the `--window` seconds after the line,
@@ -680,7 +681,8 @@ already played (`--logged` takes the prediction the game printed). It
 reports the error of the lost share of each side, how often the model
 names the side that loses more, the correlation with the observed
 difference of lost shares and with the units lost and their net
-exchange, next to `balance` and the head count where they can answer.
+exchange, next to the head count, and to `balance` when every sample
+carries it, where they can answer.
 `--by cover,size,seq` splits the samples. `--fit` searches, by coordinate
 descent on half of the games (split by a hash of their name) with the
 error reported on the other half, the constants of `forecast.js` that a

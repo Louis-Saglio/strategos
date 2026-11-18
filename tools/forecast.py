@@ -24,9 +24,10 @@ death (`[HARNESS] kills`, with the victims' ids). This tool joins the two:
   a change of the model is read on games already played; --logged takes the
   prediction the game printed instead.
 
-It prints, for the forecast and for two baselines computed on the same
-samples (`balance`, the dps x hit points ratio of tactics.js that the line
-carries, and the head count ratio):
+It prints, for the forecast and for the baselines computed on the same
+samples (the head count ratio, and `balance`, the dps x hit points ratio
+that the lines of bots before #57 carry: shown only when every sample has
+it):
 
 - error: mean absolute error and bias of the share of each side lost in
   the window (lost / listed, capped at 1), and of the units;
@@ -109,7 +110,7 @@ def load(batch, window):
                 "game": f"{os.path.basename(os.path.normpath(batch))}/{tag}", "t": row["t"], "seq": row["seq"],
                 "ours": row["ours"], "theirs": row["theirs"], "n": (count(row["ours"]), count(row["theirs"])),
                 "obs": (ours, theirs), "logged": {m[0]: (m[1], m[2]) for m in row["marks"]},
-                "balance": row["balance"],
+                "balance": row.get("balance"),
             })
     return samples
 
@@ -172,9 +173,11 @@ def report(samples, preds, window, label):
     truth = [samples[k]["obs"][1] > samples[k]["obs"][0] for k in decided]
     named = {
         "forecast": [units_pred[k][1] > units_pred[k][0] for k in decided],
-        "balance": [samples[k]["balance"] > 1 for k in decided],
-        "head count": [samples[k]["n"][0] > samples[k]["n"][1] for k in decided],
     }
+    balanced = all(s["balance"] is not None for s in samples)
+    if balanced:
+        named["balance"] = [samples[k]["balance"] > 1 for k in decided]
+    named["head count"] = [samples[k]["n"][0] > samples[k]["n"][1] for k in decided]
     won = sum(truth)
     print(f"  side  (the {len(decided)} samples with a gap of {MIN_GAP}+ units; we lose fewer in {won}): " +
           ", ".join(f"{k} {sum(a == b for a, b in zip(v, truth))}/{len(decided)}" for k, v in named.items()))
@@ -185,8 +188,8 @@ def report(samples, preds, window, label):
     gap_obs = [o[1] - o[0] for o in obs]
     ratio = lambda x: math.log(max(1e-3, x))
     print(f"  corr  with the observed difference of lost shares: forecast "
-          f"{correlation([p[1] - p[0] for p in pred], gap_obs):.2f}, "
-          f"balance {correlation([ratio(s['balance']) for s in samples], gap_obs):.2f}, "
+          f"{correlation([p[1] - p[0] for p in pred], gap_obs):.2f}, " +
+          (f"balance {correlation([ratio(s['balance']) for s in samples], gap_obs):.2f}, " if balanced else "") +
           f"head count {correlation([ratio(s['n'][0] / s['n'][1]) for s in samples], gap_obs):.2f}")
 
 

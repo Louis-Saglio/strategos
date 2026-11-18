@@ -1,11 +1,10 @@
-import { REACH_RADIUS, arriving, covering, engagement, forecast, within } from "simulation/ai/strategos/forecast.js";
+import { REACH_RADIUS, arriving, covering, standing } from "simulation/ai/strategos/forecast.js";
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis } from "simulation/ai/strategos/switches.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
 const NO_GUARD = Object.freeze({ "group": Object.freeze([]), "needed": Object.freeze([]), "ids": new Set(), "ratio": Infinity, "holds": true, "value": 0,
 	"report": guardReport });
-const FAR = 1e6;
 
 function guardReport()
 {
@@ -53,15 +52,7 @@ export class HomeGuard
 			candidates = candidates.filter(entry => entry.fighter.region === candidates[0].fighter.region);
 		candidates.sort((a, b) => kept.has(b.fighter.id) - kept.has(a.fighter.id) || a.distance - b.distance || a.fighter.id - b.fighter.id);
 		const fighters = candidates.map(entry => entry.fighter);
-		const ratio = count => {
-			const chosen = fighters.slice(0, count);
-			const close = within(chosen, centre);
-			const closeIds = new Set(close.map(unit => unit.id));
-			const coming = arriving(this.catalog, chosen, centre, closeIds, false, FAR, true);
-			const outlook = forecast(engagement(this.catalog, close, group, cover, opposingCover, coming, opposing, true),
-				{ "horizonS": guard.horizonS, "arrivals": 1, "joinScale": 0 });
-			return outlook.theirs.value / Math.max(1, outlook.ours.value);
-		};
+		const ratio = count => standing(this.catalog, fighters.slice(0, count), group, centre, cover, opposingCover, opposing, guard.horizonS);
 		const whole = fighters.length ? ratio(fighters.length) : 0;
 		let enough = fighters.length;
 		if (whole >= guard.enter)
