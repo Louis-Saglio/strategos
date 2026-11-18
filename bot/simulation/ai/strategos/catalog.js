@@ -247,6 +247,12 @@ export class Catalog
 		return this.isWorker(name) && !this.isSoldier(name);
 	}
 
+	defaultStance(name)
+	{
+		const template = this.template(name);
+		return template && template.get("UnitAI/DefaultStance") || null;
+	}
+
 	isFighter(name)
 	{
 		const template = this.template(name);
