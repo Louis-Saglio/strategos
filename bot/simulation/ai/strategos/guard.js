@@ -18,7 +18,7 @@ export class Guard
 
 	requests(world, plan)
 	{
-		if (!plan.protectHero || !world.centres.length)
+		if (!world.centres.length)
 			return [];
 		const requests = [];
 		for (const hero of world.heroes)
@@ -70,7 +70,7 @@ export class Relics
 
 	requests(world, plan)
 	{
-		if (!plan.seekRelics || !world.centres.length)
+		if (!world.centres.length)
 			return [];
 		const home = world.home;
 		const requests = [];

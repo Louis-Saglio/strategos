@@ -9,14 +9,10 @@ const SHARE_REPORT_STEP = 0.05;
 
 export class Labour
 {
-	constructor(codes, catalog, plan)
+	constructor(codes, catalog)
 	{
 		this.codes = codes;
 		this.catalog = catalog;
-		this.shares = {};
-		for (const code of codes)
-			this.shares[code] = plan.gatherShares[code] || 0;
-		this.reported = Object.assign({}, this.shares);
 		this.gap = {};
 		for (const code of codes)
 			this.gap[code] = 0;
@@ -25,6 +21,8 @@ export class Labour
 	assess(world, plan, civilianTarget)
 	{
 		const labour = plan.labour;
+		if (!this.seeded || this.codes.some(code => (plan.gatherShares[code] || 0) !== this.seeded[code]))
+			this.seed(plan.gatherShares);
 		let changed = false;
 		if (world.demand.observed)
 			changed = this.adaptShares(world, civilianTarget);
@@ -58,6 +56,15 @@ export class Labour
 			"scarce": this.traded,
 			"changed": changed
 		};
+	}
+
+	seed(shares)
+	{
+		this.shares = {};
+		for (const code of this.codes)
+			this.shares[code] = shares[code] || 0;
+		this.seeded = Object.assign({}, this.shares);
+		this.reported = Object.assign({}, this.shares);
 	}
 
 	scarce(world, codes, wealth)

@@ -3,8 +3,14 @@ import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis } from "simulation/ai/strategos/switches.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
-const NO_GUARD = Object.freeze({ "group": Object.freeze([]), "needed": Object.freeze([]), "ids": new Set(), "ratio": Infinity, "holds": true, "value": 0 });
+const NO_GUARD = Object.freeze({ "group": Object.freeze([]), "needed": Object.freeze([]), "ids": new Set(), "ratio": Infinity, "holds": true, "value": 0,
+	"report": guardReport });
 const FAR = 1e6;
+
+function guardReport()
+{
+	return { "hostiles": this.group.length, "needed": this.needed.length, "ratio": this.ratio, "holds": this.holds, "value": this.value };
+}
 
 export class HomeGuard
 {
@@ -79,6 +85,6 @@ export class HomeGuard
 		this.guards = new Set(needed.map(fighter => fighter.id));
 		this.held.atLeast(whole, guard.enter, guard.exit);
 		return Object.freeze({ "group": Object.freeze(group), "centre": Object.freeze(centre), "needed": Object.freeze(needed), "ids": this.guards,
-			"ratio": whole, "holds": this.held.on, "value": value });
+			"ratio": whole, "holds": this.held.on, "value": value, "report": guardReport });
 	}
 }
