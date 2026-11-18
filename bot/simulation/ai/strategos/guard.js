@@ -1,9 +1,8 @@
 import { capture, memberRequest, stance, walkTo } from "simulation/ai/strategos/requests.js";
-import { CONTACT_RADIUS } from "simulation/ai/strategos/forecast.js";
+import { CONTACT_RADIUS, exchange } from "simulation/ai/strategos/forecast.js";
 import { awayFrom, firstListed, nearest, squareDistance, toward } from "simulation/ai/strategos/geometry.js";
 import { Operations } from "simulation/ai/strategos/operations.js";
 import { Hysteresis } from "simulation/ai/strategos/switches.js";
-import { balance } from "simulation/ai/strategos/tactics.js";
 
 const POST_CLEARANCE = 12;
 const POST_TOLERANCE = 12;
@@ -114,8 +113,8 @@ export class Relics
 		const party = members.concat(spare);
 		const guards = world.enemyFighters.concat(world.wild)
 			.filter(enemy => squareDistance(enemy.position, wanted.position) <= CONTACT_RADIUS * CONTACT_RADIUS);
-		const ratio = guards.length ? balance(this.catalog, party, guards, []) : Infinity;
-		if (this.contested.below(ratio, 1 / plan.margin, plan.margin))
+		const ratio = guards.length ? exchange(this.catalog, party, guards, [], [], [], [], plan.guard.horizonS) : Infinity;
+		if (this.contested.below(ratio, plan.guard.exit, plan.guard.enter))
 		{
 			squad.members = [];
 			return requests;

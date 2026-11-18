@@ -1,9 +1,9 @@
 import { attack, garrisonIn, hold, orderRequest, unloadAllRequest, unloadRequest, walkTo } from "simulation/ai/strategos/requests.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
-import { COVER_MARGIN } from "simulation/ai/strategos/forecast.js";
+import { COVER_MARGIN, REACH_RADIUS, arriving, covering, standing } from "simulation/ai/strategos/forecast.js";
 import { centroid, direction, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { Hysteresis, Retry } from "simulation/ai/strategos/switches.js";
-import { balance, coveringHolders, skirmish } from "simulation/ai/strategos/tactics.js";
+import { skirmish } from "simulation/ai/strategos/tactics.js";
 
 const ENGAGE_RADIUS = 160;
 const DANGER_RADIUS = 30;
@@ -15,7 +15,6 @@ const OUTNUMBERED_EXIT = 0.6;
 const SAFE_RADIUS = 70;
 const REPORT_PERIOD_MS = 10000;
 const APPROACH_RADIUS = 80;
-const RESPONSE_MARGIN = 2;
 const BATTLE_RADIUS = 60;
 const RETREAT_RADIUS = 90;
 const WARNING_RADIUS = 100;
@@ -133,24 +132,28 @@ export class Defense
 			return this.engaged.atLeast(this.ratio, plan.defense.engage.enter, plan.defense.engage.exit) ?
 				this.fight(world, plan, free, guard.needed) : this.fallBack(world, plan, free, near, centre);
 		}
-		const cover = coveringHolders(world.holders, centre, COVER_MARGIN);
-		this.ratio = balance(this.catalog, near.map(entry => entry.fighter), group, cover);
-		return this.engaged.atLeast(this.ratio, plan.margin, 1 / plan.margin) ?
-			this.respond(world, plan, free, near, group, cover) : this.fallBack(world, plan, free, near, centre);
+		const cover = covering(world.holders, centre, []);
+		const opposingCover = covering(world.enemyStructures, centre, []);
+		const opposing = arriving(this.catalog, world.enemyFighters, centre, new Set(group.map(unit => unit.id)), true, REACH_RADIUS, true);
+		const ratio = group.length ? fighters => standing(this.catalog, fighters, group, centre, cover, opposingCover, opposing, plan.guard.horizonS) :
+			fighters => fighters.length ? Infinity : 0;
+		this.ratio = ratio(near.map(entry => entry.fighter));
+		return this.engaged.atLeast(this.ratio, plan.defense.engage.enter, plan.defense.engage.exit) ?
+			this.respond(world, plan, free, near, ratio) : this.fallBack(world, plan, free, near, centre);
 	}
 
-	respond(world, plan, free, near, group, cover)
+	respond(world, plan, free, near, ratio)
 	{
 		const ordered = near.filter(entry => entry.fighter.state.fighting).concat(near.filter(entry => !entry.fighter.state.fighting))
 			.map(entry => entry.fighter);
 		let enough = ordered.length;
-		if (enough > 1 && balance(this.catalog, ordered, group, cover) >= RESPONSE_MARGIN)
+		if (enough > 1 && ratio(ordered) >= plan.guard.enter)
 		{
 			let short = 0;
 			while (enough - short > 1)
 			{
 				const middle = Math.floor((short + enough) / 2);
-				if (balance(this.catalog, ordered.slice(0, middle), group, cover) >= RESPONSE_MARGIN)
+				if (ratio(ordered.slice(0, middle)) >= plan.guard.enter)
 					enough = middle;
 				else
 					short = middle;

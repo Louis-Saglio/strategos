@@ -6,6 +6,7 @@ export const CONTACT_RADIUS = 60;
 export const REACH_RADIUS = 150;
 export const COVER_MARGIN = 5;
 const RECRUIT_WAVE_S = 20;
+const FAR = 1e6;
 
 export const FORECAST = {
 	"stepS": 1,
@@ -262,6 +263,21 @@ export function covering(structures, centre, side)
 		const reach = (structure.range + COVER_MARGIN) * (structure.range + COVER_MARGIN);
 		return squareDistance(structure.position, centre) <= reach || squareDistance(structure.position, stand) <= reach;
 	});
+}
+
+export function standing(catalog, fighters, foes, centre, cover, opposingCover, opposing, horizonS)
+{
+	const close = within(fighters, centre);
+	const closeIds = new Set(close.map(unit => unit.id));
+	const coming = arriving(catalog, fighters, centre, closeIds, false, FAR, true);
+	return exchange(catalog, close, foes, cover, opposingCover, coming, opposing, horizonS);
+}
+
+export function exchange(catalog, present, foes, cover, opposingCover, coming, opposing, horizonS)
+{
+	const outlook = forecast(engagement(catalog, present, foes, cover, opposingCover, coming, opposing, true),
+		{ "horizonS": horizonS, "arrivals": 1, "joinScale": 0 });
+	return outlook.theirs.value / Math.max(1, outlook.ours.value);
 }
 
 export function prospect(catalog, members, centre, enemies, structures, terms)

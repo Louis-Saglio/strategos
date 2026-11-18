@@ -1,8 +1,5 @@
 import { awayFrom, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { attack, hold, walkTo } from "simulation/ai/strategos/requests.js";
-import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
-
-export const ARROW_HIT_SHARE = 0.5;
 
 function histogram(units)
 {
@@ -15,58 +12,6 @@ function histogram(units)
 		groups.get(key).count += 1;
 	}
 	return [...groups.values()];
-}
-
-function arrowRate(catalog, holder, opponents, total)
-{
-	if (!holder.fire.arrows || !total)
-		return 0;
-	let damage = 0;
-	for (const { template, owner, count } of opponents)
-	{
-		const resistance = catalog.combat(template, owner).resistance;
-		let hit = 0;
-		for (const kind in holder.fire.damage)
-			hit += holder.fire.damage[kind] * Math.pow(RESISTANCE_BASE, resistance[kind] || 0);
-		damage += count * hit;
-	}
-	return ARROW_HIT_SHARE * holder.fire.arrows * damage / total / Math.max(0.1, holder.fire.repeat);
-}
-
-export function force(catalog, units, opponents, holders)
-{
-	const theirs = histogram(opponents);
-	const total = opponents.length;
-	let dps = 0;
-	let hp = 0;
-	for (const unit of units)
-	{
-		hp += unit.hitpoints;
-		if (!total)
-			continue;
-		let rate = 0;
-		for (const { template, owner, count } of theirs)
-			rate += count * catalog.hitRate(unit.template, template, unit.owner, owner);
-		dps += rate / total;
-	}
-	for (const holder of holders || [])
-		dps += arrowRate(catalog, holder, theirs, total);
-	return { "dps": dps, "hp": hp, "value": dps * hp };
-}
-
-export function balance(catalog, units, opponents, holders)
-{
-	const ours = force(catalog, units, opponents, holders);
-	if (!units.length && !(ours.dps > 0))
-		return 0;
-	const theirs = force(catalog, opponents, units, []);
-	return theirs.value > 0 ? ours.value / theirs.value : Infinity;
-}
-
-export function coveringHolders(holders, position, margin)
-{
-	return holders.filter(holder => holder.fire.arrows > 0 &&
-		squareDistance(holder.position, position) <= (holder.range + margin) * (holder.range + margin));
 }
 
 const FOCUS_HORIZON_S = 2;
