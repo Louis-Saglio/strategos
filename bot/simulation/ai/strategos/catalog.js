@@ -192,6 +192,24 @@ export class Catalog
 		return this.costSums.get(name);
 	}
 
+	cheapest(names, fits)
+	{
+		let best = null;
+		let bestCost = Infinity;
+		for (const name of names)
+		{
+			if (!fits(name))
+				continue;
+			const cost = this.costSum(name);
+			if (cost < bestCost || (cost === bestCost && name < best))
+			{
+				best = name;
+				bestCost = cost;
+			}
+		}
+		return best;
+	}
+
 	population(name)
 	{
 		return +(this.template(name).get("Cost/Population") || 0);

@@ -49,7 +49,8 @@ many games, and under which actions it was granted, then the kinds the
 bot's code can emit that the play never granted. The kinds of the code are
 read from the bot that played (DIR/mods/strategos, or --bot): see
 source_kinds. The table can be trusted only when that reading is whole: a
-purpose or a source that the reading cannot follow in the code, a method
+purpose or a source that the reading cannot follow in the code, a building
+need whose purpose is not read where it is declared (see need_purposes), a method
 that is handed a purpose and is called otherwise than as this.NAME( in the
 class that declares it (see carrier_uses), a builder
 of requests.js reached otherwise than by a plain named import and a call
@@ -477,6 +478,16 @@ WRITTEN_RE = re.compile(r'"(?:claims|purpose)"\s*:')
 # purpose written is a request rewritten.
 ALLOCATOR_MODULE = "allocator.js"
 COPIED_RE = re.compile(r'"source"\s*:\s*request\.source\s*,\s*("purpose"\s*:)\s*request\.purpose\s*[,}]')
+# The module that says what a building need is (issue #54): a record that carries a purpose as data, which one
+# class (Construction) turns into a request. A maker of needs is a function of that module declared, before any
+# class, `export function NAME(purpose, ...)` at the start of a line, whose body up to its closing `}` names
+# the purpose once, as the whole value of a key, `"purpose": purpose`: the purpose goes untouched from the
+# first argument of a call of the maker to the record. The class that builds the requests of the needs hands the purpose of one to a
+# builder as `need.purpose`, in those words (NEED_PURPOSE).
+NEEDS_MODULE = "construction-needs.js"
+NEEDS_IMPORT_RE = re.compile(r'^import \{\s*\w+(?:,\s*\w+)*\s*\} from "simulation/ai/strategos/construction-needs\.js";$', re.M)
+MAKER_RE = re.compile(r'^export function (\w+)\((purpose)\b[^()\n]*\)\n\{\n(.*?)^\}', re.M | re.S)
+NEED_PURPOSE = "need.purpose"
 
 
 def copied(name, text):
@@ -532,7 +543,64 @@ def literals(argument):
     return None
 
 
-def class_kinds(name, where, body, builders, above=0):
+def need_makers(text):
+    """({maker: the offset of its name where it is declared}, the offsets of the words `purpose` the makers may
+    write) in the text of NEEDS_MODULE; nothing when the module has no function of the form of MAKER_RE.
+
+    A function of the module that takes a purpose otherwise, or does anything else with it than write it once
+    as `"purpose": purpose`, is no maker: its words `purpose` are then reported as every other use of the word
+    outside a class is (class_kinds), and its key `"purpose":` as a request written by hand."""
+    first = CLASS_RE.search(text)
+    makers, made = {}, set()
+    for m in MAKER_RE.finditer(text[:first.start()] if first else text):
+        body = m.group(3)
+        keys = list(re.finditer(r'"purpose"\s*:\s*(purpose)\s*[,}]', body))
+        if len(keys) == 1 and [w.start() for w in re.finditer(r"\bpurpose\b", body)] == [keys[0].start() + 1, keys[0].start(1)]:
+            makers[m.group(1)] = m.start(1)
+            made |= {m.start(2), m.start(3) + keys[0].start() + 1, m.start(3) + keys[0].start(1)}
+    return makers, made
+
+
+def need_purposes(texts, makers):
+    """(the purposes of the needs the bot declares, what could not be read), over {file: text} of every file.
+
+    A need is declared by a call of a maker (need_makers) by its own name, in whatever file — the table of
+    construction-needs.js, a plan that brings a need of its own — and its purpose is the first argument of that
+    call, read when it is a string literal or a choice between two (literals). Refused, as the builders of
+    requests.js are: the module named otherwise than in a plain named import, a maker named otherwise than
+    called by its own name (handed to a variable, called on an object, through .call), a first argument that
+    is anything else. A need made otherwise than by a maker has to write its purpose by hand, and that is
+    refused where every `"purpose":` and every word `purpose` outside a request is (source_kinds,
+    class_kinds); so is a purpose assigned to a need once it is made (`need.purpose = ...`)."""
+    purposes, unread = set(), []
+    for name, text in texts.items():
+        told = {number for m in NEEDS_IMPORT_RE.finditer(text)
+                for number in range(text.count("\n", 0, m.start()), text.count("\n", 0, m.end()) + 1)}
+        for m in re.finditer(re.escape(NEEDS_MODULE), text):
+            if text.count("\n", 0, m.start()) not in told:
+                told.add(text.count("\n", 0, m.start()))
+                unread.append(f"{place(name, text, m.start())}: {NEEDS_MODULE} is named otherwise than in "
+                              f"`import {{ NAME, ... }} from \"simulation/ai/strategos/{NEEDS_MODULE}\";`")
+        for maker, declared in sorted(makers.items()):
+            for m in re.finditer(rf"\b{maker}\b", text):
+                if name == NEEDS_MODULE and m.start() == declared:
+                    continue
+                if text[m.end():m.end() + 1] != "(" or text[m.start() - 1:m.start()] == ".":
+                    if text.count("\n", 0, m.start()) not in told:
+                        unread.append(f"{place(name, text, m.start())}: the maker of needs {maker} is used otherwise than "
+                                      f"called as {maker}(...)")
+                    continue
+                spans = call_arguments(text, m.end())
+                named = literals(text[slice(*spans[0])].strip()) if spans else None
+                if named is None:
+                    unread.append(f"{place(name, text, m.start())}: the purpose of a need is neither a string literal "
+                                  "nor a choice between two")
+                else:
+                    purposes.update(named)
+    return purposes, unread
+
+
+def class_kinds(name, where, body, builders, above=0, made=frozenset()):
     """(the sources named, the purposes named, what could not be read) in the text of one class of the file
     `name`, which starts `above` lines down that file and is reported as `where`.
 
@@ -546,10 +614,16 @@ def class_kinds(name, where, body, builders, above=0):
     `purpose` (a variable, a field written) is something this reading cannot
     follow: it is returned as unread. What is let through: the purpose of a
     request read as a field (`request.purpose`, compared or read, never
-    assigned), and the keys that `copied` allows the file. A carrier reached
-    otherwise than as `this.NAME(` in this class is not seen here: see
-    carrier_uses."""
-    sources, purposes, unread, followed = set(), set(), [], set()
+    assigned), the keys that `copied` allows the file, and the words of a
+    maker of needs (`made`, their offsets in the body: need_makers). A carrier
+    reached otherwise than as `this.NAME(` in this class is not seen here: see
+    carrier_uses.
+
+    The fourth value tells where the class hands the purpose of a building
+    need to a builder or a carrier, as `need.purpose` (NEED_PURPOSE): the
+    purposes of that request are then those of the needs the bot declares
+    (need_purposes), which source_kinds adds to the purposes of the class."""
+    sources, purposes, unread, followed, handed = set(), set(), [], set(), []
 
     def line(offset):
         return f"{where} line {above + body.count(chr(10), 0, offset) + 1}"
@@ -578,6 +652,9 @@ def class_kinds(name, where, body, builders, above=0):
         if argument == "purpose":
             followed.add(body.index("purpose", begin, end))
             continue
+        if argument == NEED_PURPOSE:
+            handed.append(line(m.start()))
+            continue
         named = literals(argument)
         if named is None:
             unread.append(f"{line(m.start())}: the purpose of {m.group(0)}...) is `{clip(argument)}`, "
@@ -587,9 +664,9 @@ def class_kinds(name, where, body, builders, above=0):
     copies = copied(name, body)
     for m in re.finditer(r"\bpurpose\b", body):
         field_read = body[m.start() - 1:m.start()] == "." and not re.match(r"\s*=[^=]", body[m.end():])
-        if m.start() not in followed and m.start() - 1 not in copies and not field_read:
+        if m.start() not in followed and m.start() - 1 not in copies and m.start() not in made and not field_read:
             unread.append(f"{line(m.start())}: `purpose` is used where no request is built")
-    return sources, purposes, unread
+    return sources, purposes, unread, handed
 
 
 def carrier_uses(where, body, above, carriers):
@@ -786,7 +863,11 @@ def source_kinds(bot_dir):
     (module_builders). A subsystem is a class, or a class composed of others
     (composition); class_kinds reads the one source a class names and the
     purposes it names, and its kinds are that source with each of those
-    purposes. Every .js file under the AI's directory is read, in whatever
+    purposes. A class may also build the requests of the building needs,
+    records that carry their purpose as data: it hands `need.purpose` to a
+    builder, and its purposes are then, besides those it names, the
+    purposes of every need the bot declares (need_makers, need_purposes).
+    Every .js file under the AI's directory is read, in whatever
     subdirectory it is put.
 
     The second value lists what makes the kinds less than the whole of what
@@ -801,9 +882,12 @@ def source_kinds(bot_dir):
     by its own name (handed to a variable, called on an object), a builder
     called or a purpose named outside a class, a request written by hand
     outside requests.js (`"claims":`, or `"purpose":` anywhere but in an
-    assignment of allocator.js, COPIED_RE), a class with purposes and no
-    source, a class with a `requests(` method and no kind that is not
-    composed of classes that have some (composition)."""
+    assignment of allocator.js, COPIED_RE, and in a maker of needs), a
+    class with purposes and no source, a class with a `requests(` method
+    and no kind that is not composed of classes that have some
+    (composition), a building need that need_purposes cannot read, needs
+    declared that no class hands to a builder, `need.purpose` handed to a
+    builder when no need is declared or by classes of several sources."""
     root = os.path.join(bot_dir, "simulation/ai/strategos")
     # Every .js file of the AI, wherever it is put: a file is named by its path below the root.
     texts = {}
@@ -817,6 +901,11 @@ def source_kinds(bot_dir):
     if module is None:
         return set(), [f"{REQUESTS_MODULE}: no such file in {root}: this bot does not build its requests in one module"]
     builders, unread = module_builders(module)
+    makers, made = need_makers(texts.get(NEEDS_MODULE, ""))
+    needs, faults = need_purposes(dict(texts, **{REQUESTS_MODULE: module}), makers)
+    unread += faults
+    # The classes that hand the purpose of a need to a builder, as (where, sources): judged once all are read.
+    handing = []
     kinds = set()
     # Every class read, by name, and the classes with a requests( method and no purpose: judged once all are read.
     read, silent = collections.defaultdict(list), []
@@ -825,8 +914,9 @@ def source_kinds(bot_dir):
     scanned, carriers = [(REQUESTS_MODULE, module, 0)], collections.defaultdict(list)
     for name, text in texts.items():
         copies = copied(name, text)
+        allowed = made if name == NEEDS_MODULE else frozenset()
         for m in WRITTEN_RE.finditer(text):
-            if m.start() in copies:
+            if m.start() in copies or m.start() + 1 in allowed:
                 continue
             unread.append(f"{name} line {text.count(chr(10), 0, m.start()) + 1}: {m.group(0)} a request is written "
                           f"outside {REQUESTS_MODULE}")
@@ -848,14 +938,17 @@ def source_kinds(bot_dir):
         classes = regions(text, CLASS_RE)
         first = CLASS_RE.search(text)
         outside = text[:first.start()] if first else text
-        sources, purposes, faults = class_kinds(name, name, outside, builders)
+        sources, purposes, faults, handed = class_kinds(name, name, outside, builders, 0, allowed)
         unread += faults
         scanned.append((name, outside, 0))
-        if sources or purposes:
+        if sources or purposes or handed:
             unread.append(f"{name}: a request is built outside a class ({', '.join(sorted(sources | purposes))})")
         for cls, body, above in classes:
-            sources, purposes, faults = class_kinds(name, f"{name}: class {cls},", body, builders, above)
+            sources, purposes, faults, handed = class_kinds(name, f"{name}: class {cls},", body, builders, above)
             unread += faults
+            if handed:
+                handing.append((f"{name}: class {cls}", sources))
+                purposes |= needs
             if len(sources) > 1:
                 die(f"{name}: class {cls} names {len(sources)} sources ({', '.join(sorted(sources))}): "
                     "source_kinds reads one per subsystem")
@@ -876,6 +969,18 @@ def source_kinds(bot_dir):
         unread += carrier_uses(where, body, above, carriers)
     for where, body in silent:
         unread += composition(where, body, read)
+    # The needs are the requests of one subsystem: a purpose declared has to be handed to a builder by a class,
+    # and by classes of one source only, or the kinds it makes are not known.
+    if needs and not handing:
+        unread.append(f"building needs are declared ({', '.join(sorted(needs))}) and no class hands `{NEED_PURPOSE}` to a "
+                      f"builder of {REQUESTS_MODULE}: their requests are built where this reading does not see")
+    if handing and not needs:
+        unread.append(f"{', '.join(where for where, _ in handing)}: `{NEED_PURPOSE}` is handed to a builder and no need is "
+                      f"declared by a maker of {NEEDS_MODULE}")
+    if len({source for _, sources in handing for source in sources}) > 1:
+        told = "; ".join(where + ": " + ", ".join(sorted(sources)) for where, sources in handing)
+        unread.append(f"`{NEED_PURPOSE}` is handed to a builder by classes of several sources ({told}): "
+                      "the needs are the requests of one subsystem")
     return kinds, unread
 
 

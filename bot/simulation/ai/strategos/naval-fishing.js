@@ -32,8 +32,7 @@ export class Fishing
 		const yard = yards.find(trainer => trainer.queueLength === 0);
 		if (yard && boats.length + building < Math.min(fishing.maxBoats, slots))
 		{
-			const template = yard.trainable.filter(fishes)
-				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			const template = this.catalog.cheapest(yard.trainable, fishes);
 			requests.push(inTier(trainRequest("naval", "fishing-boat", yard.id, template, 1, this.catalog.cost(template),
 				this.catalog.population(template), plan.values.fishing, 1), "production"));
 		}

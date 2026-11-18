@@ -489,8 +489,21 @@ each a class in a file of its own that builds its requests under the
 subsystem's source (`Naval` in `naval.js`: the shipyards, the fishing, the
 convoys, the hunt... in `naval-*.js`): every part is read as a class like
 any other, and the class that composes them builds no request and adds no
-kind. What a kind is made of is known to two functions only, `ledger_kind`
-(the key of the ledger) and `source_kinds` (the code).
+kind. A purpose may also be data: a building need (`construction-needs.js`)
+is a record made by `buildingNeed("house", {...})`, and `Construction`
+builds the request of whichever need it is running,
+`buildRequest("construction", need.purpose, ...)`. The reader follows that
+one form. A maker of needs is a function of `construction-needs.js`
+declared `export function NAME(purpose, ...)` before any class, whose body
+names the purpose once, as the whole value of a key (`"purpose": purpose`);
+a need is a call of a maker by its own name, in whatever file — the table,
+a need kept beside it, a need a plan brings — and its purpose is the first
+argument of that call, a string literal or a choice between two; a class
+that hands `need.purpose`, in those words, to a builder or to one of its
+own methods that hands it on is given, besides the purposes it names, the
+purposes of every need the bot declares. What a kind is made of is known to
+two functions only, `ledger_kind` (the key of the ledger) and `source_kinds`
+(the code).
 
 The table is worth what that reading is worth, so `coverage` says when it
 is not whole and exits 1:
@@ -507,6 +520,24 @@ is not whole and exits 1:
   names purposes, and those classes are each declared once and all name
   the same source (a class handed its parts instead of creating them and
   parts of two sources are refused);
+- in the building needs: `construction-needs.js` named otherwise than in a
+  plain named import (an alias, a namespace), a maker named otherwise than
+  called by its own name (`const make = buildingNeed`,
+  `Needs.buildingNeed(...)`, `buildingNeed.call(...)`), a need whose purpose
+  is not a literal (`buildingNeed(prefix + "house", ...)`, a constant), a
+  need written by hand instead of made, in the table or anywhere else
+  (`{ "purpose": "tower", ... }`, refused as every request written outside
+  `requests.js`; so is a `"purpose":` in the record handed to a maker, and
+  in a copy of a need), a purpose assigned to a need once it is made
+  (`need.purpose = ...`, `need["purpose"] = ...`), a function that takes a
+  purpose and is not a maker (declared in another file, as an arrow
+  function, with the purpose elsewhere than first, or doing anything with
+  it but writing it once), a purpose handed to a builder otherwise than as
+  `need.purpose` (through a variable, of a record of another name,
+  computed from it), needs declared when no class hands `need.purpose` to
+  a builder, `need.purpose` handed outside a class, by classes of two
+  sources (the needs are the requests of one subsystem) or when no need is
+  declared;
 - between classes: a method that is handed a purpose is read where it is
   called as `this.NAME(` in the class that declares it, and every other
   call that names it is refused, in every file and on whatever object:
@@ -542,7 +573,7 @@ is not whole and exits 1:
   whose ledgers have another key is refused this way: that of a bot from
   before `requests.js` (`tmp/ident/d1c8f01`, `source/action:outcome`).
 
-Two things pass that reading without a word:
+Three things pass that reading without a word:
 
 - a method that is handed a purpose, taken from another object as a value
   and called under another name (`const pull = tug.haul`,
@@ -554,7 +585,13 @@ Two things pass that reading without a word:
   is checked on the classes the composing class creates, not on those a
   part creates in turn: a part that names purposes and creates a class of
   another source (`Hunt` creating a class that builds `"sea", "stray"`)
-  passes. That class is read as any other, so its kinds are in the table.
+  passes. That class is read as any other, so its kinds are in the table;
+- a building need is known where a request is built by its name alone:
+  a record that is no need handed to a builder as `need.purpose` (a
+  request, in a loop `for (const need of requests)`) is read as the needs
+  are, and the class is given their purposes instead of the one it hands.
+  A purpose written under a computed key (`{ ["pur" + "pose"]: ... }`), in
+  a need as in a request, is not seen either.
 
 The set grants 68 of the 84 kinds. Never in a ledger within 14 minutes:
 

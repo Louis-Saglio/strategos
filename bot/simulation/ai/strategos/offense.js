@@ -180,8 +180,7 @@ export class Offense
 		const trainer = world.trainers.find(candidate => candidate.queueLength === 0 && trains(candidate));
 		if (trainer && !world.trainers.some(candidate => candidate.queueLength > 0 && trains(candidate)) && world.breakers.length < wanted)
 		{
-			const template = trainer.trainable.filter(name => this.catalog.isBreaker(name))
-				.sort((a, b) => this.catalog.costSum(a) - this.catalog.costSum(b) || (a < b ? -1 : 1))[0];
+			const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isBreaker(name));
 			requests.push(reserving(trainRequest("offense", "breaker", trainer.id, template, 1, this.catalog.cost(template),
 				this.catalog.population(template), plan.values.support, 1)));
 		}
