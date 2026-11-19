@@ -421,6 +421,24 @@ tools/run.sh -l 5 -R 0 -p 'strategos:*:1' -p 'none:maur:2' \
     -M random/strategos_harass_a10 -b '*' -H local OUTDIR 1-8
 ```
 
+`strategos_hunt_<fauna>_nN_dD[_cC]`: how much meat the bot gets out of a
+herd and where it kills it. On the assault map, the trigger script places
+N gaia animals of `gaia/fauna_<fauna>` (deer, horse, boar,
+elephant_african_bush, ...) in a clump D metres from player 1's centre, on
+the side away from player 2, and gives player 1 C more units of its
+starting cavalry gatherer. The `kill` lines carry, for each death, the
+distance of the corpse to the nearest food dropsite (`drop`) and how far
+the animal moved from its spawn point; the `tick`/`result` lines carry the
+herd meat harvested, hunters alive and lost, and the result's `t` is the
+time the herd was used up (`harvested`), or 480 s (`unfinished`). Cases:
+`deer_n8_d80_c2`, `horse_n6_d90_c2`, `boar_n4_d70_c2`,
+`elephant_african_bush_n2_d90_c3`. Run with `-R 0`:
+
+```sh
+tools/run.sh -l 9 -R 0 -p 'strategos:*:1' -p 'none:*:2' \
+    -M random/strategos_hunt_deer_n8_d80_c2 -b '*' -H local OUTDIR 1-8
+```
+
 `strategos_duel`: what a fight between two groups of soldiers costs each
 side with nothing else around. No AI plays; the trigger script fights 40
 duels one after the other at the centre of the map, out of reach of every
