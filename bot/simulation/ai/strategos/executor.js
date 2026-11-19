@@ -13,6 +13,7 @@ export class Executor
 		this.telemetry = telemetry;
 		this.issued = [];
 		this.time = 0;
+		this.stances = {};
 		this.handlers = {
 			"train": action => this.train(action),
 			"gather": action => this.gather(action),
@@ -27,7 +28,6 @@ export class Executor
 			"unload": action => this.unload(action),
 			"walk": action => this.walk(action),
 			"hold": () => false,
-			"stance": action => this.stance(action),
 			"attack-walk": action => this.attackWalk(action),
 			"research": action => this.research(action),
 			"barter": action => this.barter(action),
@@ -39,13 +39,14 @@ export class Executor
 
 	save()
 	{
-		return { "issued": this.issued, "time": this.time };
+		return { "issued": this.issued, "time": this.time, "stances": this.stances };
 	}
 
 	restore(data)
 	{
 		this.issued = data.issued;
 		this.time = data.time;
+		this.stances = data.stances;
 	}
 
 	reconcile(time)
@@ -77,8 +78,33 @@ export class Executor
 	execute(world, orders)
 	{
 		this.time = world.time;
+		for (const id of Object.keys(this.stances))
+			if (!this.gameState.getEntityById(+id))
+				delete this.stances[id];
 		for (const order of orders)
+		{
+			this.adoptStance(order.request);
 			order.issued = this.handlers[order.request.action.type](order.request.action);
+		}
+	}
+
+	adoptStance(request)
+	{
+		const wanted = request.action.stance || null;
+		for (const id of request.claims.units || [])
+		{
+			if ((this.stances[id] || null) === wanted)
+				continue;
+			const ent = this.gameState.getEntityById(id);
+			const name = wanted || ent && ent.get("UnitAI/DefaultStance");
+			if (!name)
+				continue;
+			Engine.PostCommand(this.player, { "type": "stance", "entities": [id], "name": name });
+			if (wanted)
+				this.stances[id] = wanted;
+			else
+				delete this.stances[id];
+		}
 	}
 
 	train(action)
@@ -187,14 +213,6 @@ export class Executor
 			"allowCapture": true,
 			"queued": false
 		});
-		return true;
-	}
-
-	stance(action)
-	{
-		if (!this.gameState.getEntityById(action.unit))
-			return false;
-		Engine.PostCommand(this.player, { "type": "stance", "entities": [action.unit], "name": action.name });
 		return true;
 	}
 

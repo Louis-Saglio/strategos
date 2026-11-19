@@ -1,10 +1,11 @@
 import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { objectiveFrom } from "simulation/ai/strategos/naval-shores.js";
-import { attackWalkTo, hold, orderRequest, stanceRequest } from "simulation/ai/strategos/requests.js";
+import { attackWalkTo, hold, orderRequest, withStance } from "simulation/ai/strategos/requests.js";
 
 const SUPPORT_RADIUS = 70;
 const SUPPORT_VALUE = 100;
+const RAID_STANCE = "standground";
 const RAID_CLASSES = { "attack": ["Unit"], "avoid": [] };
 
 export class Raid
@@ -15,18 +16,16 @@ export class Raid
 		this.telemetry = telemetry;
 		this.commitments = commitments;
 		this.current = null;
-		this.steady = new Set();
 	}
 
 	save(context)
 	{
-		return { "current": this.current && { "shore": context.shoreIndex(this.current.shore), "since": this.current.since }, "steady": this.steady };
+		return { "current": this.current && { "shore": context.shoreIndex(this.current.shore), "since": this.current.since } };
 	}
 
 	restore(data, context)
 	{
 		this.current = data.current && { "shore": context.shore(data.current.shore), "since": data.current.since };
-		this.steady = data.steady;
 	}
 
 	raidTarget(world, plan, sea, region, power)
@@ -101,19 +100,8 @@ export class Raid
 			return [];
 		const point = this.current.shore.water;
 		const near = raid.reach * raid.reach;
-		const posture = [];
-		for (const ship of raiders)
-			if (!this.steady.has(ship.id))
-				posture.push(stanceRequest("naval", "raid-stance", ship.id, "standground", plan.values.ferry, 1));
-		return posture.concat(raiders.map(ship => orderRequest("naval", "raid", ship.id,
-			squareDistance(ship.position, point) <= near || !ship.idle ? hold() : attackWalkTo(point[0], point[1], RAID_CLASSES),
-			plan.values.ferry, 1)));
-	}
-
-	settle(outcomes)
-	{
-		for (const { request, issued } of outcomes)
-			if (issued && request.purpose === "raid-stance")
-				this.steady.add(request.action.unit);
+		return raiders.map(ship => orderRequest("naval", "raid", ship.id,
+			withStance(squareDistance(ship.position, point) <= near || !ship.idle ? hold() : attackWalkTo(point[0], point[1], RAID_CLASSES), RAID_STANCE),
+			plan.values.ferry, 1));
 	}
 }

@@ -1,3 +1,4 @@
+import { underFire } from "simulation/ai/strategos/fire.js";
 import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { landRegionNear, territoryAt } from "simulation/ai/strategos/terrain.js";
 
@@ -5,7 +6,6 @@ const SITE_RADIUS = 110;
 const SITES_KEPT = 48;
 const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
-export const FIRE_MARGIN = 10;
 export const FISH_RADIUS = 160;
 const FISH_KEPT = 24;
 const MUSTER_WINDOW_MS = 120000;
@@ -186,7 +186,7 @@ export class ResourceIndex
 			if (!ent || !ent.position() || !(amount > 0))
 				continue;
 			const position = ent.position();
-			if (batteries.some(structure => squareDistance(structure.position, position) <= (structure.range + FIRE_MARGIN) * (structure.range + FIRE_MARGIN)))
+			if (underFire(batteries, position))
 				continue;
 			let nearest = Infinity;
 			for (const point of points)

@@ -1,4 +1,5 @@
 import { PATIENCE_MS, REPORT_MS } from "simulation/ai/strategos/cadence.js";
+import { reaches } from "simulation/ai/strategos/fire.js";
 import { centroid, distanceBetween, firstListed, nearest, squareDistance, toward } from "simulation/ai/strategos/geometry.js";
 import { Operations } from "simulation/ai/strategos/operations.js";
 import { attack, attackWalkTo, capture, deleteHolderRequest, garrisonIn, hold, memberRequest, orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
@@ -19,7 +20,6 @@ const PRIZE_HORIZON_S = 60;
 const ASSAULT_RADIUS = 80;
 const ASSAULT_ENTER_SHARE = 0.1;
 const ASSAULT_EXIT_SHARE = 0.25;
-const COVER_MARGIN = 8;
 const TARGET_DISTANCE_SCALE = 200;
 const TARGET_WEIGHTS = { "centre": 3, "defensive": 2, "other": 1 };
 const HOLD_MARGIN = 2;
@@ -294,8 +294,7 @@ export class Offense
 		{
 			if (other.id === target.id || !other.fire.arrows)
 				continue;
-			const reach = other.range + COVER_MARGIN;
-			if (squareDistance(other.position, target.position) > reach * reach)
+			if (!reaches(other, target.position))
 				continue;
 			arrows += other.fire.arrows;
 			if (other.fire.arrows > strongest.arrows)
@@ -594,8 +593,7 @@ export class Offense
 		{
 			if (!structure.fire.arrows || structure.id === operation.objective.id)
 				continue;
-			const reach = structure.range + COVER_MARGIN;
-			if (squareDistance(structure.position, position) <= reach * reach)
+			if (reaches(structure, position))
 				return structure;
 		}
 		return null;

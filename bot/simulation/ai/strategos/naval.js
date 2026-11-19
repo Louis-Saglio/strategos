@@ -83,7 +83,6 @@ export class Naval
 	settle(world, outcomes)
 	{
 		this.operations.settle(outcomes);
-		this.raid.settle(outcomes);
 		this.stations.settle(world, outcomes);
 	}
 

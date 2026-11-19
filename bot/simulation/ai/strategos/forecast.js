@@ -1,10 +1,10 @@
+import { reaches } from "simulation/ai/strategos/fire.js";
 import { centroid, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { RESISTANCE_BASE } from "simulation/ai/strategos/rules.js";
 import { NO_STATE } from "simulation/ai/strategos/unitstate.js";
 
 export const CONTACT_RADIUS = 60;
 export const REACH_RADIUS = 150;
-export const COVER_MARGIN = 5;
 const RECRUIT_WAVE_S = 20;
 const FAR = 1e6;
 
@@ -265,8 +265,7 @@ export function covering(structures, centre, side)
 	return structures.filter(structure => {
 		if (!(structure.fire.arrows > 0))
 			return false;
-		const reach = (structure.range + COVER_MARGIN) * (structure.range + COVER_MARGIN);
-		return squareDistance(structure.position, centre) <= reach || squareDistance(structure.position, stand) <= reach;
+		return reaches(structure, centre) || reaches(structure, stand);
 	});
 }
 

@@ -1,5 +1,6 @@
-import { capture, memberRequest, stance, walkTo } from "simulation/ai/strategos/requests.js";
+import { capture, memberRequest, walkTo, withStance } from "simulation/ai/strategos/requests.js";
 import { CONTACT_RADIUS, exchange } from "simulation/ai/strategos/forecast.js";
+import { reaches } from "simulation/ai/strategos/fire.js";
 import { awayFrom, firstListed, nearest, squareDistance, toward } from "simulation/ai/strategos/geometry.js";
 import { Operations } from "simulation/ai/strategos/operations.js";
 import { Hysteresis } from "simulation/ai/strategos/switches.js";
@@ -7,22 +8,17 @@ import { Hysteresis } from "simulation/ai/strategos/switches.js";
 const POST_CLEARANCE = 12;
 const POST_TOLERANCE = 12;
 const DANGER_RADIUS = 90;
+const HERO_STANCE = "passive";
 
 export class Guard
 {
-	constructor()
-	{
-		this.passive = new Set();
-	}
-
 	save()
 	{
-		return { "passive": this.passive };
+		return {};
 	}
 
-	restore(data)
+	restore()
 	{
-		this.passive = data.passive;
 	}
 
 	requests(world, plan)
@@ -32,27 +28,15 @@ export class Guard
 		const requests = [];
 		for (const hero of world.heroes)
 		{
-			if (!this.passive.has(hero.id))
-			{
-				requests.push(this.member("hero-stance", hero, false, stance("passive"), plan));
-				continue;
-			}
 			const centre = nearest(world.centres, hero.position, firstListed).item;
 			const danger = nearest(world.enemyFighters.filter(enemy =>
 				squareDistance(enemy.position, centre.position) <= DANGER_RADIUS * DANGER_RADIUS), centre.position, firstListed).item ||
 				nearest(world.enemyTargets, centre.position, firstListed).item;
 			const post = awayFrom(centre.position, danger ? danger.position : hero.position, centre.radius + POST_CLEARANCE);
 			const away = squareDistance(hero.position, post) > POST_TOLERANCE * POST_TOLERANCE;
-			requests.push(this.member("hero-post", hero, !away || hero.state.walking, walkTo(post[0], post[1]), plan));
+			requests.push(this.member("hero-post", hero, !away || hero.state.walking, withStance(walkTo(post[0], post[1]), HERO_STANCE), plan));
 		}
 		return requests;
-	}
-
-	settle(world, outcomes)
-	{
-		for (const { request, issued } of outcomes)
-			if (issued && request.purpose === "hero-stance")
-				this.passive.add(request.action.unit);
 	}
 
 	member(purpose, hero, engaged, order, plan)
@@ -63,7 +47,6 @@ export class Guard
 
 const RELIC_SQUAD = 10;
 const RELIC_HOME_THREATS = 3;
-const RELIC_COVER_MARGIN = 8;
 const RELIC_POST_CLEARANCE = 14;
 const RELIC_POST_TOLERANCE = 10;
 const RELIC_ENEMY_CLEARANCE = 300;
@@ -154,12 +137,7 @@ export class Relics
 
 	covered(world, relic)
 	{
-		return world.enemyStructures.some(structure => {
-			if (!structure.fire.arrows)
-				return false;
-			const reach = structure.range + RELIC_COVER_MARGIN;
-			return squareDistance(structure.position, relic.position) <= reach * reach;
-		});
+		return world.enemyStructures.some(structure => structure.fire.arrows && reaches(structure, relic.position));
 	}
 
 	member(purpose, unit, engaged, order, plan)

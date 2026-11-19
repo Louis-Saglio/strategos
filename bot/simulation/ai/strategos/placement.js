@@ -1,6 +1,6 @@
 import { TERRITORY_BLINKING_MASK } from "simulation/ai/strategos/rules.js";
 import { territoryCell } from "simulation/ai/strategos/terrain.js";
-import { FIRE_MARGIN } from "simulation/ai/strategos/world-memory.js";
+import { underFire } from "simulation/ai/strategos/fire.js";
 
 const RING_STEP = 4;
 const ARC_STEP = 4;
@@ -95,14 +95,8 @@ export class Placement
 		const region = this.regionOf(site);
 		if (region >= 2 && this.manned.size && !this.manned.has(region))
 			return false;
-		for (const battery of this.batteries)
-		{
-			const dx = battery.position[0] - x;
-			const dz = battery.position[1] - z;
-			const reach = battery.range + FIRE_MARGIN + Math.max(halfWidth, halfDepth);
-			if (dx * dx + dz * dz < reach * reach)
-				return false;
-		}
+		if (underFire(this.batteries, [x, z], Math.max(halfWidth, halfDepth)))
+			return false;
 		for (const box of reserved)
 		{
 			const dx = box.x - x;
