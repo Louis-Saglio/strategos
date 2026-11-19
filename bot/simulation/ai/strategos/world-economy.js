@@ -1,8 +1,10 @@
 import { isTreasure } from "simulation/ai/common-api/filters.js";
 import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
+import { isHunt } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { landRegionNear, landRegionsOf, territoryAt } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
+import { foodWorth, unitGroup } from "simulation/ai/strategos/yields.js";
 
 const TREASURE_RADIUS = 120;
 
@@ -121,7 +123,7 @@ function workforce(gameState, catalog, anchors)
 	return { workers, settlers, traders };
 }
 
-function occupation(codes, workers, fishers)
+function occupation(codes, workers, fishers, assignments, yieldRates)
 {
 	const gatherers = {};
 	const hauls = {};
@@ -132,10 +134,16 @@ function occupation(codes, workers, fishers)
 		hauls[code] = 0;
 		hauled[code] = 0;
 	}
+	let helpers = fishers;
 	for (const worker of workers)
 	{
-		if (worker.gathering && gatherers[worker.gathering] !== undefined)
-			gatherers[worker.gathering] += 1;
+		const hunting = !worker.gathering && assignments[worker.id] && isHunt(assignments[worker.id].purpose);
+		const code = hunting ? "food" : worker.gathering;
+		const worth = code === "food" ? foodWorth(yieldRates, unitGroup(worker.classes), 1) : 1;
+		if (code === "food" && worker.soldier)
+			helpers += worth;
+		if (code && gatherers[code] !== undefined)
+			gatherers[code] += worth;
 		if (worker.haul !== null && isFinite(worker.haul) && hauls[worker.gathering] !== undefined)
 		{
 			hauls[worker.gathering] += worker.haul;
@@ -146,7 +154,7 @@ function occupation(codes, workers, fishers)
 		hauls[code] = hauled[code] ? hauls[code] / hauled[code] : 0;
 	if (gatherers.food !== undefined)
 		gatherers.food += fishers;
-	return { gatherers, hauls };
+	return { gatherers, hauls, helpers };
 }
 
 function buildableBy(workers)
@@ -232,7 +240,7 @@ function treasuresWithin(gameState, anchors, workers)
 	return treasures.sort((a, b) => a.id - b.id);
 }
 
-export function economySection(gameState, catalog, resourceIndex, anchors, batteries, fishers)
+export function economySection(gameState, catalog, resourceIndex, anchors, batteries, fishers, assignments, yieldRates)
 {
 	const playerData = gameState.playerData;
 	const codes = catalog.codes;
@@ -240,7 +248,7 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 	for (const code of codes)
 		resources[code] = playerData.resourceCounts[code] || 0;
 	const staff = workforce(gameState, catalog, anchors);
-	const busy = occupation(codes, staff.workers, fishers);
+	const busy = occupation(codes, staff.workers, fishers, assignments(), yieldRates);
 	const sites = {};
 	for (const code of codes)
 		sites[code] = resourceIndex.live(gameState, code, anchors, batteries);
@@ -256,6 +264,7 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 			"traders": Object.freeze(staff.traders),
 			"labour": staff.workers.length + fishers,
 			"gatherers": Object.freeze(busy.gatherers),
+			"foodHelpers": busy.helpers,
 			"hauls": Object.freeze(busy.hauls),
 			"sites": Object.freeze(sites),
 			"game": resourceIndex.liveGame(gameState, batteries),

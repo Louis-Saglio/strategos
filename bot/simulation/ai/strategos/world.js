@@ -51,7 +51,7 @@ function assemble(gameState, stopwatch, sections)
 	return Object.freeze(world);
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, assignments, stopwatch)
+export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, assignments, yieldRates, stopwatch)
 {
 	const anchors = stopwatch.section("economy", () => {
 		const found = dropsites(gameState, catalog);
@@ -61,14 +61,14 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const production = stopwatch.section("production", () => productionSection(gameState, catalog));
 	const settled = settledBases(gameState, production.now.centres);
 	const sea = stopwatch.section("sea", () => seaSection(gameState, catalog, resourceIndex, shoreIndex, settled.homeRegion,
-		() => enemies.now));
+		() => enemies.now, yieldRates));
 	const enemies = stopwatch.section("enemies", () => enemiesSection(gameState, catalog, musterIndex, assignments));
 	const record = parts => Object.freeze(attach({}, "world.players", parts,
 		(name, read) => once(gameState, stopwatch, "players", name, read)));
 	const players = playersSection(gameState, catalog, enemies.holdings, enemies.muster, settled.homeRegion, record);
 	const military = stopwatch.section("military", () => militarySection(gameState, catalog, lossIndex));
 	const economy = stopwatch.section("economy",
-		() => economySection(gameState, catalog, resourceIndex, anchors, enemies.now.batteries, sea.now.fishers));
+		() => economySection(gameState, catalog, resourceIndex, anchors, enemies.now.batteries, sea.now.fishers, assignments, yieldRates));
 	const map = stopwatch.section("map", () => mapSection(gameState, settled, {
 		"workers": economy.now.workers,
 		"settlers": economy.now.settlers,

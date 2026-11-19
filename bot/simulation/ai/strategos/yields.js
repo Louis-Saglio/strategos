@@ -1,11 +1,14 @@
 import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 
 const MEAT = "food.meat";
+const FOOD = "food";
+const MEMORY = 0.5;
+const MEASURED_S = 120;
 const FISH = "food.fish";
 const HOME_SOURCES = ["economy"];
 const HOME_PURPOSES = ["fish"];
 
-function category(classes)
+export function unitGroup(classes)
 {
 	if (classes.includes("Ship"))
 		return "boat";
@@ -14,25 +17,41 @@ function category(classes)
 	return classes.includes("Soldier") ? "infantry" : "civilian";
 }
 
+export function foodWorth(rates, group, prior)
+{
+	if (group === "civilian")
+		return 1;
+	const own = rates && rates[group];
+	const civilian = rates && rates.civilian;
+	return own !== undefined && civilian ? own / civilian : prior;
+}
+
 export class YieldLedger
 {
 	constructor()
 	{
 		this.units = new Map();
 		this.buckets = {};
+		this.food = {};
+		this.rates = Object.freeze({});
 		this.lastTime = undefined;
+		this.flushed = undefined;
 	}
 
 	save()
 	{
-		return { "units": this.units, "buckets": this.buckets, "lastTime": this.lastTime };
+		return { "units": this.units, "buckets": this.buckets, "food": this.food, "rates": this.rates, "lastTime": this.lastTime,
+			"flushed": this.flushed };
 	}
 
 	restore(data)
 	{
 		this.units = data.units;
 		this.buckets = data.buckets;
+		this.food = data.food;
+		this.rates = data.rates;
 		this.lastTime = data.lastTime;
+		this.flushed = data.flushed;
 	}
 
 	bucket(kind, group)
@@ -60,7 +79,7 @@ export class YieldLedger
 		const game = new Map(world.game.map(prey => [prey.id, prey]));
 		const assignments = world.assignments;
 		const seen = new Map();
-		const units = world.workers.map(worker => ({ worker, "group": category(worker.classes), "kind": undefined }))
+		const units = world.workers.map(worker => ({ worker, "group": unitGroup(worker.classes), "kind": undefined }))
 			.concat(world.fleet.filter(boat => boat.fishing).map(boat => ({ "worker": boat, "group": "boat", "kind": FISH })));
 		for (const { worker, group, kind } of units)
 		{
@@ -110,9 +129,32 @@ export class YieldLedger
 
 	report(world, telemetry)
 	{
-		if (!Object.keys(this.buckets).length || !telemetry.due("YIELD", world.time, REPORT_MS))
+		if (this.flushed === undefined)
+			this.flushed = world.time;
+		if (world.time - this.flushed < REPORT_MS)
 			return;
-		const round = value => Math.round(value * 10) / 10;
+		this.flushed = world.time;
+		for (const group of Object.keys(this.food))
+		{
+			this.food[group].delivered *= MEMORY;
+			this.food[group].seconds *= MEMORY;
+		}
+		for (const key of Object.keys(this.buckets))
+		{
+			const [kind, group] = key.split("|");
+			if (!kind.startsWith(FOOD + "."))
+				continue;
+			if (!this.food[group])
+				this.food[group] = { "delivered": 0, "seconds": 0 };
+			this.food[group].delivered += this.buckets[key].delivered;
+			this.food[group].seconds += this.buckets[key].seconds;
+		}
+		const rates = {};
+		for (const group of Object.keys(this.food).sort())
+			if (this.food[group].seconds >= MEASURED_S && this.food[group].delivered > 0)
+				rates[group] = this.food[group].delivered / this.food[group].seconds;
+		this.rates = Object.freeze(rates);
+		const round = value => Math.round(value * 100) / 100;
 		const data = {};
 		for (const key of Object.keys(this.buckets).sort())
 		{
@@ -120,6 +162,7 @@ export class YieldLedger
 			data[key] = { "d": Math.round(ledger.delivered), "s": Math.round(ledger.seconds), "rate": ledger.seconds > 0 ? round(ledger.delivered / ledger.seconds) : null,
 				"idle": Math.round(ledger.idle), "taken": Math.round(ledger.taken), "lost": Math.round(ledger.discarded) };
 		}
+		data.foodRates = Object.fromEntries(Object.entries(rates).map(([group, rate]) => [group, round(rate)]));
 		telemetry.line("YIELD", world.time, data);
 		this.buckets = {};
 	}

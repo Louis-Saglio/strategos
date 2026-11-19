@@ -54,7 +54,7 @@ def main():
             if window is None:
                 continue
             for key, value in data.items():
-                if key in ("p", "t"):
+                if not isinstance(value, dict) or "d" not in value:
                     continue
                 entry = totals[(group, key, window)]
                 entry[0] += value["d"]

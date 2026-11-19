@@ -52,8 +52,6 @@ export class Economy
 			driving.push(...this.pickupRequests(world, plan, carcasses, reserved, busy));
 			driving.push(...this.relayRequests(world, plan, carcasses, reserved, game, busy));
 		}
-		if (assigned.food !== undefined)
-			assigned.food += this.drives.hunters().size;
 		return this.treasureRequests(world, plan, busy)
 			.concat(driving)
 			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy))

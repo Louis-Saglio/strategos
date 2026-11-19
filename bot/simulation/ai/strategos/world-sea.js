@@ -2,6 +2,7 @@ import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { landRegionNear, seaNear } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
 import { FISH_RADIUS } from "simulation/ai/strategos/world-memory.js";
+import { foodWorth } from "simulation/ai/strategos/yields.js";
 
 const FISHER_WORTH = 3;
 
@@ -66,7 +67,7 @@ function fishingGrounds(liveFish, enemies, clearance)
 	return Object.freeze({ "foes": Object.freeze(foes), hostile, "waters": Object.freeze(waters) });
 }
 
-export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion, enemies)
+export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion, enemies, yieldRates)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const fleet = ownShips(gameState, catalog);
@@ -77,7 +78,7 @@ export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRe
 			"docks": Object.freeze(harbours(gameState, catalog, shoreIndex, homeRegion)),
 			"fleet": Object.freeze(fleet),
 			"ships": Object.freeze(fleet.filter(ship => ship.capacity > 0 || ship.cargo.length)),
-			"fishers": FISHER_WORTH * fleet.filter(ship => ship.fishing && ship.gathering).length,
+			"fishers": foodWorth(yieldRates, "boat", FISHER_WORTH) * fleet.filter(ship => ship.fishing && ship.gathering).length,
 			"fish": fish,
 			"schools": resourceIndex.schools,
 			"fishRadius": FISH_RADIUS,

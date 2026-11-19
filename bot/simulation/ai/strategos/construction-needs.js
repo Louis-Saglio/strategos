@@ -215,10 +215,10 @@ export function hunger(context)
 	const desired = assessments.gatherShares.food * (world.labour + world.queuedPopulation);
 	let wild = 0;
 	for (const site of world.sites.food)
-		if (isFinite(site.amount))
+		if (isFinite(site.amount) && !site.prey)
 			wild += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
 	const farms = owned(world, bound(context, isFarm));
-	const supply = wild + farms * catalog.maxGatherers(farm) + world.fishers;
+	const supply = wild + farms * catalog.maxGatherers(farm) + world.foodHelpers;
 	if (supply >= desired)
 		return null;
 	return { "farm": farm, "urgency": 1 + (desired - supply) / Math.max(1, desired) };
