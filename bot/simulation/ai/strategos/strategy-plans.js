@@ -1,5 +1,9 @@
 import { WONDER } from "simulation/ai/strategos/construction-needs.js";
 import { Guard, Relics } from "simulation/ai/strategos/guard.js";
+import { Hysteresis } from "simulation/ai/strategos/switches.js";
+
+const GAME_ENTER = 2000;
+const GAME_EXIT = 800;
 
 const BASE = {
 	"values": { "shelter": 70, "founding": 65, "defend": 60, "relic": 35, "ferry": 45, "offense": 30, "wonder": 26, "build": 25, "treasure": 22, "assignIdleWorker": 20, "house": 15, "farm": 14, "fishing": 14, "phase": 16, "research": 13, "investment": 12, "support": 11, "trainWorker": 10, "barter": 9, "rebalance": 5 },
@@ -31,6 +35,7 @@ const BASE = {
 			"dominance": { "horizonS": 120 }, "attrition": { "min": 0.6, "max": 1.6 }, "reach": { "launch": 300 } },
 		"targetsTried": 6, "recall": 0.1, "reinforce": { "min": 20 },
 		"beachhead": { "superiority": 1, "reserve": 10 } },
+	"hunting": { "hunters": 0, "meatPerHunter": 600, "relay": false },
 	"medics": { "soldiersPerHealer": 12, "woundsPerHealer": 300, "max": 8 },
 	"trade": { "minRate": 0.3, "richRate": 0.5, "max": 10, "populationPerTrader": 20 },
 	"naval": { "maxCapacity": 200, "superiority": 1, "carried": 0.8, "seaSuperiority": 1.5, "settlers": 6, "founders": 10, "yardCrowd": 70, "reinforcement": 10, "massShare": 0.5, "edge": 1.3, "huntSuperiority": 1.2, "fleetMax": 24, "fightersPerShip": 8,
@@ -45,7 +50,8 @@ const BASE = {
 const PLANS = [
 	{ "name": "regicide", "applies": context => context.victory.includes("regicide"), "set": {}, "behaviours": [Guard], "needs": [] },
 	{ "name": "relics", "applies": context => context.victory.includes("capture_the_relic"), "set": {}, "behaviours": [Relics], "needs": [] },
-	{ "name": "wonder", "applies": context => context.victory.includes("wonder"), "set": {}, "behaviours": [], "needs": [WONDER] }
+	{ "name": "wonder", "applies": context => context.victory.includes("wonder"), "set": {}, "behaviours": [], "needs": [WONDER] },
+	{ "name": "hunt", "applies": (context, signals) => signals.game, "set": { "hunting": { "hunters": 4, "relay": true } }, "behaviours": [], "needs": [] }
 ];
 
 function overlay(base, set)
@@ -63,22 +69,25 @@ export class Plans
 	{
 		this.names = null;
 		this.table = BASE;
+		this.game = new Hysteresis(false);
 	}
 
 	save()
 	{
-		return this.names;
+		return { "names": this.names, "game": this.game.save() };
 	}
 
-	restore(names)
+	restore(data)
 	{
-		if (names)
-			this.choose(PLANS.filter(plan => names.includes(plan.name)));
+		this.game.restore(data.game);
+		if (data.names)
+			this.choose(PLANS.filter(plan => data.names.includes(plan.name)));
 	}
 
 	select(context)
 	{
-		const plans = PLANS.filter(plan => plan.applies(context));
+		const signals = { "game": this.game.atLeast(context.wildMeat || 0, GAME_ENTER, GAME_EXIT) };
+		const plans = PLANS.filter(plan => plan.applies(context, signals));
 		if (this.names && plans.length === this.names.length && plans.every((plan, index) => plan.name === this.names[index]))
 			return false;
 		this.choose(plans);

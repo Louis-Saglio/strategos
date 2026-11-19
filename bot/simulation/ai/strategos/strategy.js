@@ -32,7 +32,9 @@ export class Strategy
 
 	update(world)
 	{
-		const selected = this.plans.select(world.context);
+		const wildMeat = world.game.filter(prey => !prey.domestic && !prey.armed && prey.region === world.homeRegion)
+			.reduce((sum, prey) => sum + prey.amount, 0);
+		const selected = this.plans.select(Object.assign({ "wildMeat": wildMeat }, world.context));
 		const plan = this.plans.table;
 		const posture = this.posture.assess(world, plan);
 		const labour = this.labour.assess(world, plan, posture.stance.civilianTarget);

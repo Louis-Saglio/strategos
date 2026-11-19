@@ -22,6 +22,7 @@ function trainingSites(gameState, catalog)
 			"position": ent.position(),
 			"batchTimeModifier": +(ent.get("Trainer/BatchTimeModifier") || 1),
 			"queueLength": queue.length,
+			"training": Object.freeze(queue.map(item => item.unitTemplate).filter(name => !!name)),
 			"trainable": Object.freeze(trainable)
 		}));
 	}

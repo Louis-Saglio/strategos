@@ -7,6 +7,11 @@ const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
 const HUNTER_RATE = 2;
 const FOOD = "food";
+const MEAT = "food.meat";
+const RELAY_REACH = 24;
+const RELAY_WALK = 30;
+const RELAY_MEAT_SHARE = 50;
+const RELAY_PER_DECISION = 4;
 
 export class Economy
 {
@@ -41,6 +46,12 @@ export class Economy
 		driving.push(...this.huntRequests(world, plan, game, busy));
 		for (const id of this.drives.quarries())
 			reserved.set(id, Infinity);
+		if (plan.hunting.relay)
+		{
+			const carcasses = world.sites.food.filter(site => site.kind === MEAT && !site.prey && site.anchorDistance <= RELAY_REACH);
+			driving.push(...this.pickupRequests(world, plan, carcasses, reserved, busy));
+			driving.push(...this.relayRequests(world, plan, carcasses, reserved, game, busy));
+		}
 		if (assigned.food !== undefined)
 			assigned.food += this.drives.hunters().size;
 		return this.treasureRequests(world, plan, busy)
@@ -66,6 +77,51 @@ export class Economy
 			if (!request)
 				continue;
 			busy.add(worker.id);
+			requests.push(request);
+		}
+		return requests;
+	}
+
+	pickupRequests(world, plan, carcasses, reserved, busy)
+	{
+		const requests = [];
+		for (const carcass of carcasses)
+		{
+			let wanted = Math.min(carcass.capacity, Math.ceil(carcass.amount / RELAY_MEAT_SHARE)) - carcass.gatherers - (reserved.get(carcass.id) || 0);
+			const candidates = world.workers.filter(worker => wanted > 0 && !busy.has(worker.id) && worker.state.gathering &&
+				worker.gathering === FOOD && worker.kind !== MEAT && worker.region === carcass.region &&
+				(worker.profile.rates[MEAT] || 0) > (worker.profile.rates[worker.kind] || 0) &&
+				squareDistance(worker.position, carcass.position) <= RELAY_WALK * RELAY_WALK)
+				.sort((a, b) => squareDistance(a.position, carcass.position) - squareDistance(b.position, carcass.position) || a.id - b.id);
+			for (const worker of candidates)
+			{
+				if (wanted <= 0 || requests.length >= RELAY_PER_DECISION)
+					break;
+				busy.add(worker.id);
+				reserved.set(carcass.id, (reserved.get(carcass.id) || 0) + 1);
+				wanted -= 1;
+				requests.push(gatherRequest("economy", "pickup", worker.id, carcass.id, FOOD, plan.values.rebalance, 1));
+			}
+		}
+		return requests;
+	}
+
+	relayRequests(world, plan, carcasses, reserved, game, busy)
+	{
+		const covered = new Map(carcasses.map(carcass => [carcass.id, carcass.gatherers - 1 + (reserved.get(carcass.id) || 0)]));
+		const requests = [];
+		for (const worker of world.workers)
+		{
+			if (busy.has(worker.id) || !worker.state.gathering || !(covered.get(worker.target) > 0) ||
+			    !((worker.profile.rates[MEAT] || 0) >= HUNTER_RATE))
+				continue;
+			const site = this.nearestGame(world, worker, reserved, game);
+			const request = site && this.drives.start(world, plan, worker, game.get(site.id));
+			if (!request)
+				continue;
+			busy.add(worker.id);
+			reserved.set(site.id, Infinity);
+			covered.set(worker.target, covered.get(worker.target) - 1);
 			requests.push(request);
 		}
 		return requests;

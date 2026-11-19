@@ -6,6 +6,9 @@ import { HERO_EDGE, TRAINING_BATCH, combatRole, enemyProfile, heroWorth, populat
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
 const HERO_STOCK = 2;
+const HUNTER_RATE = 2;
+const MEAT = "food.meat";
+const HUNTER_URGENCY = 1.2;
 
 export class Recruitment
 {
@@ -20,6 +23,7 @@ export class Recruitment
 			{ "kind": "ship", "requests": (world, plan, assessments) => this.shipRequests(world, plan, assessments) },
 			{ "kind": "fishing-boat", "requests": (world, plan) => this.fishingBoatRequests(world, plan) },
 			{ "kind": "hero", "requests": (world, plan) => this.heroRequests(world, plan) },
+			{ "kind": "hunter", "requests": (world, plan) => this.hunterRequests(world, plan) },
 			{ "kind": "worker-or-soldier", "requests": (world, plan, assessments) => this.unitRequests(world, plan, assessments) },
 			{ "kind": "trader", "requests": (world, plan, assessments) => this.traderRequests(world, plan, assessments) },
 			{ "kind": "healer", "requests": (world, plan) => this.healerRequests(world, plan) }
@@ -184,6 +188,32 @@ export class Recruitment
 				plan.values.research, 1))];
 		}
 		return [];
+	}
+
+	hunts(name)
+	{
+		return this.catalog.isFighter(name) && (this.catalog.gathering(this.catalog.template(name)).rates[MEAT] || 0) >= HUNTER_RATE;
+	}
+
+	hunterRequests(world, plan)
+	{
+		const hunting = plan.hunting;
+		if (!world.home || !hunting.hunters)
+			return [];
+		const meat = world.game.filter(prey => !prey.domestic && !prey.armed && prey.region === world.homeRegion)
+			.reduce((sum, prey) => sum + prey.amount, 0);
+		const wanted = Math.min(hunting.hunters, Math.floor(meat / hunting.meatPerHunter));
+		const hunters = world.workers.filter(worker => worker.soldier && (worker.profile.rates[MEAT] || 0) >= HUNTER_RATE).length;
+		if (hunters >= wanted || world.trainers.some(trainer => trainer.training.some(name => this.hunts(name))))
+			return [];
+		const trainer = world.trainers.find(candidate => candidate.queueLength < TRAINER_QUEUE_DEPTH && candidate.trainable.some(name => this.hunts(name)));
+		if (!trainer)
+			return [];
+		const template = this.catalog.cheapest(trainer.trainable, name => this.hunts(name));
+		const tier = trainer.queueLength === 0 ? "production" : "investment";
+		return [noting(inTier(trainRequest("recruitment", "hunter", trainer.id, template, 1, this.catalog.cost(template),
+			this.catalog.population(template), plan.values.trainWorker, HUNTER_URGENCY), tier),
+			{ "meat": Math.round(meat), "hunters": hunters, "wanted": wanted })];
 	}
 
 	unitRequests(world, plan, assessments)
