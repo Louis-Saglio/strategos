@@ -903,7 +903,9 @@ window of in-game minutes and summed over every game, the realised rate
 (delivered / seconds), the idle and taken shares of the units' time and the
 number of games. A delivery is seen as a drop of the carried load between
 two decisions; a unit that filled up and delivered within one decision gap
-is counted as delivering a full load.
+is counted as delivering a full load. Each line also carries `foodRates`,
+the smoothed food rate per unit group that the bot uses to weigh
+non-civilian food workers; the table ignores it.
 
 ### timeline.py — when and how each game was decided
 
