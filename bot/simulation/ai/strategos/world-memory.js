@@ -111,6 +111,7 @@ export class ResourceIndex
 		const weighted = new Float64Array(2 * grid.width * grid.height);
 		const byRegion = new Map();
 		const limit = SITE_RADIUS * SITE_RADIUS;
+		const carcassLimit = GAME_RADIUS * GAME_RADIUS;
 		const piers = code === "food" ? anchors.filter(anchor => anchor.shore && anchor.types.includes(code)) : [];
 		const fish = [];
 		if (code === "food")
@@ -154,20 +155,21 @@ export class ResourceIndex
 			}
 			if (!points.length)
 				continue;
+			const reach = code === "food" && !ent.get("UnitAI") && !!ent.get("ResourceSupply/KillBeforeGather") ? carcassLimit : limit;
 			let best = Infinity;
 			let nearest = Infinity;
 			for (const point of points)
 			{
 				const distance = squareDistance(point.position, position);
 				nearest = Math.min(nearest, distance);
-				if (distance > limit || distance >= best)
+				if (distance > reach || distance >= best)
 					continue;
 				if (region < 0)
 					region = accessibility.getAccessValue(position);
 				if (region < 2 || point.region < 2 || region === point.region)
 					best = distance;
 			}
-			if (best <= limit)
+			if (best <= reach)
 				kept.push({ "id": ent.id(), "distance": best });
 			else
 				beyond.push({ "id": ent.id(), "distance": nearest, "position": position });
