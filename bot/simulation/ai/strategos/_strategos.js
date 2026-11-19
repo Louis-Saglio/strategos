@@ -17,6 +17,7 @@ import { Upgrades } from "simulation/ai/strategos/upgrades.js";
 import { Trade } from "simulation/ai/strategos/trade.js";
 import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { buildWorld } from "simulation/ai/strategos/world.js";
+import { YieldLedger } from "simulation/ai/strategos/yields.js";
 import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex } from "simulation/ai/strategos/world-memory.js";
 
 const DECISION_PERIOD = 8;
@@ -40,6 +41,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.lossIndex = new LossIndex(this.player);
 	this.musterIndex = new MusterIndex();
 	this.battleLog = new BattleLog(this.catalog, this.telemetry);
+	this.yields = new YieldLedger();
 	this.strategy = new Strategy(this.catalog.codes, this.catalog);
 	this.behaviours = [];
 	this.subsystems = [new Defense(this.catalog, this.telemetry), new Offense(this.catalog, this.telemetry), new Naval(this.catalog, this.telemetry),
@@ -78,6 +80,7 @@ StrategosBot.prototype.Serialize = function()
 		"lossIndex": this.lossIndex.save(),
 		"musterIndex": this.musterIndex.save(),
 		"battleLog": this.battleLog.save(),
+		"yields": this.yields.save(),
 		"strategy": this.strategy.save(),
 		"behaviours": this.behaviours.map(behaviour => behaviour.save()),
 		"subsystems": this.subsystems.map(subsystem => subsystem.save ? subsystem.save(context) : null),
@@ -102,6 +105,7 @@ StrategosBot.prototype.restore = function(data, gameState)
 	this.lossIndex.restore(data.lossIndex);
 	this.musterIndex.restore(data.musterIndex);
 	this.battleLog.restore(data.battleLog);
+	this.yields.restore(data.yields);
 	this.strategy.restore(data.strategy);
 	const plan = this.strategy.plans.table;
 	const context = { "shore": index => this.shoreIndex.at(gameState, index), "needs": plan.needs };
@@ -133,6 +137,9 @@ StrategosBot.prototype.decide = function()
 	stopwatch.lap("world");
 	this.battleLog.observe(world);
 	stopwatch.lap("BattleLog");
+	this.yields.observe(world);
+	this.yields.report(world, this.telemetry);
+	stopwatch.lap("YieldLedger");
 	this.strategy.update(world);
 	const { plan, assessments } = this.strategy;
 	this.enlist(plan.behaviours);

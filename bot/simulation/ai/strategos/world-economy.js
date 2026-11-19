@@ -93,9 +93,12 @@ function workforce(gameState, catalog, anchors)
 				haul = anchorDistance(anchors, type.generic, targetPosition);
 			}
 		}
+		const load = ent.resourceCarrying() || [];
 		workers.push(Object.freeze({
 			"id": ent.id(),
 			"template": ent.templateName(),
+			"carried": load.reduce((sum, item) => sum + item.amount, 0),
+			"carriedType": load.length ? load[0].type : null,
 			"hitpoints": ent.hitpoints(),
 			"position": position,
 			"region": region,

@@ -27,7 +27,10 @@ function ownShips(gameState, catalog)
 			continue;
 		const orders = ent.unitAIOrderData() || [];
 		const state = stateOf(ent);
+		const load = ent.resourceCarrying() || [];
 		fleet.push(Object.freeze({
+			"carried": load.reduce((sum, item) => sum + item.amount, 0),
+			"carriedType": load.length ? load[0].type : null,
 			"id": ent.id(),
 			"position": ent.position(),
 			"sea": seaNear(accessibility, ent.position()),
