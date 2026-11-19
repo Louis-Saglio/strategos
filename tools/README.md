@@ -884,6 +884,27 @@ listed — the technologies never researched, the buildings never built,
 the units never trained, the orders never given; `--civ` adds the per-civ
 split.
 
+### yields.py — realised gather rates
+
+```sh
+tools/yields.py OUTDIR [--player P] [--windows 0-4,4-8,8-12] [--by-map]
+```
+
+Reads the bot's `[YIELD]` lines (one a minute). For each source kind and
+unit group (`food.fruit|civilian`, `food.grain|civilian`,
+`food.meat.domestic|cavalry`, `food.meat.wild|cavalry`, `food.meat|…` for a
+carcass first reached as a carcass, `food.fish|boat`, `wood.tree|infantry`,
+...) the bot counts what was delivered at a dropsite and the seconds those
+deliveries took from the unit's previous delivery (walking, chasing,
+driving, gathering and returning included), the seconds spent idle after
+working that kind, the seconds held by another subsystem's orders, and the
+load thrown away on a change of resource type. The table prints, per
+window of in-game minutes and summed over every game, the realised rate
+(delivered / seconds), the idle and taken shares of the units' time and the
+number of games. A delivery is seen as a drop of the carried load between
+two decisions; a unit that filled up and delivered within one decision gap
+is counted as delivering a full load.
+
 ### timeline.py — when and how each game was decided
 
 ```sh
