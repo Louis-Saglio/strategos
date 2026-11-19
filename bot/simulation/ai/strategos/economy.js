@@ -1,3 +1,4 @@
+import { Drives } from "simulation/ai/strategos/economy-drives.js";
 import { distanceBetween, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { collect, gatherRequest, orderRequest } from "simulation/ai/strategos/requests.js";
 
@@ -5,19 +6,72 @@ const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
 const HUNTER_RATE = 2;
+const FOOD = "food";
 
 export class Economy
 {
-	requests(world, plan, assessments)
+	constructor(catalog, telemetry)
 	{
-		const assigned = Object.assign({}, world.gatherers);
-		const reserved = new Map();
-		return this.treasureRequests(world, plan)
-			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved))
-			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved));
+		this.drives = new Drives(catalog, telemetry);
 	}
 
-	treasureRequests(world, plan)
+	save()
+	{
+		return { "drives": this.drives.save() };
+	}
+
+	restore(data)
+	{
+		this.drives.restore(data.drives);
+	}
+
+	settle(world, outcomes)
+	{
+		this.drives.settle(outcomes);
+	}
+
+	requests(world, plan, assessments)
+	{
+		this.drives.observe(world);
+		const assigned = Object.assign({}, world.gatherers);
+		const reserved = new Map();
+		const game = new Map(world.game.map(prey => [prey.id, prey]));
+		const driving = this.drives.requests(world, plan);
+		const busy = new Set(driving.flatMap(request => request.claims.units));
+		driving.push(...this.huntRequests(world, plan, game, busy));
+		for (const id of this.drives.quarries())
+			reserved.set(id, Infinity);
+		if (assigned.food !== undefined)
+			assigned.food += this.drives.hunters().size;
+		return this.treasureRequests(world, plan, busy)
+			.concat(driving)
+			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy))
+			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy));
+	}
+
+	huntRequests(world, plan, game, busy)
+	{
+		const chasers = new Map();
+		for (const worker of world.workers)
+			if (game.has(worker.target))
+				chasers.set(worker.target, (chasers.get(worker.target) || 0) + 1);
+		const requests = [];
+		for (const worker of world.workers)
+		{
+			const prey = game.get(worker.target);
+			if (!prey || busy.has(worker.id) || worker.idle || worker.state.striking || chasers.get(prey.id) !== 1 ||
+			    !(worker.profile.rates[prey.kind] >= HUNTER_RATE))
+				continue;
+			const request = this.drives.start(world, plan, worker, prey);
+			if (!request)
+				continue;
+			busy.add(worker.id);
+			requests.push(request);
+		}
+		return requests;
+	}
+
+	treasureRequests(world, plan, busy)
 	{
 		const collected = new Set();
 		for (const worker of world.workers)
@@ -29,7 +83,7 @@ export class Economy
 		{
 			if (collected.has(treasure.id))
 				continue;
-			const best = nearest(world.workers, treasure.position, lowerId, worker => worker.collector && !taken.has(worker.id) &&
+			const best = nearest(world.workers, treasure.position, lowerId, worker => worker.collector && !taken.has(worker.id) && !busy.has(worker.id) &&
 				(worker.idle || worker.state.gathering || worker.state.returning)).item;
 			if (!best)
 				continue;
@@ -39,10 +93,10 @@ export class Economy
 		return requests;
 	}
 
-	gatherRequests(world, plan, assessments, assigned, reserved)
+	gatherRequests(world, plan, assessments, assigned, reserved, game, busy)
 	{
 		const requests = [];
-		const idle = world.workers.filter(worker => worker.idle);
+		const idle = world.workers.filter(worker => worker.idle && !busy.has(worker.id));
 		if (!idle.length)
 			return requests;
 		const total = world.labour;
@@ -59,12 +113,16 @@ export class Economy
 				.sort((a, b) => b.rank - a.rank || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
 			for (const { code, deficit } of ranked)
 			{
-				const site = this.nearestFreeSite(world.sites[code], worker, reserved);
+				const site = this.nearestFreeSite(world.sites[code], worker, reserved) ||
+					code === FOOD && this.nearestGame(world, worker, reserved, game);
 				if (!site)
 					continue;
-				reserved.set(site.id, (reserved.get(site.id) || 0) + 1);
+				const drive = site.prey && game.has(site.id) && this.drives.start(world, plan, worker, game.get(site.id));
+				if (!drive && site.armed)
+					continue;
+				reserved.set(site.id, drive ? Infinity : (reserved.get(site.id) || 0) + 1);
 				assigned[code] += 1;
-				requests.push(gatherRequest("economy", "gather", worker.id, site.id, code, plan.values.assignIdleWorker,
+				requests.push(drive || gatherRequest("economy", "gather", worker.id, site.id, code, plan.values.assignIdleWorker,
 					1 + Math.max(0, deficit) / Math.max(1, total)));
 				break;
 			}
@@ -90,7 +148,7 @@ export class Economy
 		return (worker, code) => average[code] > 0 && worker.meanRates[code] > 0 ? worker.meanRates[code] / average[code] : 0.01;
 	}
 
-	rebalanceRequests(world, plan, assessments, assigned, reserved)
+	rebalanceRequests(world, plan, assessments, assigned, reserved, busy)
 	{
 		const requests = [];
 		const advantage = this.advantages(world);
@@ -107,7 +165,7 @@ export class Economy
 			let best = null;
 			for (const worker of world.workers)
 			{
-				if (worker.gathering !== surplus || moved.has(worker.id) || !worker.gatherTypes.includes(deficit))
+				if (worker.gathering !== surplus || moved.has(worker.id) || busy.has(worker.id) || !worker.gatherTypes.includes(deficit))
 					continue;
 				const site = this.nearestFreeSite(world.sites[deficit], worker, reserved);
 				if (!site)
@@ -127,6 +185,28 @@ export class Economy
 			requests.push(gatherRequest("economy", "rebalance", best.worker.id, best.site.id, deficit, plan.values.rebalance, 1));
 		}
 		return requests;
+	}
+
+	nearestGame(world, worker, reserved, game)
+	{
+		let best = null;
+		let bestCost = Infinity;
+		for (const prey of game.values())
+		{
+			if (prey.gatherers + (reserved.get(prey.id) || 0) >= prey.capacity || prey.region !== worker.region ||
+			    !(worker.profile.rates[prey.kind] >= HUNTER_RATE) || prey.armed && !this.drives.plan(world, worker, prey))
+				continue;
+			const goal = this.drives.anchorFor(world, prey);
+			if (!goal)
+				continue;
+			const cost = distanceBetween(prey.position, worker.position) + goal.distance;
+			if (cost < bestCost || cost === bestCost && prey.id < best.id)
+			{
+				best = prey;
+				bestCost = cost;
+			}
+		}
+		return best && Object.assign({ "prey": true }, best);
 	}
 
 	nearestFreeSite(sites, worker, reserved)

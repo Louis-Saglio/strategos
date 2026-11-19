@@ -1,4 +1,5 @@
 import { emptyHoldings, holdStructure, holdUnit, structureSeen } from "simulation/ai/strategos/holdings.js";
+import { isHunt } from "simulation/ai/strategos/requests.js";
 import { defensiveFire } from "simulation/ai/strategos/structures.js";
 import { landRegionNear, seaNear, territoryAt } from "simulation/ai/strategos/terrain.js";
 import { NO_STATE, stateOf } from "simulation/ai/strategos/unitstate.js";
@@ -96,8 +97,9 @@ function enemyPlayers(gameState, catalog)
 	};
 }
 
-function wildAttackers(gameState)
+function wildAttackers(gameState, assignments)
 {
+	const assigned = assignments();
 	const territory = gameState.sharedScript.territoryMap;
 	const player = gameState.getPlayerID();
 	const wild = [];
@@ -111,7 +113,8 @@ function wildAttackers(gameState)
 		const state = stateOf(ent);
 		const orders = ent.unitAIOrderData() || [];
 		const target = orders.length && orders[0] && orders[0].target !== undefined ? gameState.getEntityById(orders[0].target) : null;
-		const attacksUs = state.fighting && !!target && target.owner() === player;
+		const hunted = !!target && !!assigned[target.id()] && isHunt(assigned[target.id()].purpose);
+		const attacksUs = state.fighting && !!target && target.owner() === player && !hunted;
 		const trespasses = THREAT_CLASSES.some(cls => ent.hasClass(cls)) && territoryAt(territory, position[0], position[1]).owner === player;
 		if (!attacksUs && !trespasses)
 			continue;
@@ -156,7 +159,7 @@ function objectives(gameState, catalog, seen)
 		}));
 }
 
-export function enemiesSection(gameState, catalog, musterIndex)
+export function enemiesSection(gameState, catalog, musterIndex, assignments)
 {
 	const seen = enemyPlayers(gameState, catalog);
 	musterIndex.observe(gameState.getTimeElapsed(), seen.enemyRoll);
@@ -167,7 +170,7 @@ export function enemiesSection(gameState, catalog, musterIndex)
 		"muster": muster,
 		"now": {
 			"threats": Object.freeze(seen.threats),
-			"wild": Object.freeze(wildAttackers(gameState)),
+			"wild": Object.freeze(wildAttackers(gameState, assignments)),
 			"enemySoldiers": seen.enemySoldiers,
 			"enemyFighters": Object.freeze(seen.enemyFighters),
 			"enemyHidden": Object.freeze(seen.enemyHidden),

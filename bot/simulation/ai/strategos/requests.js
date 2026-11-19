@@ -13,6 +13,18 @@ function garrisonSlot(holder)
 	return "garrison-" + holder;
 }
 
+const HUNT_PREFIX = "hunt-";
+
+export function huntPurpose(phase)
+{
+	return HUNT_PREFIX + phase;
+}
+
+export function isHunt(purpose)
+{
+	return purpose.startsWith(HUNT_PREFIX);
+}
+
 export function hold()
 {
 	return { "type": "hold" };

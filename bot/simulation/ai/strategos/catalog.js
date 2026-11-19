@@ -30,6 +30,7 @@ export class Catalog
 		this.combats = new Map();
 		this.hitRates = new Map();
 		this.breakers = new Map();
+		this.quarries = new Map();
 		this.availabilityTime = undefined;
 		this.researched = undefined;
 	}
@@ -399,7 +400,9 @@ export class Catalog
 					if (classes)
 						bonuses.push(Object.freeze({ "classes": classes, "multiplier": +template.get("Attack/" + type + "/Bonuses/" + key + "/Multiplier") || 1 }));
 				}
-				attacks[type] = Object.freeze({ "repeat": template.attackTimes(type).repeat / 1000, "damage": Object.freeze(damage),
+				const reach = template.attackRange(type);
+				attacks[type] = Object.freeze({ "repeat": template.attackTimes(type).repeat / 1000,
+					"prepare": template.attackTimes(type).prepare / 1000, "range": reach ? +reach.max || 0 : 0, "damage": Object.freeze(damage),
 					"bonuses": Object.freeze(bonuses) });
 			}
 			const resistance = (template.resistanceStrengths() || {}).Damage || {};
@@ -442,6 +445,38 @@ export class Catalog
 			this.hitRates.set(key, best);
 		}
 		return this.hitRates.get(key);
+	}
+
+	strike(attacker, target, targetOwner)
+	{
+		const own = this.combat(attacker);
+		const other = this.combat(target, targetOwner);
+		const attack = own.attacks.Ranged || own.attacks.Melee;
+		if (!attack)
+			return null;
+		let damage = 0;
+		for (const kind in attack.damage)
+			damage += attack.damage[kind] * Math.pow(RESISTANCE_BASE, other.resistance[kind] || 0);
+		for (const bonus of attack.bonuses)
+			if (MatchesClassList(other.classes, bonus.classes))
+				damage *= bonus.multiplier;
+		return { "damage": damage, "range": attack.range, "prepare": attack.prepare, "repeat": attack.repeat };
+	}
+
+	quarry(name)
+	{
+		if (!this.quarries.has(name))
+		{
+			const template = this.template(name);
+			const reach = template.attackRange("Melee") || template.attackRange("Ranged");
+			this.quarries.set(name, Object.freeze({
+				"fleeDistance": +(template.get("UnitAI/FleeDistance") || 0),
+				"runSpeed": (template.walkSpeed() || 0) * +(template.get("UnitMotion/RunMultiplier") || 1),
+				"vision": +(template.get("Vision/Range") || 0),
+				"reach": reach ? +reach.max || 0 : 0
+			}));
+		}
+		return this.quarries.get(name);
 	}
 
 	researchable(entity)

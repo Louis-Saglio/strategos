@@ -62,7 +62,7 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 	const settled = settledBases(gameState, production.now.centres);
 	const sea = stopwatch.section("sea", () => seaSection(gameState, catalog, resourceIndex, shoreIndex, settled.homeRegion,
 		() => enemies.now));
-	const enemies = stopwatch.section("enemies", () => enemiesSection(gameState, catalog, musterIndex));
+	const enemies = stopwatch.section("enemies", () => enemiesSection(gameState, catalog, musterIndex, assignments));
 	const record = parts => Object.freeze(attach({}, "world.players", parts,
 		(name, read) => once(gameState, stopwatch, "players", name, read)));
 	const players = playersSection(gameState, catalog, enemies.holdings, enemies.muster, settled.homeRegion, record);

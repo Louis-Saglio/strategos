@@ -95,6 +95,8 @@ function workforce(gameState, catalog, anchors)
 		}
 		workers.push(Object.freeze({
 			"id": ent.id(),
+			"template": ent.templateName(),
+			"hitpoints": ent.hitpoints(),
 			"position": position,
 			"region": region,
 			"idle": ent.isIdle(),
@@ -253,6 +255,7 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 			"gatherers": Object.freeze(busy.gatherers),
 			"hauls": Object.freeze(busy.hauls),
 			"sites": Object.freeze(sites),
+			"game": resourceIndex.liveGame(gameState, batteries),
 			"wealth": resourceIndex.grid(gameState),
 			"regionWealth": (region, code) => resourceIndex.grid(gameState).regions[code] && resourceIndex.grid(gameState).regions[code].get(region) || 0,
 			"markets": markets,

@@ -8,6 +8,8 @@ const SITES_EXPOSED = 16;
 const WEALTH_CELL = 40;
 export const FISH_RADIUS = 160;
 const FISH_KEPT = 24;
+const GAME_KEPT = 24;
+const GAME_RADIUS = 240;
 const MUSTER_WINDOW_MS = 120000;
 const MUSTER_MIN_S = 30;
 
@@ -20,12 +22,13 @@ export class ResourceIndex
 		this.sites = new Map(codes.map(code => [code, []]));
 		this.cursor = 0;
 		this.fish = [];
+		this.game = [];
 		this.schools = Object.freeze([]);
 	}
 
 	save()
 	{
-		return { "sites": this.sites, "cursor": this.cursor, "fish": this.fish, "schools": this.schools, "wealth": this.wealth };
+		return { "sites": this.sites, "cursor": this.cursor, "fish": this.fish, "game": this.game, "schools": this.schools, "wealth": this.wealth };
 	}
 
 	restore(data)
@@ -33,6 +36,7 @@ export class ResourceIndex
 		this.sites = data.sites;
 		this.cursor = data.cursor;
 		this.fish = data.fish;
+		this.game = data.game || [];
 		this.schools = data.schools;
 		this.wealth = data.wealth;
 	}
@@ -57,6 +61,40 @@ export class ResourceIndex
 			}));
 		}
 		return Object.freeze(fish);
+	}
+
+	liveGame(gameState, enemyStructures)
+	{
+		const accessibility = gameState.sharedScript.accessibility;
+		const territory = gameState.sharedScript.territoryMap;
+		const batteries = enemyStructures.filter(structure => structure.fire.arrows);
+		const game = [];
+		for (const id of this.game)
+		{
+			const ent = gameState.getEntityById(id);
+			if (!ent || !ent.position() || !ent.get("UnitAI") || !(ent.hitpoints() > 0) || !(ent.resourceSupplyAmount() > 0))
+				continue;
+			const owner = territoryAt(territory, ent.position()[0], ent.position()[1]).owner;
+			if (owner !== 0 && owner !== this.player || underFire(batteries, ent.position()))
+				continue;
+			game.push(Object.freeze({
+				"id": id,
+				"template": ent.templateName(),
+				"kind": ent.resourceSupplyType().generic + "." + ent.resourceSupplyType().specific,
+				"position": ent.position(),
+				"region": accessibility.getAccessValue(ent.position()),
+				"hitpoints": ent.hitpoints(),
+				"maxHitpoints": ent.maxHitpoints(),
+				"armed": !!ent.get("Attack"),
+				"domestic": ent.hasClass("Domestic"),
+				"fleeing": (ent.unitAIState() || "").includes("FLEEING"),
+				"fighting": (ent.unitAIState() || "").includes("COMBAT"),
+				"amount": ent.resourceSupplyAmount(),
+				"gatherers": ent.resourceSupplyNumGatherers() || 0,
+				"capacity": ent.maxGatherers() || 1
+			}));
+		}
+		return Object.freeze(game);
 	}
 
 	refresh(gameState, anchors)
@@ -137,12 +175,34 @@ export class ResourceIndex
 		grid.totals[code] = totals;
 		grid.weighted[code] = weighted;
 		grid.regions[code] = byRegion;
+		if (code === "food" && points.length)
+			this.game = this.nearGame(gameState, points);
 		if (code === "food")
 			this.fish = fish.sort((a, b) => a.distance - b.distance || a.id - b.id).slice(0, FISH_KEPT).map(entry => entry.id);
 		if (!kept.length)
 			this.reachable(gameState, beyond, points, kept);
 		kept.sort((a, b) => a.distance - b.distance || a.id - b.id);
 		this.sites.set(code, kept.slice(0, SITES_KEPT).map(site => site.id));
+	}
+
+	nearGame(gameState, points)
+	{
+		const game = [];
+		const limit = GAME_RADIUS * GAME_RADIUS;
+		for (const ent of gameState.updatingGlobalCollection("strategos-game", { "func": candidate => candidate.hasClass("Animal") &&
+			!candidate.hasClass("SeaCreature") && !!candidate.get("UnitAI") && !!candidate.resourceSupplyMax() &&
+			!!candidate.get("ResourceSupply/KillBeforeGather"), "dynamicProperties": [] }, gameState.getEntities(0)).values())
+		{
+			const position = ent.position();
+			if (!position)
+				continue;
+			let nearest = Infinity;
+			for (const point of points)
+				nearest = Math.min(nearest, squareDistance(point.position, position));
+			if (nearest <= limit)
+				game.push({ "id": ent.id(), "distance": nearest });
+		}
+		return game.sort((a, b) => a.distance - b.distance || a.id - b.id).slice(0, GAME_KEPT).map(entry => entry.id);
 	}
 
 	reachable(gameState, beyond, points, kept)
