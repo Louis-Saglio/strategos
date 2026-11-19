@@ -433,7 +433,10 @@ herd meat harvested, hunters alive and lost, and the result's `t` is the
 time the herd was used up (`harvested`), or 480 s (`unfinished`). Cases:
 `deer_n8_d80_c2`, `horse_n6_d90_c2`, `boar_n4_d70_c2`,
 `elephant_african_bush_n2_d90_c3`, and with the starting cavalry only,
-`deer_n12_d80` and `horse_n8_d90`. Run with `-R 0`:
+`deer_n12_d80` and `horse_n8_d90`. `deer_n0_d80_c2` places no herd: the
+result comes at 480 s and `delivered` (the meat brought in, starting
+chickens included) is the measure of what the hunters find to do without
+wild game. Run with `-R 0`:
 
 ```sh
 tools/run.sh -l 9 -R 0 -p 'strategos:*:1' -p 'none:*:2' \

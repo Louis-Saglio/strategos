@@ -33,7 +33,9 @@
  *     huntersLost how many of those died.
  *   [SCENARIO] result {...tick fields, "outcome"}: outcome harvested when
  *     the herd's meat is all taken (t is then the harvest time), unfinished
- *     after HUNT_LIMIT_S.
+ *     after HUNT_LIMIT_S. With N = 0 there is no herd and the result comes
+ *     at HUNT_LIMIT_S: delivered is then the measure (what the bot gets out
+ *     of the starting chickens and of whatever it breeds).
  *
  * The game ends at the result: player 2 is defeated either way, so a
  * scenario batch reads as wins; the result line is the measure.
@@ -198,7 +200,7 @@ Trigger.prototype.HuntTick = function()
 	s.dying = [];
 	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime();
 	const state = this.HuntState();
-	if (state.harvested >= s.meat)
+	if (s.meat > 0 && state.harvested >= s.meat)
 	{
 		this.HuntResult("harvested");
 		return;
