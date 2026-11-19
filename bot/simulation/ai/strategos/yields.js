@@ -33,6 +33,7 @@ export class YieldLedger
 		this.units = new Map();
 		this.buckets = {};
 		this.food = {};
+		this.kinds = {};
 		this.rates = Object.freeze({});
 		this.lastTime = undefined;
 		this.flushed = undefined;
@@ -40,7 +41,7 @@ export class YieldLedger
 
 	save()
 	{
-		return { "units": this.units, "buckets": this.buckets, "food": this.food, "rates": this.rates, "lastTime": this.lastTime,
+		return { "units": this.units, "buckets": this.buckets, "food": this.food, "kinds": this.kinds, "rates": this.rates, "lastTime": this.lastTime,
 			"flushed": this.flushed };
 	}
 
@@ -49,6 +50,7 @@ export class YieldLedger
 		this.units = data.units;
 		this.buckets = data.buckets;
 		this.food = data.food;
+		this.kinds = data.kinds;
 		this.rates = data.rates;
 		this.lastTime = data.lastTime;
 		this.flushed = data.flushed;
@@ -134,13 +136,18 @@ export class YieldLedger
 		if (world.time - this.flushed < REPORT_MS)
 			return;
 		this.flushed = world.time;
-		for (const group of Object.keys(this.food))
-		{
-			this.food[group].delivered *= MEMORY;
-			this.food[group].seconds *= MEMORY;
-		}
+		for (const memory of [this.food, this.kinds])
+			for (const key of Object.keys(memory))
+			{
+				memory[key].delivered *= MEMORY;
+				memory[key].seconds *= MEMORY;
+			}
 		for (const key of Object.keys(this.buckets))
 		{
+			if (!this.kinds[key])
+				this.kinds[key] = { "delivered": 0, "seconds": 0 };
+			this.kinds[key].delivered += this.buckets[key].delivered;
+			this.kinds[key].seconds += this.buckets[key].seconds;
 			const [kind, group] = key.split("|");
 			if (!kind.startsWith(FOOD + "."))
 				continue;
@@ -153,6 +160,11 @@ export class YieldLedger
 		for (const group of Object.keys(this.food).sort())
 			if (this.food[group].seconds >= MEASURED_S && this.food[group].delivered > 0)
 				rates[group] = this.food[group].delivered / this.food[group].seconds;
+		const kinds = {};
+		for (const key of Object.keys(this.kinds).sort())
+			if (this.kinds[key].seconds >= MEASURED_S && this.kinds[key].delivered > 0)
+				kinds[key] = this.kinds[key].delivered / this.kinds[key].seconds;
+		rates.kinds = Object.freeze(kinds);
 		this.rates = Object.freeze(rates);
 		const round = value => Math.round(value * 100) / 100;
 		const data = {};
@@ -162,7 +174,7 @@ export class YieldLedger
 			data[key] = { "d": Math.round(ledger.delivered), "s": Math.round(ledger.seconds), "rate": ledger.seconds > 0 ? round(ledger.delivered / ledger.seconds) : null,
 				"idle": Math.round(ledger.idle), "taken": Math.round(ledger.taken), "lost": Math.round(ledger.discarded) };
 		}
-		data.foodRates = Object.fromEntries(Object.entries(rates).map(([group, rate]) => [group, round(rate)]));
+		data.foodRates = Object.fromEntries(Object.entries(rates).filter(([group]) => group !== "kinds").map(([group, rate]) => [group, round(rate)]));
 		telemetry.line("YIELD", world.time, data);
 		this.buckets = {};
 	}

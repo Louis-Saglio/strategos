@@ -1,11 +1,17 @@
 import { Drives } from "simulation/ai/strategos/economy-drives.js";
 import { distanceBetween, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { collect, gatherRequest, orderRequest } from "simulation/ai/strategos/requests.js";
+import { resourcePrices } from "simulation/ai/strategos/valuation.js";
+import { unitGroup } from "simulation/ai/strategos/yields.js";
 
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
 const HUNTER_RATE = 2;
+const SWAP_PER_DECISION = 2;
+const SWAP_REST_MS = 90000;
+const SWAP_HORIZON_S = 90;
+const SWAP_MARGIN = 0.1;
 const FOOD = "food";
 const MEAT = "food.meat";
 const RELAY_REACH = 24;
@@ -18,16 +24,18 @@ export class Economy
 	constructor(catalog, telemetry)
 	{
 		this.drives = new Drives(catalog, telemetry);
+		this.swapped = new Map();
 	}
 
 	save()
 	{
-		return { "drives": this.drives.save() };
+		return { "drives": this.drives.save(), "swapped": this.swapped };
 	}
 
 	restore(data)
 	{
 		this.drives.restore(data.drives);
+		this.swapped = data.swapped || new Map();
 	}
 
 	settle(world, outcomes)
@@ -55,7 +63,8 @@ export class Economy
 		return this.treasureRequests(world, plan, busy)
 			.concat(driving)
 			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy))
-			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy));
+			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy))
+			.concat(this.swapRequests(world, plan, busy));
 	}
 
 	huntRequests(world, plan, game, busy)
@@ -237,6 +246,56 @@ export class Economy
 			assigned[surplus] -= 1;
 			assigned[deficit] += 1;
 			requests.push(gatherRequest("economy", "rebalance", best.worker.id, best.site.id, deficit, plan.values.rebalance, 1));
+		}
+		return requests;
+	}
+
+	swapRequests(world, plan, busy)
+	{
+		for (const [id, time] of this.swapped)
+			if (world.time - time > SWAP_REST_MS)
+				this.swapped.delete(id);
+		const kinds = world.yieldRates.kinds;
+		if (!kinds)
+			return [];
+		const prices = resourcePrices(world);
+		const rate = (kind, worker) => kinds[kind + "|" + unitGroup(worker.classes)];
+		const worth = (kind, worker) => (rate(kind, worker) || 0) * (prices[kind.split(".")[0]] || 0);
+		const free = worker => !busy.has(worker.id) && !this.swapped.has(worker.id) && worker.state.gathering && worker.kind &&
+			worker.target !== undefined && rate(worker.kind, worker) !== undefined;
+		const soldiers = world.workers.filter(worker => worker.soldier && free(worker)).sort((a, b) => a.id - b.id);
+		const civilians = world.workers.filter(worker => !worker.soldier && free(worker));
+		const requests = [];
+		const taken = new Set();
+		for (const soldier of soldiers)
+		{
+			if (requests.length >= 2 * SWAP_PER_DECISION)
+				break;
+			let best = null;
+			for (const civilian of civilians)
+			{
+				if (taken.has(civilian.id) || civilian.gathering === soldier.gathering || !soldier.gatherTypes.includes(civilian.gathering) ||
+				    !civilian.gatherTypes.includes(soldier.gathering) || rate(civilian.kind, soldier) === undefined || rate(soldier.kind, civilian) === undefined)
+					continue;
+				const before = worth(soldier.kind, soldier) + worth(civilian.kind, civilian);
+				const after = worth(civilian.kind, soldier) + worth(soldier.kind, civilian);
+				const walk = distanceBetween(soldier.position, civilian.position);
+				const cost = walk / Math.max(1, soldier.profile.speed) * worth(soldier.kind, soldier) + walk / Math.max(1, civilian.profile.speed) * worth(civilian.kind, civilian);
+				const gain = (after - before) * SWAP_HORIZON_S - cost;
+				if (after > (1 + SWAP_MARGIN) * before && gain > 0 && (!best || gain > best.gain || gain === best.gain && civilian.id < best.civilian.id))
+					best = { civilian, gain };
+			}
+			if (!best)
+				continue;
+			const civilian = best.civilian;
+			taken.add(civilian.id);
+			for (const id of [soldier.id, civilian.id])
+			{
+				busy.add(id);
+				this.swapped.set(id, world.time);
+			}
+			requests.push(gatherRequest("economy", "swap", soldier.id, civilian.target, civilian.gathering, plan.values.rebalance, 1));
+			requests.push(gatherRequest("economy", "swap", civilian.id, soldier.target, soldier.gathering, plan.values.rebalance, 1));
 		}
 		return requests;
 	}
