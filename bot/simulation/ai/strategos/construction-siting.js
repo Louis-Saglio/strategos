@@ -1,6 +1,6 @@
 import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { awayFrom, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { BUILDING_MARGIN, Placement } from "simulation/ai/strategos/placement.js";
+import { BUILDING_MARGIN, FIELD_MARGIN, Placement } from "simulation/ai/strategos/placement.js";
 import { rankedSites } from "simulation/ai/strategos/sites.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
@@ -8,12 +8,9 @@ import { territoryAt } from "simulation/ai/strategos/terrain.js";
 const TIGHT_MARGIN = 1;
 const FINE_STEP = 3;
 const CRAMPED_MEMORY_MS = 60000;
-const FIELD_MARGIN = 1;
 const HOUSE_RING_WIDTH = 120;
 const CENTRE_CLEARANCE = 8;
 const KEEP_AWAY = { "food": 10, "wood": 6, "stone": 14, "metal": 14 };
-const SAME_TYPE_KEEP_AWAY = 3;
-const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 const SETTLEMENT_SPACING_MARGIN = 10;
 const SETTLEMENT_TRIES = 6;
 const DOCK_OFFSETS = [0.5, 0.25, 0.75];
@@ -94,13 +91,13 @@ export class Siting
 		}).concat(this.builders.abandoned);
 	}
 
-	resourceZones(world, spared)
+	resourceZones(world)
 	{
 		const zones = [];
 		for (const code of world.codes)
 			for (const site of world.sites[code])
 				if (isFinite(site.amount))
-					zones.push({ "position": site.position, "radius": code === spared ? SAME_TYPE_KEEP_AWAY : KEEP_AWAY[code] || 0 });
+					zones.push({ "position": site.position, "radius": KEEP_AWAY[code] || 0 });
 		return zones;
 	}
 
@@ -131,7 +128,7 @@ export class Siting
 		for (const centre of world.centres)
 		{
 			const minRadius = centre.radius + CENTRE_CLEARANCE + this.halfSize(template);
-			for (const zones of [this.resourceZones(world, null).concat(belts), belts, apart])
+			for (const zones of [this.resourceZones(world).concat(belts), belts, apart])
 			{
 				const site = placement.around(centre.position, minRadius, minRadius + HOUSE_RING_WIDTH, footprint, BUILDING_MARGIN, reserved, zones);
 				if (site)
@@ -162,31 +159,6 @@ export class Siting
 			this.reserved(world), this.farmBelts(world));
 	}
 
-	field(world, placement, farm, near)
-	{
-		const footprint = this.catalog.footprint(farm);
-		const half = this.halfSize(farm);
-		const reserved = this.reserved(world);
-		const zones = near ? this.resourceZones(world, "food") : [];
-		for (const anchor of world.anchors.filter(candidate => candidate.types.includes("food")))
-		{
-			const minRadius = anchor.radius + FIELD_MARGIN + half;
-			const site = placement.around(anchor.position, minRadius, near ? minRadius + 2 * half + 4 : FARMSTEAD_SEARCH.to, footprint,
-				FIELD_MARGIN, reserved, zones);
-			if (site)
-				return site;
-		}
-		return null;
-	}
-
-	farmstead(world, placement, template, farm)
-	{
-		const centre = world.home;
-		return placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
-			this.catalog.footprint(template), 2 * this.halfSize(farm) * 0.75, this.reserved(world),
-			this.resourceZones(world, null));
-	}
-
 	settlement(world, plan, template, home, reach, region)
 	{
 		const spacing = this.catalog.spacing(template);
@@ -208,7 +180,7 @@ export class Siting
 			(wealth, position, fromHome) => wealth > 0 ? wealth * (1 - fromHome / (2 * reach)) : null);
 		const placement = new Placement(world, this.player);
 		placement.allowNeutral(true);
-		const zones = this.resourceZones(world, null);
+		const zones = this.resourceZones(world);
 		for (const candidate of candidates.slice(0, SETTLEMENT_TRIES))
 		{
 			const site = placement.around(candidate.position, 0, grid.cellSize, this.catalog.footprint(template), BUILDING_MARGIN,

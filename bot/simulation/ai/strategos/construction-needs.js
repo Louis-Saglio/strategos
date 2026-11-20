@@ -206,62 +206,7 @@ function housing(context)
 	};
 }
 
-export const FIELDS = Object.freeze({ "decision": "fields" });
-
-const WILD_FOOD_PER_GATHERER = 150;
-const GRAIN_KIND = "food.grain";
 const CIVILIAN_GROUP = "civilian";
-
-export function hunger(context)
-{
-	const { world, assessments, catalog } = context;
-	const farm = landCheapest(context, bound(context, isFarm));
-	if (!farm)
-		return null;
-	const desired = assessments.gatherShares.food * (world.labour + world.queuedPopulation);
-	let wild = 0;
-	for (const site of world.sites.food)
-		if (isFinite(site.amount) && !site.prey)
-			wild += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
-	const farms = owned(world, bound(context, isFarm));
-	const supply = wild + farms * catalog.maxGatherers(farm) + world.foodHelpers;
-	if (supply >= desired)
-		return null;
-	return { "farm": farm, "urgency": 1 + (desired - supply) / Math.max(1, desired) };
-}
-
-export function fieldReturn(context, farm)
-{
-	const { world, catalog } = context;
-	const rate = world.yieldRates.kinds && world.yieldRates.kinds[GRAIN_KIND + "|" + CIVILIAN_GROUP];
-	if (rate === undefined)
-		return undefined;
-	const prices = resourcePrices(world);
-	return TECH_HORIZON_S * rate * prices.food * catalog.maxGatherers(farm) / Math.max(1, pricedSum(world, prices, catalog.cost(farm)));
-}
-
-function isFarm(context, name)
-{
-	return context.catalog.isFarm(name);
-}
-
-export const FARMSTEAD = buildingNeed("farmstead", { "fits": isFoodDropsite, "site": farmsteadSite, "value": "farm",
-	"urgency": hungerUrgency, "tier": production });
-
-function isFoodDropsite(context, name)
-{
-	return context.catalog.dropsiteTypes(name).includes("food") && !context.catalog.isFarm(name);
-}
-
-function farmsteadSite(context, template)
-{
-	return context.siting.farmstead(context.world, context.placement, template, hunger(context).farm);
-}
-
-function hungerUrgency(context)
-{
-	return hunger(context).urgency;
-}
 
 const BARRACKS = buildingNeed("barracks", { "fits": trainsWorkers, "template": barracksTemplate, "ready": recruitsFlow, "site": ring,
 	"value": "support" });
@@ -712,5 +657,5 @@ function foundingSite(context, template)
 
 export const PLAN_NEEDS = Object.freeze({ "slot": "plans" });
 
-export const NEEDS = Object.freeze([HOUSE, FIELDS, BARRACKS, WORKS, PHASE_BUILDING, SIEGE_WORKSHOP, MARKET, EXPANSION, OUTPOST, DOCK,
+export const NEEDS = Object.freeze([HOUSE, BARRACKS, WORKS, PHASE_BUILDING, SIEGE_WORKSHOP, MARKET, EXPANSION, OUTPOST, DOCK,
 	SHIPYARD, PLAN_NEEDS, ELITE, TRADE_POST, COLONY, FORWARD_BASE]);

@@ -42,6 +42,7 @@ function buildingSites(gameState, catalog)
 			"id": ent.id(),
 			"template": name,
 			"position": ent.position(),
+			"angle": ent.angle() || 0,
 			"progress": ent.foundationProgress(),
 			"populationBonus": catalog.populationBonus(name),
 			"buildTime": catalog.buildTime(name)

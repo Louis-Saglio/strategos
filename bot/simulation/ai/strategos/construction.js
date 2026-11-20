@@ -1,6 +1,6 @@
 import { centroid } from "simulation/ai/strategos/geometry.js";
 import { Builders } from "simulation/ai/strategos/construction-builders.js";
-import { COLONY, COLONY_DOCK, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, fieldReturn, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
+import { COLONY, COLONY_DOCK, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
 import { Siting } from "simulation/ai/strategos/construction-siting.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { buildRequest, fundRequest, inTier, noting, returning } from "simulation/ai/strategos/requests.js";
@@ -18,7 +18,6 @@ export class Construction
 		this.siting = new Siting(catalog, player, telemetry, this.builders);
 		this.reports = new Map();
 		this.decisions = new Map([
-			[FIELDS, context => this.fieldRequest(context)],
 			[COLONY, context => this.colonyRequest(context)]
 		]);
 	}
@@ -33,7 +32,7 @@ export class Construction
 	{
 		this.builders.restore(data.builders);
 		this.siting.restore(data.siting);
-		const known = new Map(NEEDS.concat(context.needs, [FARMSTEAD, COLONY_DOCK, FOUNDING]).filter(need => need.purpose).map(need => [need.purpose, need]));
+		const known = new Map(NEEDS.concat(context.needs, [COLONY_DOCK, FOUNDING]).filter(need => need.purpose).map(need => [need.purpose, need]));
 		this.reports = new Map(data.reports.map(([key, value]) => {
 			const change = new Change();
 			change.restore(value);
@@ -105,32 +104,6 @@ export class Construction
 		if (!this.reports.has(need))
 			this.reports.set(need, new Change());
 		return this.reports.get(need);
-	}
-
-	construct(world, purpose, template, site, value, urgency)
-	{
-		const builders = this.builders.crew(world, template, site);
-		return builders.length ? buildRequest("construction", purpose, template, site, builders, this.catalog.cost(template), value, urgency) : null;
-	}
-
-	fieldRequest(context)
-	{
-		const { world, plan, placement } = context;
-		const fields = hunger(context);
-		if (!fields)
-			return null;
-		const farm = site => {
-			const request = this.construct(world, "farm", fields.farm, site, plan.values.farm, fields.urgency);
-			return request && returning(inTier(request, "production"), fieldReturn(context, fields.farm));
-		};
-		const near = this.siting.field(world, placement, fields.farm, true);
-		if (near)
-			return farm(near);
-		const farmstead = this.ask(FARMSTEAD, context);
-		if (farmstead)
-			return farmstead;
-		const far = this.siting.field(world, placement, fields.farm, false);
-		return far ? farm(far) : null;
 	}
 
 	colonyRequest(context)
