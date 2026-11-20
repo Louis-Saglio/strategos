@@ -144,14 +144,8 @@ function harbourSea(context)
 {
 	const { world, plan, assessments } = context;
 	const colony = assessments.colony;
-	const fishing = fishingSea(world, plan);
-	const sea = colony ? colony.sea : world.crossing ? world.crossing.sea : fishing;
-	const population = Math.min(
-		assessments.short.length ? 0 : Infinity,
-		colony ? plan.docks.colonyPopulation : Infinity,
-		world.crossing ? plan.docks.population : Infinity,
-		fishing !== undefined ? plan.docks.fishing.population : Infinity);
-	return sea === undefined || sea === null || world.population < population ? undefined : sea;
+	const sea = colony ? colony.sea : world.crossing ? world.crossing.sea : fishingSea(world, plan);
+	return sea === null ? undefined : sea;
 }
 
 function fishingSea(world, plan)

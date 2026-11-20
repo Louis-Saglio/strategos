@@ -26,7 +26,7 @@ const BASE = {
 	"forward": { "clearance": 250, "shore": 120 },
 	"housing": { "base": 3, "perTrainer": 4 },
 	"settlements": { "firstPopulation": 100, "populationPerSettlement": 70, "max": 4 },
-	"docks": { "population": 40, "colonyPopulation": 20, "fishing": { "population": 20, "schools": 4, "reach": 300 }, "yardFishers": 18, "yardSpacing": 110 },
+	"docks": { "fishing": { "schools": 4, "reach": 300 }, "yardFishers": 18, "yardSpacing": 110 },
 	"forwardBase": { "settlers": 15, "builders": 20, "reach": 120 },
 	"tradePost": { "minDistance": 400 },
 	"defense": { "engage": { "enter": 3, "exit": 2 } },
