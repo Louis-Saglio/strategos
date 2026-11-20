@@ -46,6 +46,38 @@
  *     a side whose assets stayed below HARNESS_RESIGN_RATIO x the strongest
  *     other active side's for HARNESS_RESIGN_HOLD_MS is defeated, as a
  *     player resigning a lost game (0 = never; the standing lines are kept).
+ *   [HARNESS] gather {"t": <sim s>, "<player id>": {"<group>|<kind>": {"g","a","r","h","n","wa","wr","wh","d"},
+ *       "<group>|idle": s, "<group>|other": s, "<group>|in": s}, ...}
+ *     only when HARNESS_GATHER_SAMPLE_MS > 0 (run.py --gather), every
+ *     minute (HARNESS_GATHER_REPORT_MS) and at the time limit, for the
+ *     interval since the previous line: what every unit with a
+ *     ResourceGatherer and a UnitAI did, from a sample every
+ *     HARNESS_GATHER_SAMPLE_MS, each sample counting that many
+ *     seconds. group: civilian, infantry, cavalry or boat (classes Ship,
+ *     Cavalry, Soldier, else civilian). kind: the type of the gather order
+ *     ("wood.tree", "food.fruit", ...), "food.field" when the resource is a
+ *     field, "food.meat" for a hunt (an Attack order with "hunting"),
+ *     "<generic>.*" for a ReturnResource order (the carried type). Seconds
+ *     in each phase: g gathering (GATHER.GATHERING), a on the way to the
+ *     resource (the other GATHER states: APPROACHING, WALKING,
+ *     FINDINGNEWTARGET), r on the way to a dropsite or dropping
+ *     (RETURNINGRESOURCE, RETURNRESOURCE), h chasing game; n the returns
+ *     completed (a sample in r followed by one that is not); wa, wr, wh the
+ *     metres moved between two consecutive samples in the same phase (the
+ *     path walked, not the straight line, but missing what is walked
+ *     between a phase's last sample and the next phase's first: a walk
+ *     of a few seconds reads short by up to a sample interval of
+ *     walking); d the seconds spent in g, a, r
+ *     or h by the edge distance from the resource (the order's target, the
+ *     former target while returning, the animal chased) to the nearest
+ *     dropsite of the unit's owner that accepts its type, in bins
+ *     [0,5) [5,10) [10,15) [15,20) [20,30) [30,40) [40,60) [60,80)
+ *     [80,120) [120,inf) and a last bin for an unknown distance (no
+ *     resource, or no such dropsite). idle: seconds in an IDLE state; other:
+ *     any other state (building, fighting, walking on an order...); in:
+ *     seconds out of the world (garrisoned, aboard). Read-only:
+ *     UnitAI states and orders, positions, carried loads and obstruction
+ *     distances are read, never changed.
  *   [HARNESS] time limit reached {"t": <sim s>}
  *   [HARNESS] census {"<player id>": {"commands": {<type>: n}, "train": {<template>: units},
  *       "construct": {<template>: n}, "research": {<tech>: n}, "detail": {<type>:<name>: n}}, ...}
@@ -130,6 +162,9 @@ const HARNESS_COMMANDS = 0;
 const HARNESS_TURN_MS = 200;
 const HARNESS_FULL_AI_VIEW = 0;
 const HARNESS_MILITARY_CLASSES = ["Soldier", "Siege", "Ship"];
+const HARNESS_GATHER_SAMPLE_MS = 0;
+const HARNESS_GATHER_REPORT_MS = 60000;
+const HARNESS_GATHER_BINS = [5, 10, 15, 20, 30, 40, 60, 80, 120];
 
 const HARNESS_KINDS = [
 	[6, "CivCentre"],
@@ -401,10 +436,185 @@ Trigger.prototype.HarnessStanding = function()
 	}
 };
 
+/**
+ * The gather census: what every unit that can gather is doing, sampled every
+ * HARNESS_GATHER_SAMPLE_MS, reported every HARNESS_GATHER_REPORT_MS for the
+ * interval just ended (see the protocol in the header). Read-only: it reads
+ * UnitAI states and orders, positions, carried loads and obstruction
+ * distances, and changes none of them.
+ */
+Trigger.prototype.HarnessGatherGroup = function(ent)
+{
+	const cmpIdentity = Engine.QueryInterface(ent, IID_Identity);
+	const has = cls => !!cmpIdentity && cmpIdentity.HasClass(cls);
+	return has("Ship") ? "boat" : has("Cavalry") ? "cavalry" : has("Soldier") ? "infantry" : "civilian";
+};
+
+Trigger.prototype.HarnessGatherPhase = function(state, order)
+{
+	if (state.indexOf("RETURNINGRESOURCE") !== -1 || state.indexOf("RETURNRESOURCE") !== -1)
+		return "r";
+	if (state.indexOf("GATHER.GATHERING") !== -1)
+		return "g";
+	if (state.indexOf("GATHER.") !== -1)
+		return "a";
+	if (order && order.type == "Attack" && order.data && order.data.hunting)
+		return "h";
+	if (state.indexOf("IDLE") !== -1)
+		return "i";
+	return "o";
+};
+
+Trigger.prototype.HarnessGatherSample = function()
+{
+	const cmpObstructionManager = Engine.QueryInterface(SYSTEM_ENTITY, IID_ObstructionManager);
+	const dropsites = {};
+	for (const ent of Engine.GetEntitiesWithInterface(IID_ResourceDropsite))
+	{
+		const cmpOwnership = Engine.QueryInterface(ent, IID_Ownership);
+		const owner = cmpOwnership ? cmpOwnership.GetOwner() : -1;
+		if (owner < 1)
+			continue;
+		const byType = dropsites[owner] = dropsites[owner] || {};
+		for (const type of Engine.QueryInterface(ent, IID_ResourceDropsite).GetTypes())
+			(byType[type] = byType[type] || []).push(ent);
+	}
+	const distances = new Map();
+	const haul = (owner, generic, resource) => {
+		const key = owner + ":" + generic + ":" + resource;
+		if (distances.has(key))
+			return distances.get(key);
+		let best = -1;
+		const cmpPosition = Engine.QueryInterface(resource, IID_Position);
+		const candidates = dropsites[owner] && dropsites[owner][generic] || [];
+		if (cmpPosition && cmpPosition.IsInWorld())
+		{
+			const pos = cmpPosition.GetPosition2D();
+			for (const dropsite of candidates)
+			{
+				const distance = cmpObstructionManager.DistanceToPoint(dropsite, pos.x, pos.y);
+				if (distance >= 0 && (best < 0 || distance < best))
+					best = distance;
+			}
+		}
+		distances.set(key, best);
+		return best;
+	};
+	const fields = new Map();
+	const isField = resource => {
+		if (!fields.has(resource))
+		{
+			const cmpIdentity = Engine.QueryInterface(resource, IID_Identity);
+			fields.set(resource, !!cmpIdentity && cmpIdentity.HasClass("Field"));
+		}
+		return fields.get(resource);
+	};
+	const groups = new Map();
+	const seconds = HARNESS_GATHER_SAMPLE_MS / 1000;
+	const seen = new Map();
+	for (const ent of Engine.GetEntitiesWithInterface(IID_ResourceGatherer))
+	{
+		const cmpOwnership = Engine.QueryInterface(ent, IID_Ownership);
+		const owner = cmpOwnership ? cmpOwnership.GetOwner() : -1;
+		const cmpUnitAI = Engine.QueryInterface(ent, IID_UnitAI);
+		if (owner < 1 || !cmpUnitAI)
+			continue;
+		const group = this.harnessGatherGroups.get(ent) || this.HarnessGatherGroup(ent);
+		groups.set(ent, group);
+		const tally = this.harnessGather[owner] = this.harnessGather[owner] || {};
+		const cmpPosition = Engine.QueryInterface(ent, IID_Position);
+		if (!cmpPosition || !cmpPosition.IsInWorld())
+		{
+			tally[group + "|in"] = (tally[group + "|in"] || 0) + seconds;
+			continue;
+		}
+		const pos = cmpPosition.GetPosition2D();
+		const order = cmpUnitAI.order;
+		const phase = this.HarnessGatherPhase(cmpUnitAI.GetCurrentState() || "", order);
+		if (phase == "i" || phase == "o")
+		{
+			const key = group + "|" + (phase == "i" ? "idle" : "other");
+			tally[key] = (tally[key] || 0) + seconds;
+			seen.set(ent, { "phase": phase, "x": pos.x, "z": pos.y });
+			continue;
+		}
+		const data = order && order.data || {};
+		let generic = data.type && data.type.generic;
+		let kind = data.type ? data.type.generic + "." + data.type.specific : null;
+		let resource = phase == "r" ? data.formerTarget : data.target;
+		if (phase == "h")
+		{
+			generic = "food";
+			kind = "food.meat";
+		}
+		if (!kind)
+		{
+			const cmpResourceGatherer = Engine.QueryInterface(ent, IID_ResourceGatherer);
+			generic = cmpResourceGatherer && cmpResourceGatherer.GetMainCarryingType();
+			kind = generic ? generic + ".*" : "unknown";
+			resource = undefined;
+		}
+		if (resource !== undefined && isField(resource))
+			kind = "food.field";
+		const key = group + "|" + kind;
+		const entry = tally[key] = tally[key] || { "g": 0, "a": 0, "r": 0, "h": 0, "n": 0, "wa": 0, "wr": 0, "wh": 0,
+			"d": HARNESS_GATHER_BINS.map(() => 0).concat([0, 0]) };
+		entry[phase] += seconds;
+		const previous = this.harnessGatherLast.get(ent);
+		if (previous)
+		{
+			if (previous.phase == phase && (phase == "a" || phase == "r" || phase == "h"))
+				entry["w" + phase] += Math.sqrt((pos.x - previous.x) * (pos.x - previous.x) + (pos.y - previous.z) * (pos.y - previous.z));
+			if (previous.phase == "r" && phase != "r")
+				entry.n += 1;
+		}
+		const distance = resource !== undefined && generic ? haul(owner, generic, resource) : -1;
+		let bin = HARNESS_GATHER_BINS.length + 1;
+		if (distance >= 0)
+		{
+			bin = HARNESS_GATHER_BINS.findIndex(edge => distance < edge);
+			if (bin < 0)
+				bin = HARNESS_GATHER_BINS.length;
+		}
+		entry.d[bin] += seconds;
+		seen.set(ent, { "phase": phase, "x": pos.x, "z": pos.y });
+	}
+	this.harnessGatherLast = seen;
+	this.harnessGatherGroups = groups;
+};
+
+Trigger.prototype.HarnessGatherReport = function()
+{
+	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
+	const line = { "t": Math.round(now) };
+	for (const owner in this.harnessGather)
+	{
+		const tally = this.harnessGather[owner];
+		const out = {};
+		for (const key of Object.keys(tally).sort())
+		{
+			const entry = tally[key];
+			if (typeof entry == "number")
+			{
+				out[key] = Math.round(entry);
+				continue;
+			}
+			out[key] = { "g": Math.round(entry.g), "a": Math.round(entry.a), "r": Math.round(entry.r), "h": Math.round(entry.h),
+				"n": entry.n, "wa": Math.round(entry.wa), "wr": Math.round(entry.wr), "wh": Math.round(entry.wh),
+				"d": entry.d.map(Math.round) };
+		}
+		line[owner] = out;
+	}
+	print("[HARNESS] gather " + JSON.stringify(line) + "\n");
+	this.harnessGather = {};
+};
+
 Trigger.prototype.HarnessTimeLimit = function()
 {
 	const now = Engine.QueryInterface(SYSTEM_ENTITY, IID_Timer).GetTime() / 1000;
 	this.HarnessKills();
+	if (HARNESS_GATHER_SAMPLE_MS > 0)
+		this.HarnessGatherReport();
 	print("[HARNESS] standing " + JSON.stringify({ "t": Math.round(now), "teams": this.HarnessSides() }) + "\n");
 	print("[HARNESS] time limit reached " + JSON.stringify({ "t": now }) + "\n");
 	const active = Engine.QueryInterface(SYSTEM_ENTITY, IID_PlayerManager).GetActivePlayers();
@@ -422,6 +632,9 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.harnessKillIds = [];
 	cmpTrigger.harnessBehind = {};
 	cmpTrigger.harnessCensus = {};
+	cmpTrigger.harnessGather = {};
+	cmpTrigger.harnessGatherLast = new Map();
+	cmpTrigger.harnessGatherGroups = new Map();
 	let harnessRestored = false;
 	const harnessFallen = new Map();
 	const harnessBaseAIDeserialize = AIInterface.prototype.Deserialize;
@@ -568,6 +781,11 @@ Trigger.prototype.HarnessTimeLimit = function()
 	cmpTrigger.DoRepeatedly(HARNESS_ECO_INTERVAL_MS, "HarnessEconomy", {});
 	cmpTrigger.DoRepeatedly(HARNESS_KILLS_INTERVAL_MS, "HarnessKills", {});
 	cmpTrigger.DoRepeatedly(HARNESS_STANDING_INTERVAL_MS, "HarnessStanding", {});
+	if (HARNESS_GATHER_SAMPLE_MS > 0)
+	{
+		cmpTrigger.DoRepeatedly(HARNESS_GATHER_SAMPLE_MS, "HarnessGatherSample", {});
+		cmpTrigger.DoRepeatedly(HARNESS_GATHER_REPORT_MS, "HarnessGatherReport", {});
+	}
 	if (HARNESS_LIMIT_MINUTES > 0)
 		cmpTrigger.DoAfterDelay(HARNESS_LIMIT_MINUTES * 60 * 1000, "HarnessTimeLimit", {});
 }

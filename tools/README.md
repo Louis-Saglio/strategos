@@ -16,6 +16,7 @@ Development tooling for Strategos. Not part of the bot.
 | `rejoin.py` | check that a game restored from a save plays the rest as the unsaved game: the engine's rejoin test against the same games played without it |
 | `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request (source and purpose) the set grants |
 | `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
+| `gather.py` | where the gatherers' time goes, from the harness gather census: gathering, walking to the resource and back, distance from resource to dropsite, per AI, unit group and resource kind |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
 | `mapview.py` | top-down map pictures from the harness map snapshots (no GPU) |
@@ -229,6 +230,31 @@ does not record those), counted from the `OnPlayerCommand` trigger event.
 A command the engine then refuses is counted too. Read-only: 233 of 246
 games bit-identical to games of the previous harness, the 13 others
 differing by the bot. `census.py` reads it.
+
+Every minute (and at the time limit) it prints the gather census,
+`[HARNESS] gather {"t","<player id>":{"<group>|<kind>":{"g","a","r","h",
+"n","wa","wr","wh","d"},"<group>|idle":s,"<group>|other":s,"<group>|in":s}}`,
+for the minute just ended: every second it samples every unit of every
+player that has a `ResourceGatherer` and a `UnitAI`, and counts a second
+for it in one phase. `group` is civilian, infantry, cavalry or boat;
+`kind` the type of its gather order (`wood.tree`, `food.fruit`...;
+`food.field` for a field, `food.meat` for a hunt, `<generic>.*` for a
+return order). The phases: `g` gathering, `a` on the way to the resource
+(the other GATHER states), `r` on the way back to a dropsite (and
+dropping), `h` chasing game; `n` counts the returns completed; `wa`,
+`wr`, `wh` are the metres moved between two samples of the same phase
+(the path walked; a walk of a few seconds reads short by up to a sample
+interval); `d` splits the seconds of `g`, `a`, `r` and `h` by the edge
+distance from the resource to the owner's nearest dropsite that accepts
+it (bins 5 10 15 20 30 40 60 80 120 m, beyond, unknown). `idle`, `other`
+(building, fighting, walking on an order...) and `in` (garrisoned,
+aboard) are the seconds of units in no gathering phase. It reads UnitAI
+states and orders, positions, loads and obstruction distances, and
+changes nothing: the 16 games of `tmp/maps-land-hard.jsonl` at -l 30
+(with a first version of it, without its caches) and 6 of them at -l 12
+are bit-identical with and without it; it costs 1.3 % of the turn rate
+(the 6 games run side by side). On by default; `run.sh --no-gather`
+turns it off. `gather.py` reads it.
 
 With `run.sh --commands` it also prints `[HARNESS] cmd {"turn","p","c"}`
 for every command of every player, in the order the simulation receives
@@ -457,6 +483,24 @@ two civs. `tools/duel.py` reads the batch:
 tools/run.sh -l 40 -R 0 -p 'none:*:1' -p 'none:*:2' \
     -M random/strategos_duel -b '*' -H local OUTDIR 1-24
 ```
+
+### gather.py — where the gatherers' time goes
+
+```sh
+tools/gather.py BATCH... [--bands 0,5,10,15,20,30] [--player WHO] [--kinds K,...] [--min-sec S]
+```
+
+Reads the gather census of every game (above) and prints, per AI (or for
+the player WHO, a number or an AI name), per band of game minutes and
+per unit group and resource kind: the gatherer-seconds per game, the
+shares spent gathering (`g%`), walking to the resource (`a%`), walking
+back (`r%`) and chasing game (`h%`), the metres walked per completed
+load (`m/load`), and the distance from the resource to the nearest
+dropsite as quantiles of the time (`d50 d75 d90`, bin upper edges); then
+per group the shares of the time working, idle, in another state and
+garrisoned; then per resource the amount gathered (statistics tracker)
+per gatherer-second on it. A game counts in a band only if it reached
+the band's end.
 
 ### analyze.py, compare.py
 

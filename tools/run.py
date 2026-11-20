@@ -104,6 +104,13 @@ Options:
                  turn (`[HARNESS] cmd` lines; the replay does not record the
                  commands of an AI); tools/identity.py compares two plays on
                  them. Off by default: a few thousand lines a game
+  --no-gather    no harness gather census. The census (on by default):
+                 every second, what every unit that can gather is doing
+                 (gathering, walking to its resource, walking back to a
+                 dropsite, idle...) and how far its resource lies from the
+                 nearest dropsite, printed every minute per player
+                 (`[HARNESS] gather` lines; read by tools/gather.py).
+                 Read-only; it costs about 1.5 % of the turn rate
   --rejoin-test TURN  the engine's rejoin test (-rejointest=TURN): at
                  simulation turn TURN (200 ms each) the engine starts a second
                  simulation from the serialised state of the first, AIs
@@ -173,6 +180,7 @@ CIVS = ["athen", "brit", "cart", "gaul", "germ", "han", "iber", "kush", "mace", 
         "pers", "ptol", "rome", "sele", "spart"]
 PUBLIC = os.path.join(SRC, "binaries/data/mods/public")
 BUILTIN_AIS = {"petra"}
+GATHER_SAMPLE_MS = 1000
 NO_AI = "none"
 # Every game setting the public autostart command line cannot set, passed to
 # the harness (tools/harness/autostart/harness_settings.js) and checked after
@@ -519,7 +527,8 @@ def is_scenario(map_name):
     return any(os.path.isfile(os.path.join(SCENARIOS, "maps", map_name + ext)) for ext in (".json", ".xml"))
 
 
-def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False, commands=False, full_view=False):
+def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=False, commands=False, full_view=False,
+                  gather=False):
     """Copy every needed mod into OUTDIR/mods/. Returns (mount order, provenance)."""
     mods_dir = os.path.join(outdir, "mods")
     if os.path.exists(mods_dir):
@@ -590,6 +599,11 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=F
     if set_view != 1:
         die(f"{os.path.join(HARNESS, 'maps/scripts/NonVisualTrigger.js')}: {set_view} line(s) "
             "`const HARNESS_FULL_AI_VIEW = N;` where one is expected")
+    text, set_gather = re.subn(r"const HARNESS_GATHER_SAMPLE_MS = \d+;",
+                               f"const HARNESS_GATHER_SAMPLE_MS = {GATHER_SAMPLE_MS if gather else 0};", text)
+    if set_gather != 1:
+        die(f"{os.path.join(HARNESS, 'maps/scripts/NonVisualTrigger.js')}: {set_gather} line(s) "
+            "`const HARNESS_GATHER_SAMPLE_MS = N;` where one is expected: the gather census cannot be set")
     with open(trig, "w", encoding="utf-8") as fh:
         fh.write(text)
     prov[mod_name(HARNESS)] = {"source": HARNESS, "commit": git_info(REPO), "content": content_hash(hdest),
@@ -597,6 +611,8 @@ def snapshot_mods(outdir, ais, sources, limit, map_interval, resign, scenarios=F
                                "resign_ratio": resign, "commands": bool(commands)}
     if full_view:
         prov[mod_name(HARNESS)]["full_ai_view"] = True
+    if gather:
+        prov[mod_name(HARNESS)]["gather_sample_ms"] = GATHER_SAMPLE_MS
     order.append(mod_name(HARNESS))
     return order, prov
 
@@ -1021,6 +1037,7 @@ def main():
     ap.add_argument("--map-interval", type=int, default=30000)
     ap.add_argument("-R", dest="resign", type=float, default=0.1)
     ap.add_argument("--commands", action="store_true")
+    ap.add_argument("--no-gather", action="store_true")
     ap.add_argument("--rejoin-test", type=int)
     ap.add_argument("--full-ai-view", action="store_true")
     ap.add_argument("--verify-host")
@@ -1109,7 +1126,7 @@ def main():
     ais = {p["ai"] for s in specs for p in s["players"]}
     order, prov = snapshot_mods(outdir, ais, sources, a.limit, a.map_interval, a.resign,
                                 scenarios=any(is_scenario(s["map"]) for s in specs), commands=a.commands,
-                                full_view=a.full_ai_view or any("rejoin_test" in s for s in specs))
+                                full_view=a.full_ai_view or any("rejoin_test" in s for s in specs), gather=not a.no_gather)
     syntax_check(os.path.join(outdir, "mods"))
     for s in specs:
         s["mods"] = [m for m in order]
