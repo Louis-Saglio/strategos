@@ -484,6 +484,30 @@ tools/run.sh -l 40 -R 0 -p 'none:*:1' -p 'none:*:2' \
     -M random/strategos_duel -b '*' -H local OUTDIR 1-24
 ```
 
+`strategos_woodline_<list>`: what a wood gatherer delivers against the
+distance from its storehouse to the forest, the number of gatherers
+sharing the storehouse and the way they are managed. No AI plays; each
+of up to eight players is a case: a rectangular forest (12 x 18 temperate
+trees, 4 m apart) 130 m from its civic centre toward the map's edge, a
+storehouse `gap` m from the first row of trees, and `gatherers` female
+citizens set to work for 300 s, either by the engine (all ordered to the
+tree nearest the storehouse once; the engine spreads them) or managed by
+the trigger script (each its own tree, the nearest to the storehouse
+holding fewer than `cap` gatherers; a gatherer walking back to the
+storehouse whose tree is gone or lies more than 3 m farther than the
+best free tree is given that tree, which costs no walk). The lists
+(`WOOD_CASES` in `strategos_woodline_triggers.js`): `n` (5, 10, 20, 40
+gatherers on one storehouse touching the forest, by each policy), `d`
+(10 managed gatherers, gap 3 to 90 m), `c` (20 managed gatherers at most
+1 to 8 per tree, and 20 at a 15 m gap by each policy). `[WOODLINE] result` gives the wood per gatherer per second; the
+gather census gives each case's phases. A game is the whole list (8
+players, about 20 s of wall time). Run with `-l 6 -R 0` on 384 tiles:
+
+```sh
+P=""; for i in 1 2 3 4 5 6 7 8; do P="$P -p none:*"; done
+tools/run.sh -l 6 -R 0 $P -M random/strategos_woodline_n -s 384 -b '*' -H local OUTDIR 1-3
+```
+
 ### gather.py — where the gatherers' time goes
 
 ```sh

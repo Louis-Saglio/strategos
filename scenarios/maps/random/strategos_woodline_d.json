@@ -1,0 +1,19 @@
+{
+	"settings": {
+		"Name": "Strategos scenario: woodline, case list d",
+		"Script": "strategos_woodline.js",
+		"Description": "Strategos development scenario (see strategos_woodline_triggers.js). Not a playable map.",
+		"Keywords": [
+			"trigger"
+		],
+		"SupportedBiomes": "generic/",
+		"CircularMap": true,
+		"PlayerPlacements": [
+			"circle"
+		],
+		"TriggerScripts": [
+			"scripts/TriggerHelper.js",
+			"random/strategos_woodline_triggers.js"
+		]
+	}
+}
