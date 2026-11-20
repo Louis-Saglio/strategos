@@ -1,4 +1,5 @@
 import { isTreasure } from "simulation/ai/common-api/filters.js";
+import { halfSizeOf } from "simulation/ai/strategos/gathering.js";
 import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { isHunt } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
@@ -80,6 +81,7 @@ function workforce(gameState, catalog, anchors)
 		let kind = null;
 		let haul = null;
 		let targetPosition = null;
+		let targetHalf = 0;
 		if (state.returning)
 		{
 			const carried = ent.resourceCarrying();
@@ -94,6 +96,7 @@ function workforce(gameState, catalog, anchors)
 			if (type && target.position() && isFinite(target.resourceSupplyAmount()))
 			{
 				targetPosition = target.position();
+				targetHalf = halfSizeOf(target);
 				haul = anchorDistance(anchors, type.generic, targetPosition);
 			}
 		}
@@ -115,6 +118,7 @@ function workforce(gameState, catalog, anchors)
 			"kind": kind,
 			"haul": haul,
 			"targetPosition": targetPosition,
+			"targetHalf": targetHalf,
 			"profile": catalog.gathering(ent),
 			"meanRates": Object.freeze(catalog.meanRates(ent)),
 			"target": orders.length && orders[0] ? orders[0].target : undefined,

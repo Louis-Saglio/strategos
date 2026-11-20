@@ -283,7 +283,8 @@ export class Catalog
 			this.gatherProfiles.set(name, Object.freeze({
 				"rates": Object.freeze(template.resourceGatherRates() || {}),
 				"capacities": Object.freeze(capacities),
-				"speed": template.walkSpeed() || 0
+				"speed": template.walkSpeed() || 0,
+				"range": +(template.get("ResourceGatherer/MaxDistance") || 0)
 			}));
 		}
 		return this.gatherProfiles.get(name);

@@ -1,3 +1,4 @@
+import { loadCycle, reachOf } from "simulation/ai/strategos/gathering.js";
 import { landRegionNear } from "simulation/ai/strategos/terrain.js";
 
 const SUPPLY_CELL = 8;
@@ -237,15 +238,45 @@ function quantile(sorted, q)
 	return sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))] : null;
 }
 
+function nearestAnchor(anchors, code, position)
+{
+	let best = null;
+	let bestDistance = Infinity;
+	for (const anchor of anchors)
+	{
+		if (!anchor.types.includes(code))
+			continue;
+		const distance = edgeDistance(anchor, position);
+		if (distance < bestDistance || distance === bestDistance && best && anchor.id < best.id)
+		{
+			best = anchor;
+			bestDistance = distance;
+		}
+	}
+	return best && { "anchor": best, "distance": bestDistance };
+}
+
 export function siteReport(world)
 {
+	const placed = [];
+	const crowd = new Map();
+	for (const worker of world.workers)
+	{
+		if (!worker.gathering || !worker.targetPosition)
+			continue;
+		const found = nearestAnchor(world.anchors, worker.gathering, worker.targetPosition);
+		if (!found)
+			continue;
+		placed.push({ worker, "anchor": found.anchor, "haul": found.distance });
+		const front = found.anchor.id + ":" + worker.gathering;
+		crowd.set(front, (crowd.get(front) || 0) + 1);
+	}
 	const report = {};
 	for (const code of world.codes)
 	{
 		const entries = world.coverage.filter(entry => entry.code === code);
 		if (!entries.length)
 			continue;
-		const anchors = world.anchors.filter(anchor => anchor.types.includes(code));
 		const nearestOf = new Map();
 		for (const entry of entries)
 			for (const supply of entry.supplies)
@@ -259,40 +290,41 @@ export function siteReport(world)
 						stock[index] += amount;
 				});
 		const hauls = [];
-		const crowd = new Map();
-		for (const worker of world.workers)
+		const busy = new Map();
+		let output = 0;
+		let share = 0;
+		let modelled = 0;
+		for (const { worker, anchor, haul } of placed)
 		{
-			if (worker.gathering !== code || !worker.targetPosition)
+			if (worker.gathering !== code)
 				continue;
-			let best = null;
-			let bestDistance = Infinity;
-			for (const anchor of anchors)
-			{
-				const distance = edgeDistance(anchor, worker.targetPosition);
-				if (distance < bestDistance || distance === bestDistance && best && anchor.id < best.id)
-				{
-					best = anchor;
-					bestDistance = distance;
-				}
-			}
-			if (!best)
+			hauls.push(haul);
+			busy.set(anchor.id, (busy.get(anchor.id) || 0) + 1);
+			const rate = worker.profile.rates[worker.kind] || 0;
+			const capacity = worker.profile.capacities[code] || 0;
+			const cycle = loadCycle(rate, capacity, worker.profile.speed, haul, reachOf(worker.profile.range, worker.targetHalf),
+				crowd.get(anchor.id + ":" + code));
+			if (!isFinite(cycle))
 				continue;
-			hauls.push(bestDistance);
-			crowd.set(best.id, (crowd.get(best.id) || 0) + 1);
+			output += capacity / cycle;
+			share += capacity / rate / cycle;
+			modelled += 1;
 		}
 		hauls.sort((a, b) => a - b);
 		let busiest = null;
-		for (const [anchor, count] of crowd)
+		for (const [anchor, count] of busy)
 			if (!busiest || count > busiest.count || count === busiest.count && anchor < busiest.anchor)
 				busiest = { anchor, count };
 		const busiestStock = busiest ? [...nearestOf.values()].filter(entry => entry.anchor === busiest.anchor && entry.distance < REPORT_BANDS[1] &&
 			isFinite(entry.amount)).reduce((sum, entry) => sum + entry.amount, 0) : 0;
+		const round = value => Math.round(value * 1000) / 1000;
 		report[code] = {
-			"anchors": anchors.length,
+			"anchors": world.anchors.filter(anchor => anchor.types.includes(code)).length,
 			"stock": stock.map(Math.round),
 			"gatherers": hauls.length,
 			"haul": HAUL_QUANTILES.map(q => quantile(hauls, q)).map(value => value === null ? null : Math.round(value)),
-			"busiest": busiest ? [busiest.count, Math.round(busiestStock)] : null
+			"busiest": busiest ? [busiest.count, Math.round(busiestStock)] : null,
+			"model": modelled ? [round(output / modelled), round(share / modelled)] : null
 		};
 	}
 	return report;
