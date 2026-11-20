@@ -1,5 +1,5 @@
 import { centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, heroWorth, enemyProfile, exchangeOutlook, populationPressure, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
+import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, groupOutput, heroWorth, enemyProfile, exchangeOutlook, populationPressure, pricedSum, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 
 export const SETTLEMENT_MAX_DISTANCE = 360;
 export const SHORT_URGENCY = 5;
@@ -172,7 +172,16 @@ function fishingSea(world, plan)
 }
 
 const HOUSE = buildingNeed("house", { "wanted": housingShort, "template": bestHouse, "site": ring, "value": "house",
-	"urgency": housingUrgency, "tier": production });
+	"urgency": housingUrgency, "tier": production, "returns": housingReturn });
+
+function housingReturn(context, template)
+{
+	const { world, catalog } = context;
+	const prices = resourcePrices(world);
+	const output = groupOutput(world, prices, CIVILIAN_GROUP);
+	return output === undefined ? undefined :
+		TECH_HORIZON_S * output * catalog.populationBonus(template) / Math.max(1, pricedSum(world, prices, catalog.cost(template)));
+}
 
 function housingShort(context)
 {
@@ -205,6 +214,8 @@ function housing(context)
 export const FIELDS = Object.freeze({ "decision": "fields" });
 
 const WILD_FOOD_PER_GATHERER = 150;
+const GRAIN_KIND = "food.grain";
+const CIVILIAN_GROUP = "civilian";
 
 export function hunger(context)
 {
@@ -222,6 +233,16 @@ export function hunger(context)
 	if (supply >= desired)
 		return null;
 	return { "farm": farm, "urgency": 1 + (desired - supply) / Math.max(1, desired) };
+}
+
+export function fieldReturn(context, farm)
+{
+	const { world, catalog } = context;
+	const rate = world.yieldRates.kinds && world.yieldRates.kinds[GRAIN_KIND + "|" + CIVILIAN_GROUP];
+	if (rate === undefined)
+		return undefined;
+	const prices = resourcePrices(world);
+	return TECH_HORIZON_S * rate * prices.food * catalog.maxGatherers(farm) / Math.max(1, pricedSum(world, prices, catalog.cost(farm)));
 }
 
 function isFarm(context, name)
@@ -274,7 +295,13 @@ function recruitsFlow(context, template)
 	return !world.codes.some(code => cost[code] > 0 && world.demand.income[code] <= busy[code]);
 }
 
-const WORKS = buildingNeed("works", { "template": bestWorks, "report": worksReport, "site": ring, "value": "investment" });
+const WORKS = buildingNeed("works", { "template": bestWorks, "report": worksReport, "site": ring, "value": "investment",
+	"returns": worksReturn });
+
+function worksReturn(context, template)
+{
+	return worksRates(context)(template);
+}
 
 const WORKER_RATE = 0.5;
 const TERRITORY_PATH = "TerritoryInfluence/Radius";

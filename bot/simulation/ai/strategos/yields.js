@@ -26,6 +26,26 @@ export function foodWorth(rates, group, prior)
 	return own !== undefined && civilian ? own / civilian : prior;
 }
 
+function groupOutputs(kinds)
+{
+	const totals = {};
+	for (const key of Object.keys(kinds).sort())
+	{
+		const [kind, group] = key.split("|");
+		if (!totals[group])
+			totals[group] = { "seconds": 0, "delivered": {} };
+		const code = kind.split(".")[0];
+		totals[group].seconds += kinds[key].seconds;
+		totals[group].delivered[code] = (totals[group].delivered[code] || 0) + kinds[key].delivered;
+	}
+	const outputs = {};
+	for (const group of Object.keys(totals))
+		if (totals[group].seconds >= MEASURED_S)
+			outputs[group] = Object.freeze(Object.fromEntries(Object.entries(totals[group].delivered)
+				.map(([code, delivered]) => [code, delivered / totals[group].seconds])));
+	return outputs;
+}
+
 export class YieldLedger
 {
 	constructor()
@@ -165,6 +185,7 @@ export class YieldLedger
 			if (this.kinds[key].seconds >= MEASURED_S && this.kinds[key].delivered > 0)
 				kinds[key] = this.kinds[key].delivered / this.kinds[key].seconds;
 		rates.kinds = Object.freeze(kinds);
+		rates.outputs = Object.freeze(groupOutputs(this.kinds));
 		this.rates = Object.freeze(rates);
 		const round = value => Math.round(value * 100) / 100;
 		const data = {};
@@ -174,7 +195,7 @@ export class YieldLedger
 			data[key] = { "d": Math.round(ledger.delivered), "s": Math.round(ledger.seconds), "rate": ledger.seconds > 0 ? round(ledger.delivered / ledger.seconds) : null,
 				"idle": Math.round(ledger.idle), "taken": Math.round(ledger.taken), "lost": Math.round(ledger.discarded) };
 		}
-		data.foodRates = Object.fromEntries(Object.entries(rates).filter(([group]) => group !== "kinds").map(([group, rate]) => [group, round(rate)]));
+		data.foodRates = Object.fromEntries(Object.entries(rates).filter(([group]) => group !== "kinds" && group !== "outputs").map(([group, rate]) => [group, round(rate)]));
 		telemetry.line("YIELD", world.time, data);
 		this.buckets = {};
 	}

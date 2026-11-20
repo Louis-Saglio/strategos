@@ -1,9 +1,9 @@
 import { centroid } from "simulation/ai/strategos/geometry.js";
 import { Builders } from "simulation/ai/strategos/construction-builders.js";
-import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
+import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, fieldReturn, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
 import { HAUL_RETURN, Siting } from "simulation/ai/strategos/construction-siting.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
-import { buildRequest, fundRequest, inTier, noting } from "simulation/ai/strategos/requests.js";
+import { buildRequest, fundRequest, inTier, noting, returning } from "simulation/ai/strategos/requests.js";
 import { Change } from "simulation/ai/strategos/switches.js";
 
 const DROPSITE_MIN_GATHERERS = 3;
@@ -95,6 +95,8 @@ export class Construction
 				continue;
 			const request = buildRequest("construction", need.purpose, template, site, builders, this.catalog.cost(template),
 				context.plan.values[need.value], need.urgency ? need.urgency(context) : 1);
+			if (need.returns)
+				returning(request, need.returns(context, template));
 			if (site.note)
 				noting(request, site.note);
 			const tier = need.tier && need.tier(context);
@@ -124,7 +126,7 @@ export class Construction
 			return null;
 		const farm = site => {
 			const request = this.construct(world, "farm", fields.farm, site, plan.values.farm, fields.urgency);
-			return request && inTier(request, "production");
+			return request && returning(inTier(request, "production"), fieldReturn(context, fields.farm));
 		};
 		const near = this.siting.field(world, placement, fields.farm, true);
 		if (near)
@@ -167,7 +169,7 @@ export class Construction
 		if (this.relieved.to(best.site.x + "," + best.site.z))
 			this.telemetry.line("BUILD", world.time, { "haul": best.template, "x": Math.round(best.site.x), "z": Math.round(best.site.z),
 				"gatherers": best.gatherers, "gain": Math.round(best.gain * 100) / 100, "payback": Math.round(best.payback * 100) / 100 });
-		return inTier(request, "production");
+		return returning(inTier(request, "production"), best.payback);
 	}
 
 	colonyRequest(context)

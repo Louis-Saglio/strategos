@@ -172,6 +172,11 @@ export function pressing(request, urgency)
 	return Object.assign(request, { "urgency": urgency });
 }
 
+export function returning(request, ratio)
+{
+	return typeof ratio !== "number" || !isFinite(ratio) ? request : Object.assign(request, { "returns": ratio });
+}
+
 export function noting(request, note)
 {
 	return Object.assign(request, { "note": note });

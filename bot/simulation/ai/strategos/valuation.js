@@ -69,6 +69,24 @@ export function resourcePrices(world)
 	return prices;
 }
 
+export function pricedSum(world, prices, amounts)
+{
+	return world.codes.reduce((sum, code) => sum + prices[code] * (amounts[code] || 0), 0);
+}
+
+export function groupOutput(world, prices, group)
+{
+	const outputs = world.yieldRates.outputs;
+	const output = outputs && outputs[group];
+	return output ? pricedSum(world, prices, output) : undefined;
+}
+
+export function unitReturn(world, prices, group, cost)
+{
+	const output = groupOutput(world, prices, group);
+	return output === undefined ? undefined : TECH_HORIZON_S * output / Math.max(1, pricedSum(world, prices, cost));
+}
+
 export function captureOutlook(members, centre)
 {
 	let power = 0;

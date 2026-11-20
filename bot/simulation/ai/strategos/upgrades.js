@@ -1,5 +1,5 @@
 import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
-import { noting, upgradeRequest } from "simulation/ai/strategos/requests.js";
+import { noting, returning, upgradeRequest } from "simulation/ai/strategos/requests.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
 import { TECH_HORIZON_S, auraBenefit, resourcePrices } from "simulation/ai/strategos/valuation.js";
 
@@ -57,7 +57,8 @@ export class Upgrades
 		}
 		if (!best)
 			return [];
-		return [noting(upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, plan.values.investment, 1),
+		return [noting(returning(upgradeRequest("upgrades", "upgrade", best.entity.id, best.option.template, best.option.cost, plan.values.investment, 1),
+			best.ratio),
 			{ "from": best.entity.template, "to": best.option.template, "gain": Math.round(best.gain) })];
 	}
 

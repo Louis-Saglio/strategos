@@ -2,6 +2,7 @@ const SPEND_SMOOTHING = 0.05;
 const ORDER_MEMORY_S = 180;
 const ORDER_TYPES = ["train", "construct"];
 const RESERVATION = "reserve";
+const RESOURCE_DENIAL = "resources-";
 
 export const GRANTED = "granted";
 
@@ -11,6 +12,8 @@ export class Allocator
 	{
 		this.codes = codes;
 		this.ledger = new Map();
+		this.returns = new Map();
+		this.inverted = new Map();
 		this.spent = {};
 		this.spendRate = {};
 		this.income = {};
@@ -65,6 +68,8 @@ export class Allocator
 	{
 		return {
 			"ledger": this.ledger,
+			"returns": this.returns,
+			"inverted": this.inverted,
 			"spent": this.spent,
 			"spendRate": this.spendRate,
 			"income": this.income,
@@ -85,6 +90,8 @@ export class Allocator
 	restore(data)
 	{
 		this.ledger = data.ledger;
+		this.returns = data.returns || new Map();
+		this.inverted = data.inverted || new Map();
 		this.spent = data.spent;
 		this.spendRate = data.spendRate;
 		this.income = data.income;
@@ -160,6 +167,8 @@ export class Allocator
 		}
 		this.assigned = [];
 		const outcomes = [];
+		const spenders = [];
+		const deniedReturns = [];
 		const spent = {};
 		const unmet = {};
 		const paid = {};
@@ -180,8 +189,10 @@ export class Allocator
 			outcomes.push({ "request": request, "outcome": reason || GRANTED, "issued": false });
 			if (reason)
 			{
-				if (reason.startsWith("resources"))
+				if (reason.startsWith(RESOURCE_DENIAL))
 				{
+					if (typeof request.returns === "number")
+						deniedReturns.push({ "code": reason.slice(RESOURCE_DENIAL.length), "returns": request.returns, "at": spenders.length });
 					for (const code of this.codes)
 						unmet[code] += request.claims.resources[code] || 0;
 					if (request.reserve)
@@ -196,12 +207,31 @@ export class Allocator
 				if (!request.conversion)
 					spent[code] += amount;
 			}
+			if (request.claims.resources && this.codes.some(code => request.claims.resources[code] > 0))
+				spenders.push({ request, "earmarked": earmarked.has(request) });
 			this.commit(request, budget);
 			if (request.action && ORDER_TYPES.includes(request.action.type))
 				this.ordered.set(request.action.template, (this.ordered.get(request.action.template) || 0) + (request.action.count || 1));
 		}
+		this.countInversions(spenders, deniedReturns);
 		this.observe(world, spent, unmet, paid);
 		return outcomes;
+	}
+
+	countInversions(spenders, deniedReturns)
+	{
+		const inverted = new Set();
+		for (const denied of deniedReturns)
+			spenders.forEach(({ request, earmarked }, index) => {
+				if ((index < denied.at || earmarked) && (request.claims.resources[denied.code] || 0) > 0 &&
+				    !(typeof request.returns === "number" && request.returns >= denied.returns))
+					inverted.add(request);
+			});
+		for (const request of inverted)
+		{
+			const key = this.key(request) + (typeof request.returns === "number" ? "" : ":unpriced");
+			this.inverted.set(key, (this.inverted.get(key) || 0) + 1);
+		}
 	}
 
 	denial(request, budget)
@@ -217,7 +247,7 @@ export class Allocator
 			return "population";
 		for (const code of this.codes)
 			if ((claims.resources && claims.resources[code] || 0) > budget.resources[code] - budget.earmark[code])
-				return "resources-" + code;
+				return RESOURCE_DENIAL + code;
 		return null;
 	}
 
@@ -250,21 +280,34 @@ export class Allocator
 		}
 	}
 
+	key(request)
+	{
+		return request.source + "/" + request.purpose + "/" + (request.action ? request.action.type : RESERVATION) +
+			(request.tier === "production" ? "!" : "");
+	}
+
 	record(request, outcome)
 	{
-		const key = request.source + "/" + request.purpose + "/" + (request.action ? request.action.type : RESERVATION) +
-			(request.tier === "production" ? "!" : "") + ":" + outcome;
+		const key = this.key(request) + ":" + outcome;
 		this.ledger.set(key, (this.ledger.get(key) || 0) + 1);
+		if (typeof request.returns !== "number")
+			return;
+		const sum = this.returns.get(key) || { "total": 0, "count": 0 };
+		this.returns.set(key, { "total": sum.total + request.returns, "count": sum.count + 1 });
 	}
 
 	flushLedger()
 	{
 		const summary = {
 			"outcomes": Object.fromEntries(this.ledger),
+			"returns": Object.fromEntries([...this.returns].map(([key, sum]) => [key, Math.round(100 * sum.total / sum.count) / 100])),
+			"inverted": Object.fromEntries(this.inverted),
 			"spentTotal": Object.assign({}, this.spent),
 			"heldMean": Object.fromEntries(this.codes.map(code => [code, Math.round(this.held[code] / Math.max(1, this.allocations))]))
 		};
 		this.ledger.clear();
+		this.returns.clear();
+		this.inverted.clear();
 		for (const code of this.codes)
 			this.held[code] = 0;
 		this.allocations = 0;

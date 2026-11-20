@@ -1,4 +1,4 @@
-import { inTier, researchRequest, reserving } from "simulation/ai/strategos/requests.js";
+import { inTier, researchRequest, reserving, returning } from "simulation/ai/strategos/requests.js";
 import { TECH_HORIZON_S, enemyProfile, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 
 const PAYBACK_LIMIT_S = 180;
@@ -62,8 +62,8 @@ export class Research
 			if (this.catalog.technology(best.tech).sibling)
 				chosen.add(this.catalog.technology(best.tech).sibling);
 			const tier = best.payback <= PRODUCTION_PAYBACK_S ? "production" : "investment";
-			requests.push(inTier(researchRequest("research", "technology", researcher.id, best.tech, Math.round(best.payback), best.cost,
-				plan.values.research, 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S), tier));
+			requests.push(returning(inTier(researchRequest("research", "technology", researcher.id, best.tech, Math.round(best.payback), best.cost,
+				plan.values.research, 1 + (PAYBACK_LIMIT_S - best.payback) / PAYBACK_LIMIT_S), tier), TECH_HORIZON_S / best.payback));
 		}
 		return requests;
 	}

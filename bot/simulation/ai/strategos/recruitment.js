@@ -1,7 +1,8 @@
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
-import { inTier, noting, reserving, roomRequest, trainRequest } from "simulation/ai/strategos/requests.js";
+import { inTier, noting, reserving, returning, roomRequest, trainRequest } from "simulation/ai/strategos/requests.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
-import { HERO_EDGE, TRAINING_BATCH, combatRole, enemyProfile, heroWorth, populationPressure, resourcePrices, unitScore } from "simulation/ai/strategos/valuation.js";
+import { HERO_EDGE, TECH_HORIZON_S, TRAINING_BATCH, combatRole, enemyProfile, heroWorth, populationPressure, pricedSum, resourcePrices, unitReturn, unitScore } from "simulation/ai/strategos/valuation.js";
+import { unitGroup } from "simulation/ai/strategos/yields.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
@@ -164,8 +165,8 @@ export class Recruitment
 		if (!yard || boats.length + building >= Math.min(fishing.maxBoats, slots))
 			return [];
 		const template = this.catalog.cheapest(yard.trainable, fishes);
-		return [inTier(trainRequest("recruitment", "fishing-boat", yard.id, template, 1, this.catalog.cost(template),
-			this.catalog.population(template), plan.values.fishing, 1), "production")];
+		return [returning(inTier(trainRequest("recruitment", "fishing-boat", yard.id, template, 1, this.catalog.cost(template),
+			this.catalog.population(template), plan.values.fishing, 1), "production"), this.unitReturn(world, template))];
 	}
 
 	heroRequests(world, plan)
@@ -190,6 +191,11 @@ export class Recruitment
 		return [];
 	}
 
+	unitReturn(world, template)
+	{
+		return unitReturn(world, resourcePrices(world), unitGroup(this.catalog.template(template).classes()), this.catalog.cost(template));
+	}
+
 	hunts(name)
 	{
 		return this.catalog.isFighter(name) && (this.catalog.gathering(this.catalog.template(name)).rates[MEAT] || 0) >= HUNTER_RATE;
@@ -211,8 +217,8 @@ export class Recruitment
 			return [];
 		const template = this.catalog.cheapest(trainer.trainable, name => this.hunts(name));
 		const tier = trainer.queueLength === 0 ? "production" : "investment";
-		return [noting(inTier(trainRequest("recruitment", "hunter", trainer.id, template, 1, this.catalog.cost(template),
-			this.catalog.population(template), plan.values.trainWorker, HUNTER_URGENCY), tier),
+		return [noting(returning(inTier(trainRequest("recruitment", "hunter", trainer.id, template, 1, this.catalog.cost(template),
+			this.catalog.population(template), plan.values.trainWorker, HUNTER_URGENCY), tier), this.unitReturn(world, template)),
 			{ "meat": Math.round(meat), "hunters": hunters, "wanted": wanted })];
 	}
 
@@ -243,8 +249,9 @@ export class Recruitment
 			for (const code of world.codes)
 				cost[code] = unitCost[code] * count;
 			const tier = trainer.queueLength === 0 ? "production" : "investment";
-			requests.push(inTier(trainRequest("recruitment", labour ? "workers" : "soldiers", trainer.id, template, count, cost,
-				this.catalog.population(template) * count, plan.values.trainWorker, 1), tier));
+			const request = inTier(trainRequest("recruitment", labour ? "workers" : "soldiers", trainer.id, template, count, cost,
+				this.catalog.population(template) * count, plan.values.trainWorker, 1), tier);
+			requests.push(labour ? returning(request, this.unitReturn(world, template)) : request);
 		}
 		return requests;
 	}
@@ -318,8 +325,11 @@ export class Recruitment
 			const template = this.catalog.cheapest(trainer.trainable, name => this.catalog.isTrader(name));
 			if (!template)
 				continue;
-			return [trainRequest("recruitment", "trader", trainer.id, template, 1, this.catalog.cost(template),
-				this.catalog.population(template), plan.values.support, 1)];
+			const prices = resourcePrices(world);
+			const price = world.codes.reduce((sum, code) => sum + prices[code], 0) / world.codes.length;
+			return [returning(trainRequest("recruitment", "trader", trainer.id, template, 1, this.catalog.cost(template),
+				this.catalog.population(template), plan.values.support, 1),
+				TECH_HORIZON_S * route.rate * price / Math.max(1, pricedSum(world, prices, this.catalog.cost(template))))];
 		}
 		return [];
 	}
