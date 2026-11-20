@@ -67,18 +67,19 @@ function fishingGrounds(liveFish, enemies, clearance)
 	return Object.freeze({ "foes": Object.freeze(foes), hostile, "waters": Object.freeze(waters) });
 }
 
-export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion, enemies, yieldRates)
+export function seaSection(gameState, catalog, resourceIndex, shoreIndex, homeRegion, enemies, yieldRates, civilianRate)
 {
 	const accessibility = gameState.sharedScript.accessibility;
 	const fleet = ownShips(gameState, catalog);
 	const fish = resourceIndex.liveFish(gameState);
+	const fishing = fleet.filter(ship => ship.fishing && ship.gathering);
 	const grounds = new Map();
 	return {
 		"now": {
 			"docks": Object.freeze(harbours(gameState, catalog, shoreIndex, homeRegion)),
 			"fleet": Object.freeze(fleet),
 			"ships": Object.freeze(fleet.filter(ship => ship.capacity > 0 || ship.cargo.length)),
-			"fishers": foodWorth(yieldRates, "boat", FISHER_WORTH) * fleet.filter(ship => ship.fishing && ship.gathering).length,
+			"fishers": foodWorth(yieldRates, "boat", FISHER_WORTH, civilianRate) * fishing.length,
 			"fish": fish,
 			"schools": resourceIndex.schools,
 			"fishRadius": FISH_RADIUS,

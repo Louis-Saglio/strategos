@@ -17,13 +17,13 @@ export function unitGroup(classes)
 	return classes.includes("Soldier") ? "infantry" : "civilian";
 }
 
-export function foodWorth(rates, group, prior)
+export function foodWorth(rates, group, prior, fallback)
 {
 	if (group === "civilian")
 		return 1;
 	const own = rates && rates[group];
 	const civilian = rates && rates.civilian;
-	return own !== undefined && civilian ? own / civilian : prior;
+	return own !== undefined && civilian ? own / Math.max(civilian, fallback || 0) : prior;
 }
 
 function groupOutputs(kinds)

@@ -1,5 +1,5 @@
 import { contextSection } from "simulation/ai/strategos/world-context.js";
-import { dropsites, economySection } from "simulation/ai/strategos/world-economy.js";
+import { dropsites, economySection, fieldFood } from "simulation/ai/strategos/world-economy.js";
 import { enemiesSection } from "simulation/ai/strategos/world-enemies.js";
 import { mapSection, settledBases } from "simulation/ai/strategos/world-map.js";
 import { militarySection } from "simulation/ai/strategos/world-military.js";
@@ -60,17 +60,18 @@ export function buildWorld(gameState, catalog, resourceIndex, supplyIndex, shore
 		resourceIndex.refresh(gameState, found);
 		return found;
 	});
+	const civilianRate = stopwatch.section("economy", () => fieldFood(gameState, catalog));
 	const production = stopwatch.section("production", () => productionSection(gameState, catalog));
 	const settled = settledBases(gameState, production.now.centres);
 	const sea = stopwatch.section("sea", () => seaSection(gameState, catalog, resourceIndex, shoreIndex, settled.homeRegion,
-		() => enemies.now, yieldRates));
+		() => enemies.now, yieldRates, civilianRate));
 	const enemies = stopwatch.section("enemies", () => enemiesSection(gameState, catalog, musterIndex, assignments));
 	const record = parts => Object.freeze(attach({}, "world.players", parts,
 		(name, read) => once(gameState, stopwatch, "players", name, read)));
 	const players = playersSection(gameState, catalog, enemies.holdings, enemies.muster, settled.homeRegion, record);
 	const military = stopwatch.section("military", () => militarySection(gameState, catalog, lossIndex));
 	const economy = stopwatch.section("economy",
-		() => economySection(gameState, catalog, resourceIndex, anchors, enemies.now.batteries, sea.now.fishers, assignments, yieldRates));
+		() => economySection(gameState, catalog, resourceIndex, anchors, enemies.now.batteries, sea.now.fishers, assignments, yieldRates, civilianRate));
 	const map = stopwatch.section("map", () => mapSection(gameState, settled, {
 		"workers": economy.now.workers,
 		"settlers": economy.now.settlers,

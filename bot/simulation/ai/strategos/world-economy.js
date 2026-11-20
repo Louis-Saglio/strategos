@@ -1,13 +1,14 @@
 import { isTreasure } from "simulation/ai/common-api/filters.js";
-import { halfSizeOf } from "simulation/ai/strategos/gathering.js";
+import { diminished, halfSizeOf, loadOutput, reachOf } from "simulation/ai/strategos/gathering.js";
 import { distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { isHunt } from "simulation/ai/strategos/requests.js";
 import { TRADE_GAIN_DAMPING, TRADE_GAIN_DISTANCE, TRADE_GAIN_MAP } from "simulation/ai/strategos/rules.js";
 import { landRegionNear, landRegionsOf, territoryAt } from "simulation/ai/strategos/terrain.js";
 import { stateOf } from "simulation/ai/strategos/unitstate.js";
-import { foodWorth, unitGroup } from "simulation/ai/strategos/yields.js";
+import { FOOD, foodWorth, unitGroup } from "simulation/ai/strategos/yields.js";
 
 const TREASURE_RADIUS = 120;
+const GRAIN = "food.grain";
 
 export function dropsites(gameState, catalog)
 {
@@ -129,7 +130,25 @@ function workforce(gameState, catalog, anchors)
 	return { workers, settlers, traders };
 }
 
-function occupation(codes, workers, fishers, assignments, yieldRates)
+export function fieldFood(gameState, catalog)
+{
+	for (const ent of gameState.getOwnUnits().values())
+	{
+		if (!ent.isGatherer() || unitGroup(ent.classes()) !== "civilian")
+			continue;
+		const farm = catalog.buildable(ent).filter(name => catalog.isFarm(name)).sort()[0];
+		if (!farm)
+			return 0;
+		const field = catalog.template(farm);
+		const profile = catalog.gathering(ent);
+		const half = halfSizeOf(field);
+		const rate = diminished(profile.rates[GRAIN] || 0, +(field.get("ResourceSupply/DiminishingReturns") || 0), catalog.maxGatherers(farm));
+		return loadOutput(rate, profile.capacities[FOOD] || 0, profile.speed, half, reachOf(profile.range, half), 0);
+	}
+	return 0;
+}
+
+function occupation(codes, workers, fishers, assignments, yieldRates, civilianRate)
 {
 	const gatherers = {};
 	const hauls = {};
@@ -145,7 +164,7 @@ function occupation(codes, workers, fishers, assignments, yieldRates)
 	{
 		const hunting = !worker.gathering && assignments[worker.id] && isHunt(assignments[worker.id].purpose);
 		const code = hunting ? "food" : worker.gathering;
-		const worth = code === "food" ? foodWorth(yieldRates, unitGroup(worker.classes), 1) : 1;
+		const worth = code === "food" ? foodWorth(yieldRates, unitGroup(worker.classes), 1, civilianRate) : 1;
 		if (code === "food" && worker.soldier)
 			helpers += worth;
 		if (code && gatherers[code] !== undefined)
@@ -246,7 +265,7 @@ function treasuresWithin(gameState, anchors, workers)
 	return treasures.sort((a, b) => a.id - b.id);
 }
 
-export function economySection(gameState, catalog, resourceIndex, anchors, batteries, fishers, assignments, yieldRates)
+export function economySection(gameState, catalog, resourceIndex, anchors, batteries, fishers, assignments, yieldRates, civilianRate)
 {
 	const playerData = gameState.playerData;
 	const codes = catalog.codes;
@@ -254,7 +273,7 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 	for (const code of codes)
 		resources[code] = playerData.resourceCounts[code] || 0;
 	const staff = workforce(gameState, catalog, anchors);
-	const busy = occupation(codes, staff.workers, fishers, assignments(), yieldRates);
+	const busy = occupation(codes, staff.workers, fishers, assignments(), yieldRates, civilianRate);
 	const sites = {};
 	for (const code of codes)
 		sites[code] = resourceIndex.live(gameState, code, anchors, batteries);
