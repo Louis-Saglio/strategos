@@ -226,15 +226,17 @@ export class Recruitment
 	{
 		const requests = [];
 		const civilians = world.workers.filter(worker => !worker.soldier).length;
-		const soldiersOnly = civilians >= assessments.posture.civilianTarget || assessments.posture.raided;
+		const posture = assessments.posture;
+		const enough = civilians >= posture.civilianTarget;
+		const drafted = new Set(posture.drafted);
 		let context = null;
 		for (const trainer of world.trainers)
 		{
 			if (trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
 			const soldiers = trainer.trainable.filter(name => this.catalog.isFighter(name));
-			const civilian = !soldiersOnly && trainer.trainable.some(name => this.catalog.isCivilian(name));
-			if (soldiersOnly && !soldiers.length)
+			const civilian = !enough && !drafted.has(trainer.id) && trainer.trainable.some(name => this.catalog.isCivilian(name));
+			if (!soldiers.length && (enough || posture.allLines))
 				continue;
 			if (!civilian && soldiers.length && !context)
 				context = this.unitContext(world, assessments);

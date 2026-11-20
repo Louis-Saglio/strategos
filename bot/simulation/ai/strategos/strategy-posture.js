@@ -1,9 +1,9 @@
-import { PATIENCE_MS } from "simulation/ai/strategos/cadence.js";
+import { PATIENCE_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { arriving, covering, engagement, forecast, walkSeconds, within } from "simulation/ai/strategos/forecast.js";
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { NO_STATE } from "simulation/ai/strategos/unitstate.js";
 import { Hysteresis } from "simulation/ai/strategos/switches.js";
-import { TRAINING_BATCH, exchangeOutlook } from "simulation/ai/strategos/valuation.js";
+import { GATHER_EFFICIENCY, TRAINING_BATCH, exchangeOutlook, groupOutput } from "simulation/ai/strategos/valuation.js";
 
 export class Posture
 {
@@ -11,22 +11,23 @@ export class Posture
 	{
 		this.catalog = catalog;
 		this.plenty = new Hysteresis(false);
-		this.underThreat = new Hysteresis(false);
+		this.drafted = 0;
+		this.draftedAt = 0;
 		this.phaseWanted = 0;
 	}
 
 	save()
 	{
-		return { "plenty": this.plenty.save(), "underThreat": this.underThreat.save(), "phaseWanted": this.phaseWanted, "raidedAt": this.raidedAt,
+		return { "plenty": this.plenty.save(), "drafted": this.drafted, "draftedAt": this.draftedAt, "phaseWanted": this.phaseWanted,
 			"stance": this.stance, "blockedSince": this.blockedSince };
 	}
 
 	restore(data)
 	{
 		this.plenty.restore(data.plenty);
-		this.underThreat.restore(data.underThreat);
+		this.drafted = data.drafted;
+		this.draftedAt = data.draftedAt;
 		this.phaseWanted = data.phaseWanted;
-		this.raidedAt = data.raidedAt;
 		this.stance = data.stance;
 		this.blockedSince = data.blockedSince;
 	}
@@ -37,33 +38,91 @@ export class Posture
 		const level = this.plenty.threshold(military.plenty.enter, military.plenty.exit);
 		this.plenty.on = world.codes.every(code => world.resources[code] >= level);
 		const target = this.plenty.on ? military.civilianFloor : Math.min(military.civilianTarget, Math.round(military.civilianShare * world.populationMax));
-		const hostiles = world.threats.length + world.wild.length;
-		if (hostiles >= military.raid.hostiles && hostiles >= military.raid.share * (world.fighters.length + world.garrisonedSoldiers))
-			this.raidedAt = world.time;
-		const raided = this.raidedAt !== undefined && world.time - this.raidedAt < military.raid.memoryMs || this.threatened(world, plan);
+		const lines = this.draft(world, plan);
 		const changed = !this.stance || this.stance.civilianTarget !== target || this.stance.plentiful !== this.plenty.on ||
-			this.stance.raided !== raided;
+			this.stance.drafted.length !== lines.drafted.length || this.stance.drafted.some((id, index) => id !== lines.drafted[index]) ||
+			this.stance.allLines !== lines.allLines;
 		if (changed)
-			this.stance = Object.freeze({ "civilianTarget": target, "plentiful": this.plenty.on, "raided": raided });
+			this.stance = Object.freeze({ "civilianTarget": target, "plentiful": this.plenty.on, "drafted": lines.drafted, "allLines": lines.allLines,
+				"ready": lines.ready });
 		return { "stance": this.stance, "advancePhase": this.wantsPhase(world, plan), "changed": changed };
 	}
 
-	threatened(world, plan)
+	draft(world, plan)
 	{
-		const threat = plan.military.threat;
-		const home = world.home;
-		const ready = world.enemyFighters.filter(unit => !unit.state.working);
-		if (!home || ready.length < threat.minEnemy)
+		const lines = this.soldierLines(world);
+		const choices = lines.filter(line => line.trainer.trainable.some(name => this.catalog.isCivilian(name)));
+		const fixed = lines.filter(line => !choices.includes(line));
+		const ready = world.home ? world.enemyFighters.filter(unit => !unit.state.working) : [];
+		const held = Math.min(this.drafted, choices.length);
+		const settled = world.time - this.draftedAt >= RETRY_MS;
+		let wanted = settled ? 0 : held;
+		if (ready.length && choices.length)
 		{
-			this.underThreat.on = false;
-			return false;
+			const centre = world.home.position;
+			const enemies = arriving(this.catalog, ready, centre, new Set(), false, Infinity, true);
+			const ours = world.fighters.filter(fighter => fighter.region === world.homeRegion);
+			const close = within(ours, centre);
+			const coming = arriving(this.catalog, ours, centre, new Set(close.map(unit => unit.id)), false, Infinity, true);
+			const horizonS = enemies.reduce((last, entry) => Math.max(last, entry.seconds), 0) + plan.guard.horizonS;
+			const cover = covering(world.holders, centre, []);
+			const values = [];
+			const growths = [];
+			let best = 0;
+			for (let count = 0; count <= choices.length; ++count)
+			{
+				const outlook = forecast(engagement(this.catalog, close, [], cover, [], coming.concat(
+					this.recruits(world, centre, fixed.concat(choices.slice(0, count)), horizonS)), enemies, true),
+					{ "horizonS": horizonS, "arrivals": 1, "joinScale": 0, "handicap": 1 / plan.margin });
+				growths.push(this.growth(world, plan, choices.slice(count), horizonS, !(outlook.theirs.left > 0)));
+				values.push(outlook.theirs.value - outlook.ours.value + growths[count]);
+				if (values[count] > values[best])
+					best = count;
+			}
+			const worth = values[best] - values[held] > (plan.margin - 1) * Math.abs(growths[best] - growths[held]);
+			wanted = best !== held && worth && (best > held || settled) ? best : held;
 		}
-		const ours = world.fighters.filter(fighter => fighter.region === world.homeRegion);
-		const cover = covering(world.holders, home.position, []);
-		const outlook = forecast(engagement(this.catalog, ours, ready, cover, [], [], [], true),
-			{ "horizonS": threat.horizonS, "joinScale": 0 });
-		const ratio = outlook.theirs.value / Math.max(1, outlook.ours.value);
-		return this.underThreat.below(ratio, threat.enter, threat.exit);
+		if (wanted > held)
+			this.draftedAt = world.time;
+		this.drafted = wanted;
+		return {
+			"drafted": choices.slice(0, wanted).map(line => line.trainer.id),
+			"allLines": wanted > 0 && wanted === choices.length,
+			"ready": ready.length
+		};
+	}
+
+	growth(world, plan, lines, horizonS, stands)
+	{
+		const unpriced = {};
+		for (const code of world.codes)
+			unpriced[code] = 1;
+		const measured = groupOutput(world, unpriced, "civilian");
+		let value = 0;
+		for (const line of lines)
+		{
+			const template = this.catalog.cheapest(line.trainer.trainable, name => this.catalog.isCivilian(name));
+			const seconds = this.catalog.buildTime(template) * Math.pow(TRAINING_BATCH, line.trainer.batchTimeModifier) / TRAINING_BATCH;
+			const rate = measured !== undefined ? measured : this.civilianRate(world, plan, template);
+			for (let made = seconds; seconds > 0 && made < horizonS; made += seconds)
+				value += stands ? rate * (horizonS - made) : -this.catalog.costSum(template);
+		}
+		return value;
+	}
+
+	civilianRate(world, plan, template)
+	{
+		const rates = this.catalog.gathering(this.catalog.template(template)).rates;
+		let rate = 0;
+		for (const code of world.codes)
+		{
+			let best = 0;
+			for (const kind in rates)
+				if (kind.split(".")[0] === code)
+					best = Math.max(best, rates[kind]);
+			rate += (plan.gatherShares[code] || 0) * best;
+		}
+		return GATHER_EFFICIENCY * rate;
 	}
 
 	homeOutlook(world, plan)
