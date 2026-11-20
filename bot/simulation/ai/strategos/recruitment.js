@@ -1,14 +1,13 @@
+import { HUNTER_RATE } from "simulation/ai/strategos/economy-sites.js";
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { inTier, noting, reserving, returning, roomRequest, trainRequest } from "simulation/ai/strategos/requests.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
 import { HERO_EDGE, TECH_HORIZON_S, TRAINING_BATCH, combatRole, enemyProfile, heroWorth, populationPressure, pricedSum, resourcePrices, unitReturn, unitScore } from "simulation/ai/strategos/valuation.js";
-import { unitGroup } from "simulation/ai/strategos/yields.js";
+import { MEAT, unitGroup } from "simulation/ai/strategos/yields.js";
 
 const TRAINER_QUEUE_DEPTH = 2;
 const HERO_RETRY_MS = 120000;
 const HERO_STOCK = 2;
-const HUNTER_RATE = 2;
-const MEAT = "food.meat";
 const HUNTER_URGENCY = 1.2;
 
 export class Recruitment

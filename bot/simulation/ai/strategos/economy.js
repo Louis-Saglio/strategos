@@ -1,19 +1,17 @@
 import { Drives } from "simulation/ai/strategos/economy-drives.js";
+import { SitePlanner } from "simulation/ai/strategos/economy-planner.js";
+import { HUNTER_RATE, WORK_HORIZON_S, WorkSites } from "simulation/ai/strategos/economy-sites.js";
 import { distanceBetween, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { collect, gatherRequest, orderRequest } from "simulation/ai/strategos/requests.js";
 import { resourcePrices } from "simulation/ai/strategos/valuation.js";
-import { unitGroup } from "simulation/ai/strategos/yields.js";
+import { FOOD, MEAT, unitGroup } from "simulation/ai/strategos/yields.js";
 
 const REBALANCE_MIN_GAP = 2;
 const REBALANCE_GAP_SHARE = 0.08;
 const REBALANCE_PER_DECISION = 2;
-const HUNTER_RATE = 2;
 const SWAP_PER_DECISION = 2;
 const SWAP_REST_MS = 90000;
-const SWAP_HORIZON_S = 90;
 const SWAP_MARGIN = 0.1;
-const FOOD = "food";
-const MEAT = "food.meat";
 const RELAY_REACH = 24;
 const RELAY_WALK = 30;
 const RELAY_MEAT_SHARE = 50;
@@ -21,31 +19,39 @@ const RELAY_PER_DECISION = 4;
 
 export class Economy
 {
-	constructor(catalog, telemetry)
+	constructor(catalog, player, telemetry)
 	{
 		this.drives = new Drives(catalog, telemetry);
+		this.sites = new WorkSites();
+		this.planner = new SitePlanner(catalog, player, telemetry);
 		this.swapped = new Map();
+		this.retargeted = new Set();
 	}
 
 	save()
 	{
-		return { "drives": this.drives.save(), "swapped": this.swapped };
+		return { "drives": this.drives.save(), "sites": this.sites.save(), "planner": this.planner.save(), "swapped": this.swapped };
 	}
 
 	restore(data)
 	{
 		this.drives.restore(data.drives);
+		this.sites.restore(data.sites);
+		this.planner.restore(data.planner);
 		this.swapped = data.swapped || new Map();
 	}
 
 	settle(world, outcomes)
 	{
 		this.drives.settle(outcomes);
+		this.sites.settle(outcomes, world.time, this.retargeted);
 	}
 
 	requests(world, plan, assessments)
 	{
 		this.drives.observe(world);
+		const survey = this.sites.survey(world);
+		this.retargeted = new Set();
 		const assigned = Object.assign({}, world.gatherers);
 		const reserved = new Map();
 		const game = new Map(world.game.map(prey => [prey.id, prey]));
@@ -60,11 +66,14 @@ export class Economy
 			driving.push(...this.pickupRequests(world, plan, carcasses, reserved, busy));
 			driving.push(...this.relayRequests(world, plan, carcasses, reserved, game, busy));
 		}
+		const dropsite = this.planner.request(world, plan, assessments, survey);
 		return this.treasureRequests(world, plan, busy)
+			.concat(dropsite ? [dropsite] : [])
 			.concat(driving)
-			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy))
-			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy))
-			.concat(this.swapRequests(world, plan, busy));
+			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey))
+			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey))
+			.concat(this.swapRequests(world, plan, busy))
+			.concat(this.retargetRequests(world, plan, reserved, busy, survey));
 	}
 
 	huntRequests(world, plan, game, busy)
@@ -156,7 +165,7 @@ export class Economy
 		return requests;
 	}
 
-	gatherRequests(world, plan, assessments, assigned, reserved, game, busy)
+	gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey)
 	{
 		const requests = [];
 		const idle = world.workers.filter(worker => worker.idle && !busy.has(worker.id));
@@ -176,8 +185,8 @@ export class Economy
 				.sort((a, b) => b.rank - a.rank || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
 			for (const { code, deficit } of ranked)
 			{
-				const site = this.nearestFreeSite(world.sites[code], worker, reserved) ||
-					code === FOOD && this.nearestGame(world, worker, reserved, game);
+				const found = this.sites.best(worker, code, survey, reserved);
+				const site = found ? found.supply : code === FOOD && this.nearestGame(world, worker, reserved, game);
 				if (!site)
 					continue;
 				const drive = site.prey && game.has(site.id) && this.drives.start(world, plan, worker, game.get(site.id));
@@ -211,7 +220,7 @@ export class Economy
 		return (worker, code) => average[code] > 0 && worker.meanRates[code] > 0 ? worker.meanRates[code] / average[code] : 0.01;
 	}
 
-	rebalanceRequests(world, plan, assessments, assigned, reserved, busy)
+	rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey)
 	{
 		const requests = [];
 		const advantage = this.advantages(world);
@@ -230,18 +239,20 @@ export class Economy
 			{
 				if (worker.gathering !== surplus || moved.has(worker.id) || busy.has(worker.id) || !worker.gatherTypes.includes(deficit))
 					continue;
-				const site = this.nearestFreeSite(world.sites[deficit], worker, reserved);
-				if (!site)
+				const found = this.sites.best(worker, deficit, survey, reserved);
+				if (!found)
 					continue;
-				const distance = squareDistance(site.position, worker.position);
+				const site = found.supply;
+				const lost = worker.carried > 0 && worker.carriedType !== deficit ? 1 : 0;
 				const gain = advantage(worker, deficit) - advantage(worker, surplus);
-				if (!best || gain > best.gain || (gain === best.gain && (distance < best.distance ||
-				    (distance === best.distance && worker.id < best.worker.id))))
-					best = { worker, site, distance, gain };
+				if (!best || gain > best.gain || gain === best.gain && (lost < best.lost || lost === best.lost && (found.score > best.score ||
+				    found.score === best.score && worker.id < best.worker.id)))
+					best = { worker, site, "score": found.score, lost, gain };
 			}
 			if (!best)
 				break;
 			moved.add(best.worker.id);
+			busy.add(best.worker.id);
 			reserved.set(best.site.id, (reserved.get(best.site.id) || 0) + 1);
 			assigned[surplus] -= 1;
 			assigned[deficit] += 1;
@@ -281,7 +292,7 @@ export class Economy
 				const after = worth(civilian.kind, soldier) + worth(soldier.kind, civilian);
 				const walk = distanceBetween(soldier.position, civilian.position);
 				const cost = walk / Math.max(1, soldier.profile.speed) * worth(soldier.kind, soldier) + walk / Math.max(1, civilian.profile.speed) * worth(civilian.kind, civilian);
-				const gain = (after - before) * SWAP_HORIZON_S - cost;
+				const gain = (after - before) * WORK_HORIZON_S - cost;
 				if (after > (1 + SWAP_MARGIN) * before && gain > 0 && (!best || gain > best.gain || gain === best.gain && civilian.id < best.civilian.id))
 					best = { civilian, gain };
 			}
@@ -296,6 +307,37 @@ export class Economy
 			}
 			requests.push(gatherRequest("economy", "swap", soldier.id, civilian.target, civilian.gathering, plan.values.rebalance, 1));
 			requests.push(gatherRequest("economy", "swap", civilian.id, soldier.target, soldier.gathering, plan.values.rebalance, 1));
+		}
+		return requests;
+	}
+
+	retargetRequests(world, plan, reserved, busy, survey)
+	{
+		const requests = [];
+		for (const worker of world.workers)
+		{
+			if (busy.has(worker.id) || !this.sites.free(worker) || this.sites.resting(worker, world.time))
+				continue;
+			const current = this.sites.current(worker, survey);
+			if (!current)
+				continue;
+			const better = this.sites.best(worker, worker.gathering, survey, reserved, worker.target);
+			if (!better || better.score < plan.margin * current.score)
+			{
+				if (!worker.state.hauling)
+					this.sites.accept(worker);
+				continue;
+			}
+			busy.add(worker.id);
+			reserved.set(better.supply.id, (reserved.get(better.supply.id) || 0) + 1);
+			if (current.front && current.front !== better.front)
+				current.front.crowd -= 1;
+			if (better.front && current.front !== better.front)
+				better.front.crowd += 1;
+			survey.holders.set(worker.target, (survey.holders.get(worker.target) || 1) - 1);
+			const request = gatherRequest("economy", "retarget", worker.id, better.supply.id, worker.gathering, plan.values.rebalance, 1);
+			this.retargeted.add(request);
+			requests.push(request);
 		}
 		return requests;
 	}
@@ -320,25 +362,5 @@ export class Economy
 			}
 		}
 		return best && Object.assign({ "prey": true }, best);
-	}
-
-	nearestFreeSite(sites, worker, reserved)
-	{
-		let best = null;
-		let bestDistance = Infinity;
-		for (const site of sites)
-		{
-			if (site.gatherers + (reserved.get(site.id) || 0) >= site.capacity || !(worker.profile.rates[site.kind] > 0) ||
-			    site.region >= 2 && site.region !== worker.region || site.armed && !worker.soldier ||
-			    site.prey && worker.profile.rates[site.kind] < HUNTER_RATE)
-				continue;
-			const distance = distanceBetween(site.position, worker.position) + 2 * site.anchorDistance;
-			if (distance < bestDistance)
-			{
-				best = site;
-				bestDistance = distance;
-			}
-		}
-		return best;
 	}
 }

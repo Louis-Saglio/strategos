@@ -1,11 +1,10 @@
 import { REPORT_MS, RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { awayFrom, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
-import { Placement } from "simulation/ai/strategos/placement.js";
+import { BUILDING_MARGIN, Placement } from "simulation/ai/strategos/placement.js";
 import { rankedSites } from "simulation/ai/strategos/sites.js";
 import { Retry } from "simulation/ai/strategos/switches.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
 
-const BUILDING_MARGIN = 3;
 const TIGHT_MARGIN = 1;
 const FINE_STEP = 3;
 const CRAMPED_MEMORY_MS = 60000;
@@ -14,17 +13,6 @@ const HOUSE_RING_WIDTH = 120;
 const CENTRE_CLEARANCE = 8;
 const KEEP_AWAY = { "food": 10, "wood": 6, "stone": 14, "metal": 14 };
 const SAME_TYPE_KEEP_AWAY = 3;
-const DROPSITE_REACH = 28;
-const CLUSTER_RADIUS = 20;
-const DROPSITE_SEARCH = 160;
-const DROPSITE_DISTANCE_BIAS = 40;
-const DROPSITE_CELLS_TRIED = 4;
-const HAUL_CELL = 16;
-const HAUL_FAR = 50;
-const HAUL_SITES_TRIED = 4;
-const HAUL_SEARCH = 40;
-const HAUL_HORIZON_S = 240;
-export const HAUL_RETURN = 1.5;
 const FARMSTEAD_SEARCH = { "from": 30, "to": 110 };
 const SETTLEMENT_SPACING_MARGIN = 10;
 const SETTLEMENT_TRIES = 6;
@@ -197,171 +185,6 @@ export class Siting
 		return placement.around(centre.position, centre.radius + FARMSTEAD_SEARCH.from, centre.radius + FARMSTEAD_SEARCH.to,
 			this.catalog.footprint(template), 2 * this.halfSize(farm) * 0.75, this.reserved(world),
 			this.resourceZones(world, null));
-	}
-
-	cluster(world, placement, code, template)
-	{
-		const sites = world.sites[code].filter(site => isFinite(site.amount));
-		if (!sites.length || Math.min(...sites.map(site => site.anchorDistance)) <= DROPSITE_REACH)
-			return null;
-		const half = this.halfSize(template);
-		const zones = this.resourceZones(world, code).concat(this.farmBelts(world));
-		const reserved = this.reserved(world);
-		for (const centre of this.richestCells(world, code).concat([this.densest(sites).position]))
-		{
-			const site = placement.around(centre, half + SAME_TYPE_KEEP_AWAY, half + CLUSTER_RADIUS,
-				this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
-			if (site)
-				return site;
-		}
-		return null;
-	}
-
-	richestCells(world, code)
-	{
-		const grid = world.wealth;
-		const totals = grid.totals[code];
-		const weighted = grid.weighted[code];
-		if (!totals || !weighted)
-			return [];
-		const home = world.home.position;
-		const served = world.anchors.filter(anchor => anchor.types.includes(code));
-		const cells = [];
-		for (let index = 0; index < totals.length; ++index)
-		{
-			const amount = totals[index];
-			if (!(amount > 0))
-				continue;
-			const position = [weighted[2 * index] / amount, weighted[2 * index + 1] / amount];
-			const distance = distanceBetween(position, home);
-			if (distance > DROPSITE_SEARCH || territoryAt(world.grids.territory, position[0], position[1]).owner !== this.player ||
-			    served.some(anchor => squareDistance(anchor.position, position) <= DROPSITE_REACH * DROPSITE_REACH))
-				continue;
-			cells.push({ position, "score": amount / (distance + DROPSITE_DISTANCE_BIAS), index });
-		}
-		cells.sort((a, b) => b.score - a.score || a.index - b.index);
-		return cells.slice(0, DROPSITE_CELLS_TRIED).map(cell => cell.position);
-	}
-
-	densest(sites)
-	{
-		const limit = CLUSTER_RADIUS * CLUSTER_RADIUS;
-		let best = sites[0];
-		let bestCount = -1;
-		for (const site of sites)
-		{
-			let count = 0;
-			for (const other of sites)
-				if (squareDistance(site.position, other.position) <= limit)
-					count += 1;
-			if (count > bestCount)
-			{
-				best = site;
-				bestCount = count;
-			}
-		}
-		return best;
-	}
-
-	haulers(world, code)
-	{
-		const haulers = [];
-		for (const worker of world.workers)
-		{
-			if (worker.gathering !== code || !worker.targetPosition || !(worker.haul > HAUL_FAR))
-				continue;
-			const rate = worker.profile.rates[worker.kind] || 0;
-			const capacity = worker.profile.capacities[code] || 0;
-			if (rate > 0 && capacity > 0 && worker.profile.speed > 0)
-				haulers.push({ "target": worker.targetPosition, "haul": worker.haul, "rate": rate, "fill": capacity / rate,
-					"speed": worker.profile.speed });
-		}
-		return haulers;
-	}
-
-	haulGain(haulers, position, radius)
-	{
-		let gain = 0;
-		let output = 0;
-		let gatherers = 0;
-		for (const hauler of haulers)
-		{
-			const next = Math.max(0, distanceBetween(hauler.target, position) - radius);
-			if (next >= hauler.haul)
-				continue;
-			const working = distance => hauler.fill / (hauler.fill + 2 * distance / hauler.speed);
-			gain += hauler.rate * (working(next) - working(hauler.haul));
-			output += hauler.rate * working(next);
-			gatherers += 1;
-		}
-		return { gain, output, gatherers };
-	}
-
-	wealthNear(world, code, position)
-	{
-		const grid = world.wealth;
-		const totals = grid.totals[code];
-		const weighted = grid.weighted[code];
-		if (!totals || !weighted)
-			return 0;
-		const reach = (HAUL_SEARCH + DROPSITE_REACH) * (HAUL_SEARCH + DROPSITE_REACH);
-		const i0 = Math.floor(position[0] / grid.cellSize);
-		const j0 = Math.floor(position[1] / grid.cellSize);
-		let wealth = 0;
-		for (let j = Math.max(0, j0 - 2); j <= Math.min(grid.height - 1, j0 + 2); ++j)
-			for (let i = Math.max(0, i0 - 2); i <= Math.min(grid.width - 1, i0 + 2); ++i)
-			{
-				const index = i + j * grid.width;
-				const amount = totals[index];
-				if (amount > 0 && squareDistance([weighted[2 * index] / amount, weighted[2 * index + 1] / amount], position) <= reach)
-					wealth += amount;
-			}
-		return wealth;
-	}
-
-	relief(world, placement, code, template)
-	{
-		const haulers = this.haulers(world, code);
-		if (!haulers.length)
-			return null;
-		const cells = new Map();
-		for (const hauler of haulers)
-		{
-			const key = Math.floor(hauler.target[0] / HAUL_CELL) + "," + Math.floor(hauler.target[1] / HAUL_CELL);
-			if (!cells.has(key))
-				cells.set(key, { "x": 0, "z": 0, "count": 0 });
-			const cell = cells.get(key);
-			cell.x += hauler.target[0];
-			cell.z += hauler.target[1];
-			cell.count += 1;
-		}
-		const cost = this.catalog.costSum(template);
-		const centres = [...cells.values()]
-			.map((cell, index) => {
-				const position = [cell.x / cell.count, cell.z / cell.count];
-				return { position, index, "gain": this.haulGain(haulers, position, 0).gain };
-			})
-			.filter(centre => centre.gain * HAUL_HORIZON_S >= HAUL_RETURN * cost)
-			.sort((a, b) => b.gain - a.gain || a.index - b.index)
-			.slice(0, HAUL_SITES_TRIED);
-		if (!centres.length)
-			return null;
-		const half = this.halfSize(template);
-		const zones = this.resourceZones(world, code);
-		const reserved = this.reserved(world);
-		for (const centre of centres)
-		{
-			const site = placement.around(centre.position, half + SAME_TYPE_KEEP_AWAY, half + HAUL_SEARCH,
-				this.catalog.footprint(template), BUILDING_MARGIN, reserved, zones);
-			if (!site)
-				continue;
-			const { gain, output, gatherers } = this.haulGain(haulers, [site.x, site.z], half);
-			const lasting = Math.min(HAUL_HORIZON_S, this.wealthNear(world, code, [site.x, site.z]) / Math.max(0.1, output));
-			const payback = gain * lasting / cost;
-			if (payback >= HAUL_RETURN)
-				return { template, site, gain, payback, gatherers };
-		}
-		return null;
 	}
 
 	settlement(world, plan, template, home, reach, region)

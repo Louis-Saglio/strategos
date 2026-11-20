@@ -2,6 +2,7 @@ import { GRANTED } from "simulation/ai/strategos/allocator.js";
 import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { awayFrom, direction, distanceBetween, toward } from "simulation/ai/strategos/geometry.js";
 import { attack, gatherRequest, hold, huntPurpose, orderRequest, walkTo } from "simulation/ai/strategos/requests.js";
+import { FOOD } from "simulation/ai/strategos/yields.js";
 
 const ARRIVAL = 8;
 const MIN_GAIN_S = 5;
@@ -29,7 +30,6 @@ const TIMING_MARGIN_MS = 200;
 const KILL_MARGIN = 0.85;
 const FIGHT_SHARE = 0.5;
 const SPENT_MS = 60000;
-const FOOD = "food";
 
 export class Drives
 {

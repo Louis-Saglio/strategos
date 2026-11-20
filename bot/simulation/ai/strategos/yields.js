@@ -1,7 +1,7 @@
 import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 
-const MEAT = "food.meat";
-const FOOD = "food";
+export const MEAT = "food.meat";
+export const FOOD = "food";
 const MEMORY = 0.5;
 const MEASURED_S = 120;
 const FISH = "food.fish";

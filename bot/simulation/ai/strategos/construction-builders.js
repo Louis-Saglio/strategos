@@ -1,9 +1,7 @@
+import { SECONDS_PER_BUILDER, crewOf, crewSize, crewWanted } from "simulation/ai/strategos/crews.js";
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
 import { deleteRequest, noting, repairRequest } from "simulation/ai/strategos/requests.js";
 
-const SECONDS_PER_BUILDER = 25;
-const MAX_BUILDERS = 6;
-const WONDER_BUILDERS = 20;
 const STALLED_MS = 150000;
 const UNSTARTED_GRACE_MS = 30000;
 const ABANDONED_MEMORY_MS = 600000;
@@ -35,34 +33,17 @@ export class Builders
 
 	wanted(world, template)
 	{
-		if (!world.centres.length && this.catalog.isSettlement(template))
-			return world.workers.length;
-		const limit = this.catalog.isWonder(template) ? WONDER_BUILDERS : MAX_BUILDERS;
-		return Math.max(1, Math.min(limit, Math.ceil(this.catalog.buildTime(template) / SECONDS_PER_BUILDER)));
-	}
-
-	party(world, template)
-	{
-		const wanted = this.wanted(world, template);
-		return world.centres.length ? Math.min(MAX_BUILDERS, wanted) : wanted;
+		return crewWanted(world, this.catalog, template);
 	}
 
 	crew(world, template, site)
 	{
-		return this.pick(world, template, [site.x, site.z], this.party(world, template));
+		return this.pick(world, template, [site.x, site.z], crewSize(world, this.catalog, template));
 	}
 
 	pick(world, template, position, count, taken)
 	{
-		const region = world.regionOf(position);
-		return world.workers
-			.filter(worker => (taken ? worker.buildable.length > 0 : worker.buildable.includes(template)) &&
-				!worker.state.repairing && !worker.state.fighting &&
-				!(taken && taken.has(worker.id)) && (region < 2 || worker.region === region))
-			.map(worker => ({ "id": worker.id, "armed": worker.soldier ? 1 : 0, "distance": squareDistance(worker.position, position) }))
-			.sort((a, b) => a.armed - b.armed || a.distance - b.distance || a.id - b.id)
-			.slice(0, count)
-			.map(worker => worker.id);
+		return crewOf(world, template, position, count, taken);
 	}
 
 	underWay(world, foundation)

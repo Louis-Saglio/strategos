@@ -6,6 +6,7 @@ const STATE_FLAGS = {
 	"garrisoning": ["GARRISON"],
 	"gathering": ["GATHER"],
 	"returning": ["RETURNRESOURCE"],
+	"hauling": ["RETURNINGRESOURCE", "RETURNRESOURCE"],
 	"repairing": ["REPAIR"],
 	"working": ["GATHER", "RETURNRESOURCE", "REPAIR", "GARRISON"],
 	"collecting": ["COLLECTTREASURE"],

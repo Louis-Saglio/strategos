@@ -2,6 +2,7 @@ import { TERRITORY_BLINKING_MASK } from "simulation/ai/strategos/rules.js";
 import { territoryCell } from "simulation/ai/strategos/terrain.js";
 import { underFire } from "simulation/ai/strategos/fire.js";
 
+export const BUILDING_MARGIN = 3;
 const RING_STEP = 4;
 const ARC_STEP = 4;
 const MAX_CANDIDATES = 2000;

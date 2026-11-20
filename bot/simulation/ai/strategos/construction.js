@@ -1,13 +1,11 @@
 import { centroid } from "simulation/ai/strategos/geometry.js";
 import { Builders } from "simulation/ai/strategos/construction-builders.js";
-import { COLONY, COLONY_DOCK, DROPSITES, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, fieldReturn, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
-import { HAUL_RETURN, Siting } from "simulation/ai/strategos/construction-siting.js";
+import { COLONY, COLONY_DOCK, FARMSTEAD, FIELDS, FOUNDING, NEEDS, PLAN_NEEDS, SETTLEMENT_MAX_DISTANCE, SHORT_URGENCY, coming, fieldReturn, hunger, isSettlement, landCheapest, landed, obtainable } from "simulation/ai/strategos/construction-needs.js";
+import { Siting } from "simulation/ai/strategos/construction-siting.js";
 import { Placement } from "simulation/ai/strategos/placement.js";
 import { buildRequest, fundRequest, inTier, noting, returning } from "simulation/ai/strategos/requests.js";
 import { Change } from "simulation/ai/strategos/switches.js";
 
-const DROPSITE_MIN_GATHERERS = 3;
-const HAUL_MAX_URGENCY = 3;
 
 export class Construction
 {
@@ -19,10 +17,8 @@ export class Construction
 		this.builders = new Builders(catalog, telemetry);
 		this.siting = new Siting(catalog, player, telemetry, this.builders);
 		this.reports = new Map();
-		this.relieved = new Change();
 		this.decisions = new Map([
 			[FIELDS, context => this.fieldRequest(context)],
-			[DROPSITES, context => this.dropsiteRequest(context)],
 			[COLONY, context => this.colonyRequest(context)]
 		]);
 	}
@@ -30,7 +26,7 @@ export class Construction
 	save()
 	{
 		return { "builders": this.builders.save(), "siting": this.siting.save(),
-			"reports": [...this.reports].map(([need, change]) => [need.purpose, change.save()]), "relieved": this.relieved.save() };
+			"reports": [...this.reports].map(([need, change]) => [need.purpose, change.save()]) };
 	}
 
 	restore(data, context)
@@ -43,7 +39,6 @@ export class Construction
 			change.restore(value);
 			return [known.get(key), change];
 		}));
-		this.relieved.restore(data.relieved);
 	}
 
 	requests(world, plan, assessments)
@@ -136,40 +131,6 @@ export class Construction
 			return farmstead;
 		const far = this.siting.field(world, placement, fields.farm, false);
 		return far ? farm(far) : null;
-	}
-
-	dropsiteRequest(context)
-	{
-		const { world, plan, assessments, placement } = context;
-		const total = world.workers.length;
-		let best = null;
-		for (const code of world.codes)
-		{
-			const serves = name => this.catalog.dropsiteTypes(name).includes(code) && !this.catalog.isFarm(name);
-			if (coming(world, serves))
-				continue;
-			const template = landCheapest(context, serves);
-			if (!template)
-				continue;
-			const relief = this.siting.relief(world, placement, code, template);
-			if (relief && (!best || relief.payback > best.payback))
-				best = relief;
-			if (relief || assessments.gatherShares[code] * total < DROPSITE_MIN_GATHERERS)
-				continue;
-			const site = this.siting.cluster(world, placement, code, template);
-			if (site)
-				return this.construct(world, "dropsite", template, site, plan.values.investment, 1);
-		}
-		if (!best)
-			return null;
-		const request = this.construct(world, "haul-dropsite", best.template, best.site, plan.values.investment,
-			Math.min(HAUL_MAX_URGENCY, best.payback / HAUL_RETURN));
-		if (!request)
-			return null;
-		if (this.relieved.to(best.site.x + "," + best.site.z))
-			this.telemetry.line("BUILD", world.time, { "haul": best.template, "x": Math.round(best.site.x), "z": Math.round(best.site.z),
-				"gatherers": best.gatherers, "gain": Math.round(best.gain * 100) / 100, "payback": Math.round(best.payback * 100) / 100 });
-		return returning(inTier(request, "production"), best.payback);
 	}
 
 	colonyRequest(context)

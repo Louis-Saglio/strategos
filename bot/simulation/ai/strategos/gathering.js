@@ -20,6 +20,13 @@ export function reachOf(range, targetHalf)
 	return targetHalf + 2 * (range + UNIT_CLEARANCE);
 }
 
+export function diminished(rate, diminishing, gatherers)
+{
+	if (!(diminishing > 0) || diminishing === 1 || gatherers <= 1)
+		return rate;
+	return rate * (1 - Math.pow(diminishing, gatherers)) / ((1 - diminishing) * gatherers);
+}
+
 export function loadCycle(rate, capacity, speed, haul, reach, crowd)
 {
 	if (!(rate > 0) || !(capacity > 0))

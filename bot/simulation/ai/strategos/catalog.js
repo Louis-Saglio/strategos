@@ -4,6 +4,8 @@ const FIXED_AURA_RADIUS = 100;
 const FIXED_AURA_SHARE = 0.5;
 const OWN_AURA_PLAYERS = ["Player", "Ally", "MutualAlly"];
 
+export const TERRITORY_PATH = "TerritoryInfluence/Radius";
+
 export class Catalog
 {
 	constructor(gameState)

@@ -1,4 +1,4 @@
-import { loadCycle, reachOf } from "simulation/ai/strategos/gathering.js";
+import { halfSizeOf, loadCycle, reachOf } from "simulation/ai/strategos/gathering.js";
 import { landRegionNear } from "simulation/ai/strategos/terrain.js";
 
 const SUPPLY_CELL = 8;
@@ -73,6 +73,8 @@ export class SupplyIndex
 			"region": landRegionNear(gameState.sharedScript.accessibility, position),
 			"max": ent.resourceSupplyMax(),
 			"capacity": ent.maxGatherers() || 1,
+			"half": halfSizeOf(ent),
+			"diminishing": +(ent.get("ResourceSupply/DiminishingReturns") || 0),
 			"cell": cellKey(i, j)
 		});
 		this.supplies.set(id, supply);
@@ -203,7 +205,8 @@ function coverage(gameState, player, index, anchors, reach)
 				if (!state)
 					continue;
 				supplies.push(Object.freeze({ "id": supply.id, "kind": supply.kind, "position": supply.position, "region": supply.region,
-					"distance": distance, "amount": state.amount, "gatherers": state.gatherers, "capacity": supply.capacity }));
+					"distance": distance, "amount": state.amount, "gatherers": state.gatherers, "capacity": supply.capacity, "half": supply.half,
+					"diminishing": supply.diminishing }));
 				if (isFinite(state.amount))
 					stock += state.amount;
 				slots += supply.capacity;

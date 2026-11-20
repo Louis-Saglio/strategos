@@ -1,3 +1,4 @@
+import { TERRITORY_PATH } from "simulation/ai/strategos/catalog.js";
 import { centroid, distanceBetween, squareDistance } from "simulation/ai/strategos/geometry.js";
 import { HERO_EDGE, POPULATION_PRICE, TECH_HORIZON_S, auraBenefit, effectBenefit, groupOutput, heroWorth, enemyProfile, exchangeOutlook, populationPressure, pricedSum, productionFlow, resourcePrices, techBenefit, unitStrength } from "simulation/ai/strategos/valuation.js";
 
@@ -262,8 +263,6 @@ function hungerUrgency(context)
 	return hunger(context).urgency;
 }
 
-export const DROPSITES = Object.freeze({ "decision": "dropsites" });
-
 const BARRACKS = buildingNeed("barracks", { "fits": trainsWorkers, "template": barracksTemplate, "ready": recruitsFlow, "site": ring,
 	"value": "support" });
 
@@ -298,7 +297,6 @@ function worksReturn(context, template)
 }
 
 const WORKER_RATE = 0.5;
-const TERRITORY_PATH = "TerritoryInfluence/Radius";
 const TERRITORY_VALUE = 5000;
 
 function bestWorks(context)
@@ -714,5 +712,5 @@ function foundingSite(context, template)
 
 export const PLAN_NEEDS = Object.freeze({ "slot": "plans" });
 
-export const NEEDS = Object.freeze([HOUSE, FIELDS, DROPSITES, BARRACKS, WORKS, PHASE_BUILDING, SIEGE_WORKSHOP, MARKET, EXPANSION, OUTPOST, DOCK,
+export const NEEDS = Object.freeze([HOUSE, FIELDS, BARRACKS, WORKS, PHASE_BUILDING, SIEGE_WORKSHOP, MARKET, EXPANSION, OUTPOST, DOCK,
 	SHIPYARD, PLAN_NEEDS, ELITE, TRADE_POST, COLONY, FORWARD_BASE]);

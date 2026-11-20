@@ -5,3 +5,4 @@ export const TRADE_GAIN_DISTANCE = 100;
 export const TRADE_GAIN_MAP = 1024;
 export const TRADE_GAIN_DAMPING = 0.25;
 export const UNIT_CLEARANCE = 0.8;
+export const FOUNDATION_TIME_MODIFIER = 0.7;
