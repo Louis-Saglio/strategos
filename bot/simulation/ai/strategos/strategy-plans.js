@@ -14,8 +14,6 @@ const BASE = {
 	"gatherShares": { "food": 0.5, "wood": 0.35, "stone": 0.05, "metal": 0.1 },
 	"labour": { "smoothing": 0.1, "starvedMin": 4, "starvedShare": 0.12, "scarceWealth": 3000, "scarceCodes": ["wood", "stone", "metal"],
 		"tradeScarceWealth": 3000, "tradeScarceCodes": ["stone", "metal"] },
-	"military": { "civilianTarget": 80, "civilianShare": 0.4, "civilianFloor": 15,
-		"plenty": { "enter": 8000, "exit": 3000 } },
 	"phaseUpPopulation": { "2": 120, "3": 150 },
 	"surplusPhaseFrom": 3,
 	"blockedGrowth": { "room": 1 },

@@ -37,7 +37,7 @@ export class Strategy
 		const selected = this.plans.select(Object.assign({ "wildMeat": wildMeat }, world.context));
 		const plan = this.plans.table;
 		const posture = this.posture.assess(world, plan);
-		const labour = this.labour.assess(world, plan, posture.stance.civilianTarget);
+		const labour = this.labour.assess(world, plan, posture.stance.drafted);
 		const guard = this.guard.assess(world, plan);
 		const expansion = this.expansion.assess(world, plan, labour);
 		this.selected = selected;

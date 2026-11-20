@@ -285,7 +285,7 @@ function recruitsFlow(context, template)
 	if (!recruit)
 		return false;
 	const cost = catalog.cost(recruit);
-	const busy = productionFlow(world, catalog, assessments.posture.civilianTarget);
+	const busy = productionFlow(world, catalog, assessments.posture.drafted);
 	return !world.codes.some(code => cost[code] > 0 && world.demand.income[code] <= busy[code]);
 }
 

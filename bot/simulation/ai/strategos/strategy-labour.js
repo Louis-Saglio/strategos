@@ -35,14 +35,14 @@ export class Labour
 		this.traded = data.traded;
 	}
 
-	assess(world, plan, civilianTarget)
+	assess(world, plan, soldierLines)
 	{
 		const labour = plan.labour;
 		if (!this.seeded || this.codes.some(code => (plan.gatherShares[code] || 0) !== this.seeded[code]))
 			this.seed(plan.gatherShares);
 		let changed = false;
 		if (world.demand.observed)
-			changed = this.adaptShares(world, civilianTarget);
+			changed = this.adaptShares(world, soldierLines);
 		const total = world.labour;
 		for (const code of this.codes)
 			this.gap[code] += labour.smoothing * (this.shares[code] * total - world.gatherers[code] - this.gap[code]);
@@ -89,11 +89,11 @@ export class Labour
 		return codes.filter(code => this.codes.includes(code) && world.regionWealth(world.homeRegion, code) + world.resources[code] < wealth);
 	}
 
-	adaptShares(world, civilianTarget)
+	adaptShares(world, soldierLines)
 	{
 		const weights = {};
 		let total = 0;
-		const planned = productionFlow(world, this.catalog, civilianTarget);
+		const planned = productionFlow(world, this.catalog, soldierLines);
 		for (const code of this.codes)
 		{
 			const flow = Math.max(world.demand.spendRate[code], planned[code]) * DEMAND_HORIZON_S;

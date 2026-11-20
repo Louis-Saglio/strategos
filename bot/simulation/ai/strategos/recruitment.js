@@ -225,9 +225,7 @@ export class Recruitment
 	unitRequests(world, plan, assessments)
 	{
 		const requests = [];
-		const civilians = world.workers.filter(worker => !worker.soldier).length;
 		const posture = assessments.posture;
-		const enough = civilians >= posture.civilianTarget;
 		const drafted = new Set(posture.drafted);
 		let context = null;
 		for (const trainer of world.trainers)
@@ -235,8 +233,8 @@ export class Recruitment
 			if (trainer.queueLength >= TRAINER_QUEUE_DEPTH)
 				continue;
 			const soldiers = trainer.trainable.filter(name => this.catalog.isFighter(name));
-			const civilian = !enough && !drafted.has(trainer.id) && trainer.trainable.some(name => this.catalog.isCivilian(name));
-			if (!soldiers.length && (enough || posture.allLines))
+			const civilian = !drafted.has(trainer.id) && trainer.trainable.some(name => this.catalog.isCivilian(name));
+			if (!soldiers.length && posture.allLines)
 				continue;
 			if (!civilian && soldiers.length && !context)
 				context = this.unitContext(world, assessments);
@@ -287,7 +285,7 @@ export class Recruitment
 		return {
 			"enemy": enemyProfile(world, this.catalog),
 			"prices": resourcePrices(world),
-			"pressure": assessments.posture.plentiful ? 1 : populationPressure(world),
+			"pressure": assessments.posture.saturated ? 1 : populationPressure(world),
 			counts,
 			roles,
 			armySize

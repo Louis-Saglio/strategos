@@ -19,16 +19,14 @@ const PRICE_FLOOR = 0.1;
 
 export const TRAINING_BATCH = 5;
 
-export function productionFlow(world, catalog, civilianTarget)
+export function productionFlow(world, catalog, soldierLines)
 {
 	const flow = {};
 	for (const code of world.codes)
 		flow[code] = 0;
-	const civilians = world.workers.filter(worker => !worker.soldier).length < civilianTarget;
 	for (const trainer of world.trainers)
 	{
-		const settlement = catalog.isSettlement(trainer.template);
-		const civilian = settlement && civilians && trainer.trainable.some(name => catalog.isCivilian(name));
+		const civilian = !soldierLines.includes(trainer.id) && trainer.trainable.some(name => catalog.isCivilian(name));
 		const wanted = name => civilian ? catalog.isCivilian(name) : catalog.isFighter(name);
 		const cheapest = catalog.cheapest(trainer.trainable, wanted);
 		if (!cheapest)
