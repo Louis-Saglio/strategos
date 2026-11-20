@@ -17,6 +17,7 @@ Development tooling for Strategos. Not part of the bot.
 | `identity.py` + `identity.jsonl` | the identity set: play a fixed list of short games, compare two plays command by command, list the kinds of request (source and purpose) the set grants |
 | `timeline.py` | per game of a batch, any number of players: population, gathered, military of every team at given minutes, the bot's launches and returns |
 | `gather.py` | where the gatherers' time goes, from the harness gather census: gathering, walking to the resource and back, distance from resource to dropsite, per AI, unit group and resource kind |
+| `woodline.py` | fit the constants of the bot's gatherer throughput model (`gathering.js`) on the woodline scenario |
 | `viz.py` + `vizmod/` | replay a recorded match in the GUI and capture camera-directed frames |
 | `frames.py` | contact sheets / time-lapse from `viz.py` frames |
 | `mapview.py` | top-down map pictures from the harness map snapshots (no GPU) |
@@ -495,11 +496,14 @@ tree nearest the storehouse once; the engine spreads them) or managed by
 the trigger script (each its own tree, the nearest to the storehouse
 holding fewer than `cap` gatherers; a gatherer walking back to the
 storehouse whose tree is gone or lies more than 3 m farther than the
-best free tree is given that tree, which costs no walk). The lists
-(`WOOD_CASES` in `strategos_woodline_triggers.js`): `n` (5, 10, 20, 40
-gatherers on one storehouse touching the forest, by each policy), `d`
-(10 managed gatherers, gap 3 to 90 m), `c` (20 managed gatherers at most
-1 to 8 per tree, and 20 at a 15 m gap by each policy). `[WOODLINE] result` gives the wood per gatherer per second; the
+best free tree is given that tree, which costs no walk). A case may put
+a second civic centre of the player's civ where the storehouse would be.
+The lists (`WOOD_CASES` in `strategos_woodline_triggers.js`): `n` (5, 10,
+20, 40 gatherers on one storehouse touching the forest, by each policy),
+`d` (10 managed gatherers, gap 3 to 90 m), `c` (20 managed gatherers at
+most 1 to 8 per tree, and 20 at a 15 m gap by each policy), `p` (10 to 60
+gatherers on a civic centre touching the forest, against 30 and 60 on a
+storehouse). `[WOODLINE] result` gives the wood per gatherer per second; the
 gather census gives each case's phases. A game is the whole list (8
 players, about 20 s of wall time). Run with `-l 6 -R 0` on 384 tiles:
 
@@ -507,6 +511,21 @@ players, about 20 s of wall time). Run with `-l 6 -R 0` on 384 tiles:
 P=""; for i in 1 2 3 4 5 6 7 8; do P="$P -p none:*"; done
 tools/run.sh -l 6 -R 0 $P -M random/strategos_woodline_n -s 384 -b '*' -H local OUTDIR 1-3
 ```
+
+### woodline.py — the constants of the gatherer's throughput model
+
+```sh
+tools/woodline.py BATCH... [--all]
+```
+
+Fits `LOAD_OVERHEAD_S`, `CROWD_FREE` and `CROWD_COST_S` of
+`bot/simulation/ai/strategos/gathering.js` on batches of the woodline
+scenario: a load takes capacity / rate, plus the overhead, plus the walk
+both ways of the haul less the reach (the tree's half-size and twice the
+gather range plus the unit's clearance: 6.4 m), plus the crowd cost for each
+gatherer beyond `CROWD_FREE` on the same front. Least squares on a grid, on
+the managed cases (`--all`: every case); prints the constants and every
+case's measured and predicted output.
 
 ### gather.py — where the gatherers' time goes
 

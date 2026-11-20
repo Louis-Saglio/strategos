@@ -28,17 +28,21 @@
  *            choosing that lies more than WOOD_MARGIN m farther than the
  *            best is given the best.
  * The map name selects the list of cases (WOOD_CASES, one per player id;
- * a player with no case gets nothing).
+ * a player with no case gets nothing). A case is [policy, gatherers, gap,
+ * cap] and, optionally, the dropsite: `storehouse` (the default) or
+ * `civil_centre`, a second civic centre of the player's civ set where the
+ * storehouse would be, to see how the size of the dropsite changes what a
+ * crowd costs.
  *
  * stdout protocol:
- *   [WOODLINE] start {"player", "policy", "gatherers", "gap", "cap", "trees", "wood", "measuredGap"}
- *     measuredGap: the obstruction distance from the storehouse to the
- *     nearest tree.
+ *   [WOODLINE] start {"player", "policy", "gatherers", "gap", "cap", "dropsite", "perimeter", "trees", "wood", "measuredGap"}
+ *     perimeter: of the dropsite's obstruction, in metres; measuredGap: the
+ *     obstruction distance from the dropsite to the nearest tree.
  *   [WOODLINE] tick {"t", "player", "wood", "haul"}
  *     every WOOD_REPORT_MS: wood gathered by the player since the start
  *     (statistics tracker), and the mean obstruction distance from the
  *     storehouse to the trees its gatherers hold.
- *   [WOODLINE] result {"t", "player", "policy", "gatherers", "gap", "cap", "wood", "perGatherer", "orders"}
+ *   [WOODLINE] result {"t", "player", "policy", "gatherers", "gap", "cap", "dropsite", "wood", "perGatherer", "orders"}
  *     at WOOD_START_MS + WOOD_DURATION_MS: wood gathered in the case's
  *     time and per gatherer per second, the orders the policy gave.
  * The harness gather census (`[HARNESS] gather`) gives each player's
@@ -63,7 +67,10 @@ const WOOD_CASES = {
 	"d": [["managed", 10, 3, 2], ["managed", 10, 8, 2], ["managed", 10, 15, 2], ["managed", 10, 25, 2],
 		["managed", 10, 35, 2], ["managed", 10, 50, 2], ["managed", 10, 70, 2], ["managed", 10, 90, 2]],
 	"c": [["managed", 20, 3, 1], ["managed", 20, 3, 2], ["managed", 20, 3, 3], ["managed", 20, 3, 4],
-		["managed", 20, 3, 6], ["managed", 20, 3, 8], ["engine", 20, 15, 8], ["managed", 20, 15, 2]]
+		["managed", 20, 3, 6], ["managed", 20, 3, 8], ["engine", 20, 15, 8], ["managed", 20, 15, 2]],
+	"p": [["managed", 10, 3, 2, "civil_centre"], ["managed", 20, 3, 2, "civil_centre"], ["managed", 40, 3, 2, "civil_centre"],
+		["managed", 60, 3, 2, "civil_centre"], ["engine", 40, 3, 8, "civil_centre"], ["managed", 60, 3, 2], ["managed", 30, 3, 2],
+		["managed", 30, 3, 2, "civil_centre"]]
 };
 
 Trigger.prototype.WoodPosition = function(ent)
@@ -102,6 +109,7 @@ Trigger.prototype.WoodGathered = function(player)
 Trigger.prototype.WoodSetUp = function(player, spec, centre)
 {
 	const [policy, count, gap, cap] = spec;
+	const dropsite = spec[4] || "storehouse";
 	const civ = QueryPlayerIDInterface(player, IID_Identity).GetCiv();
 	const cmpTemplateManager = Engine.QueryInterface(SYSTEM_ENTITY, IID_TemplateManager);
 	const home = TriggerHelper.GetPlayerEntitiesByClass(player, "CivCentre")[0];
@@ -124,11 +132,13 @@ Trigger.prototype.WoodSetUp = function(player, spec, centre)
 			wood += Engine.QueryInterface(tree, IID_ResourceSupply).GetCurrentAmount();
 			trees.push(tree);
 		}
-	let storehouseTemplate = "structures/" + civ + "/storehouse";
+	let storehouseTemplate = "structures/" + civ + "/" + dropsite;
 	if (!cmpTemplateManager.TemplateExists(storehouseTemplate))
-		storehouseTemplate = "structures/athen/storehouse";
+		storehouseTemplate = "structures/athen/" + dropsite;
+	const shape = cmpTemplateManager.GetTemplate(storehouseTemplate).Obstruction.Static;
+	const half = +shape["@depth"] / 2;
+	const perimeter = 2 * (+shape["@width"] + +shape["@depth"]);
 	const storehouse = Engine.AddEntity(storehouseTemplate);
-	const half = 6.5;
 	const place = Vector2D.add(at, Vector2D.mult(outward, WOOD_FOREST_OFFSET - gap - half));
 	const cmpPosition = Engine.QueryInterface(storehouse, IID_Position);
 	cmpPosition.JumpTo(place.x, place.y);
@@ -147,8 +157,8 @@ Trigger.prototype.WoodSetUp = function(player, spec, centre)
 	const units = TriggerHelper.SpawnUnits(storehouse, template, count, player);
 	const measuredGap = Math.min(...hauls.values());
 	print("[WOODLINE] start " + JSON.stringify({ "player": player, "policy": policy, "gatherers": units.length, "gap": gap, "cap": cap,
-		"trees": trees.length, "wood": wood, "measuredGap": Math.round(measuredGap * 10) / 10 }) + "\n");
-	return { player, policy, count, gap, cap, trees, hauls, storehouse, units, "held": new Map(), "redirected": new Set(), "orders": 0, "start": 0 };
+		"dropsite": dropsite, "perimeter": perimeter, "trees": trees.length, "wood": wood, "measuredGap": Math.round(measuredGap * 10) / 10 }) + "\n");
+	return { player, policy, count, gap, cap, dropsite, trees, hauls, storehouse, units, "held": new Map(), "redirected": new Set(), "orders": 0, "start": 0 };
 };
 
 Trigger.prototype.WoodInit = function()
@@ -310,7 +320,8 @@ Trigger.prototype.WoodEnd = function()
 	{
 		const wood = this.WoodGathered(woodcase.player) - woodcase.start;
 		print("[WOODLINE] result " + JSON.stringify({ "t": Math.round((now - this.woodStartTime) / 1000), "player": woodcase.player,
-			"policy": woodcase.policy, "gatherers": woodcase.units.length, "gap": woodcase.gap, "cap": woodcase.cap, "wood": wood,
+			"policy": woodcase.policy, "gatherers": woodcase.units.length, "gap": woodcase.gap, "cap": woodcase.cap, "dropsite": woodcase.dropsite,
+			"wood": wood,
 			"perGatherer": Math.round(wood / woodcase.units.length / (WOOD_DURATION_MS / 1000) * 1000) / 1000, "orders": woodcase.orders }) + "\n");
 	}
 };
