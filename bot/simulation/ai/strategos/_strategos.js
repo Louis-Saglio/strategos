@@ -19,6 +19,7 @@ import { REPORT_MS } from "simulation/ai/strategos/cadence.js";
 import { buildWorld } from "simulation/ai/strategos/world.js";
 import { YieldLedger } from "simulation/ai/strategos/yields.js";
 import { LossIndex, MusterIndex, ResourceIndex, ShoreIndex } from "simulation/ai/strategos/world-memory.js";
+import { SupplyIndex, siteReport } from "simulation/ai/strategos/world-supplies.js";
 
 const DECISION_PERIOD = 8;
 const DECISION_PHASE = 5;
@@ -37,6 +38,7 @@ StrategosBot.prototype.CustomInit = function(gameState)
 	this.telemetry = new Telemetry(this.player);
 	this.catalog = new Catalog(gameState);
 	this.resourceIndex = new ResourceIndex(this.player, this.catalog.codes);
+	this.supplyIndex = new SupplyIndex(this.player, this.catalog.codes);
 	this.shoreIndex = new ShoreIndex();
 	this.lossIndex = new LossIndex(this.player);
 	this.musterIndex = new MusterIndex();
@@ -76,6 +78,7 @@ StrategosBot.prototype.Serialize = function()
 		"telemetry": this.telemetry.save(),
 		"catalog": this.catalog.save(),
 		"resourceIndex": this.resourceIndex.save(),
+		"supplyIndex": this.supplyIndex.save(),
 		"shoreIndex": this.shoreIndex.save(),
 		"lossIndex": this.lossIndex.save(),
 		"musterIndex": this.musterIndex.save(),
@@ -101,6 +104,8 @@ StrategosBot.prototype.restore = function(data, gameState)
 	this.telemetry.restore(data.telemetry);
 	this.catalog.restore(data.catalog);
 	this.resourceIndex.restore(data.resourceIndex);
+	if (data.supplyIndex)
+		this.supplyIndex.restore(data.supplyIndex);
 	this.shoreIndex.restore(data.shoreIndex);
 	this.lossIndex.restore(data.lossIndex);
 	this.musterIndex.restore(data.musterIndex);
@@ -122,6 +127,7 @@ StrategosBot.prototype.restore = function(data, gameState)
 StrategosBot.prototype.OnUpdate = function()
 {
 	this.lossIndex.record(this.events, this.catalog);
+	this.supplyIndex.update(this.gameState, this.events);
 	this.musterIndex.record(this.events);
 	if (this.gameState.playerData.state === "active" && (this.turn + this.player) % DECISION_PERIOD === DECISION_PHASE)
 		this.decide();
@@ -132,7 +138,7 @@ StrategosBot.prototype.decide = function()
 {
 	const stopwatch = new Stopwatch();
 	const pending = this.executor.reconcile(this.gameState.getTimeElapsed());
-	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.shoreIndex, this.lossIndex, this.musterIndex, pending,
+	const world = buildWorld(this.gameState, this.catalog, this.resourceIndex, this.supplyIndex, this.shoreIndex, this.lossIndex, this.musterIndex, pending,
 		this.allocator.demand(), this.allocator.assignments(), this.yields.rates, stopwatch);
 	stopwatch.lap("world");
 	this.battleLog.observe(world);
@@ -208,6 +214,7 @@ StrategosBot.prototype.report = function(world, assessments)
 		"unmet": world.demand.unmet,
 		"shares": Object.fromEntries(world.codes.map(code => [code, Math.round(assessments.gatherShares[code] * 100) / 100]))
 	});
+	this.telemetry.line("SITE", world.time, siteReport(world));
 	this.telemetry.flushProduction(world.time);
 	this.telemetry.flushDecisions(world.time);
 };

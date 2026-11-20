@@ -6,6 +6,7 @@ import { militarySection } from "simulation/ai/strategos/world-military.js";
 import { playersSection } from "simulation/ai/strategos/world-players.js";
 import { productionSection } from "simulation/ai/strategos/world-production.js";
 import { seaSection } from "simulation/ai/strategos/world-sea.js";
+import { suppliesSection } from "simulation/ai/strategos/world-supplies.js";
 
 function once(gameState, stopwatch, section, name, read)
 {
@@ -51,7 +52,8 @@ function assemble(gameState, stopwatch, sections)
 	return Object.freeze(world);
 }
 
-export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, assignments, yieldRates, stopwatch)
+export function buildWorld(gameState, catalog, resourceIndex, supplyIndex, shoreIndex, lossIndex, musterIndex, pendingConstructions, demand, assignments, yieldRates,
+	stopwatch)
 {
 	const anchors = stopwatch.section("economy", () => {
 		const found = dropsites(gameState, catalog);
@@ -80,5 +82,6 @@ export function buildWorld(gameState, catalog, resourceIndex, shoreIndex, lossIn
 		"enemyTargets": enemies.now.enemyTargets
 	}));
 	const context = stopwatch.section("context", () => contextSection(gameState, catalog, map.now.seas, pendingConstructions, demand, assignments));
-	return assemble(gameState, stopwatch, { context, economy, production, military, enemies, players, sea, map });
+	const supplies = stopwatch.section("supplies", () => suppliesSection(gameState, supplyIndex, anchors));
+	return assemble(gameState, stopwatch, { context, economy, production, military, enemies, players, sea, map, supplies });
 }

@@ -21,6 +21,8 @@ export function dropsites(gameState, catalog)
 			"template": ent.templateName(),
 			"position": ent.position(),
 			"radius": Math.max(footprint.width, footprint.depth) / 2,
+			"shape": footprint,
+			"angle": ent.angle() || 0,
 			"shore": catalog.isShoreStructure(ent.templateName()),
 			"types": ent.resourceDropsiteTypes()
 		}));
