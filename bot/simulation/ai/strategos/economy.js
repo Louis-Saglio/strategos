@@ -50,6 +50,7 @@ export class Economy
 	requests(world, plan, assessments)
 	{
 		this.drives.observe(world);
+		this.sites.observe(world);
 		const survey = this.sites.survey(world, assessments);
 		this.retargeted = new Set();
 		const assigned = Object.assign({}, world.gatherers);
@@ -180,12 +181,14 @@ export class Economy
 				.map(code => {
 					const deficit = assessments.gatherShares[code] * total - assigned[code];
 					const edge = advantage(worker, code);
-					return { "code": code, "deficit": deficit, "rank": deficit > 0 ? deficit * edge : deficit / edge };
+					const found = this.sites.best(worker, code, survey, reserved);
+					const efficiency = found ? this.sites.efficiency(worker, code, found.score) : 0;
+					return { "code": code, "deficit": deficit, found,
+						"rank": deficit > 0 ? deficit * edge * efficiency : deficit / edge };
 				})
 				.sort((a, b) => b.rank - a.rank || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
-			for (const { code, deficit } of ranked)
+			for (const { code, deficit, found } of ranked)
 			{
-				const found = this.sites.best(worker, code, survey, reserved);
 				const site = found ? found.supply : code === FOOD && this.nearestGame(world, worker, reserved, game);
 				if (!site)
 					continue;

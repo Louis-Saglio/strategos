@@ -3,10 +3,19 @@ import { distanceBetween } from "simulation/ai/strategos/geometry.js";
 import { diminished, loadOutput, reachOf } from "simulation/ai/strategos/gathering.js";
 import { bestRate, marketSupplies, profileFor } from "simulation/ai/strategos/economy-market.js";
 import { edgeDistance } from "simulation/ai/strategos/world-supplies.js";
+import { unitGroup } from "simulation/ai/strategos/yields.js";
 
 export const WORK_HORIZON_S = 90;
 const FRONT_CHOICES = 4;
 export const HUNTER_RATE = 2;
+const RECALL_MEMORY_S = 180;
+
+function productive(walk, mean)
+{
+	if (!(mean < Infinity))
+		return Math.max(0, WORK_HORIZON_S - walk);
+	return Math.max(0, mean * (Math.exp(-walk / mean) - Math.exp(-WORK_HORIZON_S / mean)));
+}
 
 function nearestAnchor(anchors, code, position)
 {
@@ -32,17 +41,57 @@ export class WorkSites
 	{
 		this.ordered = new Map();
 		this.moved = new Map();
+		this.working = new Map();
+		this.recalls = {};
+		this.seen = null;
 	}
 
 	save()
 	{
-		return { "ordered": this.ordered, "moved": this.moved };
+		return { "ordered": this.ordered, "moved": this.moved, "working": this.working, "recalls": this.recalls, "seen": this.seen };
 	}
 
 	restore(data)
 	{
 		this.ordered = data && data.ordered || new Map();
 		this.moved = data && data.moved || new Map();
+		this.working = data && data.working || new Map();
+		this.recalls = data && data.recalls || {};
+		this.seen = data && typeof data.seen === "number" ? data.seen : null;
+	}
+
+	observe(world)
+	{
+		const seconds = this.seen === null ? 0 : (world.time - this.seen) / 1000;
+		this.seen = world.time;
+		const fade = Math.exp(-seconds / RECALL_MEMORY_S);
+		for (const group in this.recalls)
+		{
+			this.recalls[group].exits *= fade;
+			this.recalls[group].exposure *= fade;
+		}
+		const working = new Map();
+		for (const worker of world.workers)
+		{
+			const group = unitGroup(worker.classes);
+			if (!this.recalls[group])
+				this.recalls[group] = { "exits": 0, "exposure": 0 };
+			if (this.working.has(worker.id))
+			{
+				this.recalls[group].exposure += seconds;
+				if (!worker.idle && !worker.gathering)
+					this.recalls[group].exits += 1;
+			}
+			if (!worker.idle && worker.gathering)
+				working.set(worker.id, group);
+		}
+		this.working = working;
+	}
+
+	interruption(worker)
+	{
+		const recall = this.recalls[unitGroup(worker.classes)];
+		return recall && recall.exits > 0 ? recall.exposure / recall.exits : Infinity;
 	}
 
 	survey(world, assessments)
@@ -108,7 +157,7 @@ export class WorkSites
 			return null;
 		const output = loadOutput(rate, profile.capacities[code] || 0, profile.speed, supply.haul, reachOf(profile.range, supply.half), crowd);
 		const walk = distanceBetween(worker.position, supply.position) / profile.speed;
-		const delivered = output * Math.max(0, WORK_HORIZON_S - walk);
+		const delivered = output * productive(walk, this.interruption(worker));
 		return isFinite(supply.amount) ? Math.min(delivered, supply.amount / (taken + 1)) : delivered;
 	}
 
@@ -153,6 +202,15 @@ export class WorkSites
 		for (const supply of survey.beyond[code] || [])
 			consider(supply, 1, null);
 		return best;
+	}
+
+	efficiency(worker, code, score)
+	{
+		let ideal = 0;
+		for (const kind in worker.profile.rates)
+			if (kind.split(".")[0] === code)
+				ideal = Math.max(ideal, loadOutput(worker.profile.rates[kind], worker.profile.capacities[code] || 0, worker.profile.speed, 0, 0, 0));
+		return ideal > 0 ? score / (ideal * WORK_HORIZON_S) : 0;
 	}
 
 	current(worker, survey)
