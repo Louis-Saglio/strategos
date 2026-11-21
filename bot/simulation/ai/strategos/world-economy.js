@@ -77,20 +77,28 @@ function workforce(gameState, catalog, anchors)
 			continue;
 		}
 		const orders = ent.unitAIOrderData() || [];
+		const order = orders[0];
 		const soldier = ent.hasClass("Soldier");
 		let gathering = null;
 		let kind = null;
 		let haul = null;
 		let targetPosition = null;
 		let targetHalf = 0;
+		let targetId = order ? order.target : undefined;
+		if (state.gathering && order && order.formerTarget !== undefined)
+		{
+			const named = gameState.getEntityById(order.target);
+			if (!named || !named.resourceSupplyType())
+				targetId = order.formerTarget;
+		}
 		if (state.returning)
 		{
 			const carried = ent.resourceCarrying();
 			gathering = carried && carried.length ? carried[0].type : null;
 		}
-		else if (state.gathering && orders.length && orders[0] && orders[0].target !== undefined)
+		else if (state.gathering && targetId !== undefined)
 		{
-			const target = gameState.getEntityById(orders[0].target);
+			const target = gameState.getEntityById(targetId);
 			const type = target && target.resourceSupplyType();
 			gathering = type ? type.generic : null;
 			kind = type ? type.generic + "." + type.specific : null;
@@ -122,7 +130,7 @@ function workforce(gameState, catalog, anchors)
 			"targetHalf": targetHalf,
 			"profile": catalog.gathering(ent),
 			"meanRates": Object.freeze(catalog.meanRates(ent)),
-			"target": orders.length && orders[0] ? orders[0].target : undefined,
+			"target": targetId,
 			"gatherTypes": Object.freeze(catalog.gatherTypes(ent)),
 			"buildable": Object.freeze(catalog.buildable(ent))
 		}));
