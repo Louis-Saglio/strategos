@@ -144,7 +144,7 @@ export class SitePlanner
 		return anchors;
 	}
 
-	request(world, plan, assessments, survey)
+	request(world, plan, assessments, survey, diverted)
 	{
 		if (!world.centres.length)
 			return null;
@@ -159,7 +159,7 @@ export class SitePlanner
 		const open = !!template && !planned.length && this.noSite.due(world.time, RETRY_MS, code);
 		const profile = profileFor(world, code, farming);
 		const farmTemplate = farming ? farmOf(world, this.catalog) : null;
-		const shortfall = farmTemplate && profile ? this.shortfall(world, assessments, farmTemplate, profile) : null;
+		const shortfall = farmTemplate && profile ? this.shortfall(world, assessments, farmTemplate, profile, diverted) : null;
 		const farm = shortfall && this.noSite.due(world.time, RETRY_MS, FARMS) ? farmTemplate : null;
 		if (wanted < 1 || !open && !farm || !profile)
 			return null;
@@ -197,9 +197,9 @@ export class SitePlanner
 		return best && this.ask(world, plan, context, best);
 	}
 
-	shortfall(world, assessments, farm, profile)
+	shortfall(world, assessments, farm, profile, diverted)
 	{
-		const desired = assessments.gatherShares[FOOD] * (world.labour + world.queuedPopulation);
+		const desired = Math.max(assessments.gatherShares[FOOD] * (world.labour + world.queuedPopulation), world.gatherers[FOOD]) + diverted;
 		let places = world.foodHelpers + this.farms(world) * (this.catalog.maxGatherers(farm) || 1);
 		const anchors = world.anchors.filter(anchor => anchor.types.includes(FOOD));
 		for (const site of world.sites[FOOD])

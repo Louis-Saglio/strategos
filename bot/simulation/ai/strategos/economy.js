@@ -1,4 +1,6 @@
 import { Drives } from "simulation/ai/strategos/economy-drives.js";
+import { farmOf, farmSupply } from "simulation/ai/strategos/economy-farms.js";
+import { fullOutput, singleOutput } from "simulation/ai/strategos/economy-market.js";
 import { SitePlanner } from "simulation/ai/strategos/economy-planner.js";
 import { HUNTER_RATE, WORK_HORIZON_S, WorkSites } from "simulation/ai/strategos/economy-sites.js";
 import { distanceBetween, lowerId, nearest, squareDistance } from "simulation/ai/strategos/geometry.js";
@@ -21,6 +23,7 @@ export class Economy
 {
 	constructor(catalog, player, telemetry)
 	{
+		this.catalog = catalog;
 		this.drives = new Drives(catalog, telemetry);
 		this.sites = new WorkSites();
 		this.planner = new SitePlanner(catalog, player, telemetry);
@@ -67,12 +70,15 @@ export class Economy
 			driving.push(...this.pickupRequests(world, plan, carcasses, reserved, busy));
 			driving.push(...this.relayRequests(world, plan, carcasses, reserved, game, busy));
 		}
-		const dropsite = this.planner.request(world, plan, assessments, survey);
+		const exchange = this.exchange(world);
+		const diverted = world.workers.filter(worker => this.dominated(exchange, worker, worker.gathering, this.sites.current(worker, survey))).length;
+		const dropsite = this.planner.request(world, plan, assessments, survey, diverted);
 		return this.treasureRequests(world, plan, busy)
 			.concat(dropsite ? [dropsite] : [])
 			.concat(driving)
-			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey))
-			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey))
+			.concat(this.gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey, exchange))
+			.concat(this.rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey, exchange))
+			.concat(this.divertRequests(world, plan, assigned, reserved, busy, survey, exchange))
 			.concat(this.swapRequests(world, plan, busy))
 			.concat(this.retargetRequests(world, plan, reserved, busy, survey));
 	}
@@ -166,7 +172,60 @@ export class Economy
 		return requests;
 	}
 
-	gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey)
+	exchange(world)
+	{
+		const farm = farmOf(world, this.catalog);
+		const prices = world.barter.open && world.barter.prices;
+		if (!farm || !prices)
+			return null;
+		const field = farmSupply(this.catalog, farm, 0, [0, 0], 0);
+		field.haul = field.half;
+		const outputs = new Map();
+		return {
+			"field": worker => {
+				if (!outputs.has(worker.template))
+					outputs.set(worker.template, worker.gatherTypes.includes(FOOD) ? fullOutput(worker.profile, field) : 0);
+				return outputs.get(worker.template);
+			},
+			"rate": code => code === FOOD || !(prices.buy[code] > 0) ? 0 : prices.sell[FOOD] / prices.buy[code]
+		};
+	}
+
+	dominated(exchange, worker, code, option)
+	{
+		if (!exchange || !option || !code || code === FOOD)
+			return false;
+		const field = exchange.field(worker);
+		return field > 0 && singleOutput(worker.profile, option.supply) < exchange.rate(code) * field;
+	}
+
+	divertRequests(world, plan, assigned, reserved, busy, survey, exchange)
+	{
+		const requests = [];
+		if (!exchange)
+			return requests;
+		for (const worker of world.workers)
+		{
+			if (requests.length >= REBALANCE_PER_DECISION)
+				break;
+			if (busy.has(worker.id) || worker.idle || !worker.state.gathering || !worker.state.moving || worker.carried > 0)
+				continue;
+			const current = this.sites.current(worker, survey);
+			if (!this.dominated(exchange, worker, worker.gathering, current))
+				continue;
+			const found = this.sites.best(worker, FOOD, survey, reserved);
+			if (!found || !(exchange.rate(worker.gathering) * fullOutput(worker.profile, found.supply) > singleOutput(worker.profile, current.supply)))
+				continue;
+			busy.add(worker.id);
+			reserved.set(found.supply.id, (reserved.get(found.supply.id) || 0) + 1);
+			assigned[worker.gathering] -= 1;
+			assigned[FOOD] += 1;
+			requests.push(gatherRequest("economy", "divert", worker.id, found.supply.id, FOOD, plan.values.rebalance, 1));
+		}
+		return requests;
+	}
+
+	gatherRequests(world, plan, assessments, assigned, reserved, game, busy, survey, exchange)
 	{
 		const requests = [];
 		const idle = world.workers.filter(worker => worker.idle && !busy.has(worker.id));
@@ -189,6 +248,8 @@ export class Economy
 				.sort((a, b) => b.rank - a.rank || world.codes.indexOf(a.code) - world.codes.indexOf(b.code));
 			for (const { code, deficit, found } of ranked)
 			{
+				if (this.dominated(exchange, worker, code, found))
+					continue;
 				const site = found ? found.supply : code === FOOD && this.nearestGame(world, worker, reserved, game);
 				if (!site)
 					continue;
@@ -223,7 +284,7 @@ export class Economy
 		return (worker, code) => average[code] > 0 && worker.meanRates[code] > 0 ? worker.meanRates[code] / average[code] : 0.01;
 	}
 
-	rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey)
+	rebalanceRequests(world, plan, assessments, assigned, reserved, busy, survey, exchange)
 	{
 		const requests = [];
 		const advantage = this.advantages(world);
@@ -243,7 +304,7 @@ export class Economy
 				if (worker.gathering !== surplus || moved.has(worker.id) || busy.has(worker.id) || !worker.gatherTypes.includes(deficit))
 					continue;
 				const found = this.sites.best(worker, deficit, survey, reserved);
-				if (!found)
+				if (!found || this.dominated(exchange, worker, deficit, found))
 					continue;
 				const site = found.supply;
 				const lost = worker.carried > 0 && worker.carriedType !== deficit ? 1 : 0;

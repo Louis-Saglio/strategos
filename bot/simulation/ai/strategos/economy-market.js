@@ -30,6 +30,11 @@ export function singleOutput(profile, supply)
 	return gathererOutput(profile, supply, 1, 0);
 }
 
+export function fullOutput(profile, supply)
+{
+	return gathererOutput(profile, supply, supply.capacity, 0);
+}
+
 export function ranked(supplies, profile)
 {
 	return supplies.map(supply => ({ supply, "output": singleOutput(profile, supply) }))
