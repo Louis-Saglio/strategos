@@ -50,7 +50,7 @@ export class Economy
 	requests(world, plan, assessments)
 	{
 		this.drives.observe(world);
-		const survey = this.sites.survey(world);
+		const survey = this.sites.survey(world, assessments);
 		this.retargeted = new Set();
 		const assigned = Object.assign({}, world.gatherers);
 		const reserved = new Map();

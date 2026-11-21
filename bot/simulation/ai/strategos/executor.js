@@ -139,7 +139,7 @@ export class Executor
 			"autocontinue": true,
 			"queued": false
 		});
-		this.issued.push({ "template": action.template, "x": action.x, "z": action.z, "issuedAt": this.time });
+		this.issued.push({ "template": action.template, "x": action.x, "z": action.z, "angle": action.angle, "issuedAt": this.time });
 		return true;
 	}
 

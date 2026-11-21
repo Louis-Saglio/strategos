@@ -2,13 +2,46 @@ import { halfSizeOf, loadCycle, reachOf } from "simulation/ai/strategos/gatherin
 import { landRegionNear } from "simulation/ai/strategos/terrain.js";
 
 const SUPPLY_CELL = 8;
-export const COVERAGE_REACH = 30;
+const CELL_STRIDE = 4096;
+export const HAUL_REACH = 160;
 const REPORT_BANDS = [10, 20, 30];
 const HAUL_QUANTILES = [0.5, 0.9];
 
 function cellKey(i, j)
 {
-	return i + "," + j;
+	return i * CELL_STRIDE + j;
+}
+
+function byHaul(a, b)
+{
+	return a.haul - b.haul || a.supply.id - b.supply.id;
+}
+
+function rankOf(order, entry)
+{
+	let low = 0;
+	let high = order.length;
+	while (low < high)
+	{
+		const middle = (low + high) >> 1;
+		if (byHaul(order[middle], entry) < 0)
+			low = middle + 1;
+		else
+			high = middle;
+	}
+	return low;
+}
+
+function nearestEntry(supply, anchors)
+{
+	let best = null;
+	for (const anchor of anchors)
+	{
+		const haul = edgeDistance(anchor, supply.position);
+		if (haul <= HAUL_REACH && (!best || haul < best.haul))
+			best = { supply, haul, "anchor": anchor.id };
+	}
+	return best;
 }
 
 function eligible(ent, player)
@@ -32,6 +65,7 @@ export class SupplyIndex
 		this.saved = null;
 		this.supplies = new Map();
 		this.cells = new Map(codes.map(code => [code, new Map()]));
+		this.rankings = new Map();
 	}
 
 	save()
@@ -50,6 +84,7 @@ export class SupplyIndex
 		this.saved = data.ids;
 		this.supplies = new Map();
 		this.cells = new Map(this.codes.map(code => [code, new Map()]));
+		this.rankings = new Map();
 	}
 
 	add(gameState, ent)
@@ -82,6 +117,48 @@ export class SupplyIndex
 		if (!cells.has(key))
 			cells.set(key, []);
 		cells.get(key).push(id);
+		this.rank(supply);
+	}
+
+	rank(supply)
+	{
+		const ranking = this.rankings.get(supply.code);
+		const entry = ranking && nearestEntry(supply, ranking.anchors);
+		if (!entry)
+			return;
+		ranking.byId.set(supply.id, entry);
+		ranking.order.splice(rankOf(ranking.order, entry), 0, entry);
+	}
+
+	unrank(supply)
+	{
+		const ranking = this.rankings.get(supply.code);
+		const entry = ranking && ranking.byId.get(supply.id);
+		if (!entry)
+			return;
+		ranking.byId.delete(supply.id);
+		ranking.order.splice(rankOf(ranking.order, entry), 1);
+	}
+
+	ranking(code, anchors)
+	{
+		const serving = anchors.filter(anchor => anchor.types.includes(code)).sort((a, b) => a.id - b.id);
+		const key = serving.map(anchor => anchor.id).join(",");
+		const known = this.rankings.get(code);
+		if (known && known.key === key)
+			return known.order;
+		const byId = new Map();
+		for (const anchor of serving)
+			for (const supply of this.around(code, anchor.position, outerRadius(anchor) + HAUL_REACH))
+			{
+				const haul = edgeDistance(anchor, supply.position);
+				const entry = byId.get(supply.id);
+				if (haul <= HAUL_REACH && (!entry || haul < entry.haul))
+					byId.set(supply.id, { supply, haul, "anchor": anchor.id });
+			}
+		const order = [...byId.values()].sort(byHaul);
+		this.rankings.set(code, { key, "anchors": serving, byId, order });
+		return order;
 	}
 
 	remove(id)
@@ -90,6 +167,7 @@ export class SupplyIndex
 		if (!supply)
 			return;
 		this.supplies.delete(id);
+		this.unrank(supply);
 		const cells = this.cells.get(supply.code);
 		const list = cells.get(supply.cell);
 		const at = list.indexOf(id);
@@ -187,40 +265,34 @@ function live(gameState, player, supply)
 	return { "amount": amount, "gatherers": ent.resourceSupplyNumGatherers() || 0 };
 }
 
-function coverage(gameState, player, index, anchors, reach)
+function reader(gameState, player, index, anchors)
 {
-	const covered = [];
-	for (const anchor of anchors)
-		for (const code of anchor.types)
+	const known = new Map();
+	return (code, count, reach) => {
+		let read = known.get(code);
+		if (!read)
 		{
-			const supplies = [];
-			let stock = 0;
-			let slots = 0;
-			for (const supply of index.around(code, anchor.position, outerRadius(anchor) + reach))
-			{
-				const distance = edgeDistance(anchor, supply.position);
-				if (distance > reach)
-					continue;
-				const state = live(gameState, player, supply);
-				if (!state)
-					continue;
-				supplies.push(Object.freeze({ "id": supply.id, "kind": supply.kind, "position": supply.position, "region": supply.region,
-					"distance": distance, "amount": state.amount, "gatherers": state.gatherers, "capacity": supply.capacity, "half": supply.half,
-					"diminishing": supply.diminishing }));
-				if (isFinite(state.amount))
-					stock += state.amount;
-				slots += supply.capacity;
-			}
-			supplies.sort((a, b) => a.distance - b.distance || a.id - b.id);
-			covered.push(Object.freeze({ "anchor": anchor.id, "template": anchor.template, "code": code, "position": anchor.position,
-				"supplies": Object.freeze(supplies), "stock": stock, "slots": slots }));
+			read = { "order": index.ranking(code, anchors), "next": 0, "live": [] };
+			known.set(code, read);
 		}
-	return Object.freeze(covered);
+		while (read.next < read.order.length && (read.live.length < count || read.order[read.next].haul <= reach))
+		{
+			const entry = read.order[read.next++];
+			const state = live(gameState, player, entry.supply);
+			if (state)
+				read.live.push(Object.freeze(Object.assign({}, entry.supply, state, { "haul": entry.haul, "anchor": entry.anchor })));
+		}
+		let end = read.live.length;
+		while (end > count && read.live[end - 1].haul > reach)
+			end -= 1;
+		return read.live.slice(0, end);
+	};
 }
 
 export function suppliesSection(gameState, index, anchors)
 {
 	const player = gameState.getPlayerID();
+	const read = reader(gameState, player, index, anchors);
 	return {
 		"now": {
 			"suppliesAround": (code, position, radius) => Object.freeze(index.around(code, position, radius)
@@ -228,11 +300,11 @@ export function suppliesSection(gameState, index, anchors)
 					const state = live(gameState, player, supply);
 					return state && Object.freeze(Object.assign({}, supply, state));
 				})
-				.filter(supply => supply))
+				.filter(supply => supply)),
+			"hauled": (code, count) => read(code, count, -1),
+			"hauledWithin": (code, reach) => read(code, 0, reach)
 		},
-		"later": {
-			"coverage": () => coverage(gameState, player, index, anchors, COVERAGE_REACH)
-		}
+		"later": {}
 	};
 }
 
@@ -277,21 +349,10 @@ export function siteReport(world)
 	const report = {};
 	for (const code of world.codes)
 	{
-		const entries = world.coverage.filter(entry => entry.code === code);
-		if (!entries.length)
+		if (!world.anchors.some(anchor => anchor.types.includes(code)))
 			continue;
-		const nearestOf = new Map();
-		for (const entry of entries)
-			for (const supply of entry.supplies)
-				if (!nearestOf.has(supply.id) || supply.distance < nearestOf.get(supply.id).distance)
-					nearestOf.set(supply.id, { "anchor": entry.anchor, "distance": supply.distance, "amount": supply.amount });
-		const stock = REPORT_BANDS.map(() => 0);
-		for (const { distance, amount } of nearestOf.values())
-			if (isFinite(amount))
-				REPORT_BANDS.forEach((band, index) => {
-					if (distance < band)
-						stock[index] += amount;
-				});
+		const near = world.hauledWithin(code, REPORT_BANDS[REPORT_BANDS.length - 1]).filter(supply => isFinite(supply.amount));
+		const stock = REPORT_BANDS.map(band => near.reduce((sum, supply) => sum + (supply.haul < band ? supply.amount : 0), 0));
 		const hauls = [];
 		const busy = new Map();
 		let output = 0;
@@ -318,8 +379,8 @@ export function siteReport(world)
 		for (const [anchor, count] of busy)
 			if (!busiest || count > busiest.count || count === busiest.count && anchor < busiest.anchor)
 				busiest = { anchor, count };
-		const busiestStock = busiest ? [...nearestOf.values()].filter(entry => entry.anchor === busiest.anchor && entry.distance < REPORT_BANDS[1] &&
-			isFinite(entry.amount)).reduce((sum, entry) => sum + entry.amount, 0) : 0;
+		const busiestStock = busiest ? near.filter(supply => supply.anchor === busiest.anchor && supply.haul < REPORT_BANDS[1])
+			.reduce((sum, supply) => sum + supply.amount, 0) : 0;
 		const round = value => Math.round(value * 1000) / 1000;
 		report[code] = {
 			"anchors": world.anchors.filter(anchor => anchor.types.includes(code)).length,

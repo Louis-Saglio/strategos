@@ -2,15 +2,15 @@ import { RETRY_MS } from "simulation/ai/strategos/cadence.js";
 import { TERRITORY_PATH } from "simulation/ai/strategos/catalog.js";
 import { crewOf, crewSize } from "simulation/ai/strategos/crews.js";
 import { anchorAt, farmAnchors, farmOf, farmReserved, farmSupply, farmsteadSites, fieldSite, nearestFarmAnchor, plannedFarms, reservedWith } from "simulation/ai/strategos/economy-farms.js";
+import { NEAR_REACH, allocate, depleted, profileFor, ranked, singleOutput, withSupply } from "simulation/ai/strategos/economy-market.js";
 import { squareDistance } from "simulation/ai/strategos/geometry.js";
-import { diminished, loadOutput, reachOf } from "simulation/ai/strategos/gathering.js";
 import { BUILDING_MARGIN, Placement, SUPPLY_CLEARANCE, SUPPLY_LANE } from "simulation/ai/strategos/placement.js";
 import { buildRequest, inTier, returning } from "simulation/ai/strategos/requests.js";
 import { FOUNDATION_TIME_MODIFIER } from "simulation/ai/strategos/rules.js";
 import { Change, Retry } from "simulation/ai/strategos/switches.js";
 import { territoryAt } from "simulation/ai/strategos/terrain.js";
 import { TECH_HORIZON_S, TRAINING_BATCH, pricedSum, resourcePrices } from "simulation/ai/strategos/valuation.js";
-import { COVERAGE_REACH, edgeDistance } from "simulation/ai/strategos/world-supplies.js";
+import { edgeDistance } from "simulation/ai/strategos/world-supplies.js";
 import { FOOD } from "simulation/ai/strategos/yields.js";
 
 const PLAN_CELL = 16;
@@ -19,44 +19,9 @@ const SEARCH_STEP = 3;
 const SEARCH_RINGS = 6;
 const MAX_URGENCY = 3;
 const FARMS = "farms";
-const WILD_FOOD_PER_GATHERER = 150;
 const NEW_ANCHOR = -1;
-
-function byHaul(a, b)
-{
-	return a.haul - b.haul || a.id - b.id;
-}
-
-function ranked(supplies, profile)
-{
-	return supplies.map(supply => ({ supply, "output": loadOutput(profile.rates[supply.kind] || 0, profile.capacity, profile.speed, supply.haul,
-		reachOf(profile.range, supply.half), 0) }))
-		.sort((a, b) => b.output - a.output || byHaul(a.supply, b.supply))
-		.map(entry => entry.supply);
-}
-
-function profileFor(world, code, civilian)
-{
-	const able = world.workers.filter(worker => worker.gatherTypes.includes(code));
-	const preferred = civilian && able.some(worker => !worker.soldier) ? able.filter(worker => !worker.soldier) : able;
-	const crew = preferred.filter(worker => worker.gathering === code);
-	const pool = crew.length ? crew : preferred;
-	if (!pool.length)
-		return null;
-	const rates = {};
-	let capacity = 0;
-	let speed = 0;
-	let range = 0;
-	for (const worker of pool)
-	{
-		for (const kind in worker.profile.rates)
-			rates[kind] = (rates[kind] || 0) + worker.profile.rates[kind] / pool.length;
-		capacity += (worker.profile.capacities[code] || 0) / pool.length;
-		speed += worker.profile.speed / pool.length;
-		range += worker.profile.range / pool.length;
-	}
-	return { rates, capacity, speed, range };
-}
+const NEW_FRONT = "new";
+const SITE_CHOICES = 3;
 
 function civilianGrowth(world, catalog)
 {
@@ -69,89 +34,6 @@ function civilianGrowth(world, catalog)
 			growth += 1 / seconds;
 	}
 	return growth;
-}
-
-function frontOutput(front, gatherers, profile)
-{
-	let total = 0;
-	let left = gatherers;
-	for (const supply of front.supplies)
-	{
-		if (left <= 0)
-			break;
-		const rate = profile.rates[supply.kind] || 0;
-		if (!(rate > 0) || !(supply.amount > 0))
-			continue;
-		const taken = Math.min(supply.capacity, left);
-		total += taken * loadOutput(diminished(rate, supply.diminishing, taken), profile.capacity, profile.speed, supply.haul,
-			reachOf(profile.range, supply.half), gatherers);
-		left -= taken;
-	}
-	return total;
-}
-
-function allocate(fronts, wanted, profile)
-{
-	const counts = fronts.map(() => 0);
-	const totals = fronts.map(() => 0);
-	const nexts = fronts.map(front => frontOutput(front, 1, profile));
-	let output = 0;
-	for (let k = 0; k < wanted; ++k)
-	{
-		let best = -1;
-		let bestGain = 0;
-		for (let index = 0; index < fronts.length; ++index)
-			if (nexts[index] - totals[index] > bestGain)
-			{
-				best = index;
-				bestGain = nexts[index] - totals[index];
-			}
-		if (best < 0)
-			break;
-		counts[best] += 1;
-		totals[best] = nexts[best];
-		output += bestGain;
-		nexts[best] = frontOutput(fronts[best], counts[best] + 1, profile);
-	}
-	return { output, counts, totals };
-}
-
-function depleted(front, profile, seconds, holders)
-{
-	let crowd = front.crowd;
-	const finite = [];
-	for (const supply of front.supplies)
-		if (isFinite(supply.amount))
-			finite.push(supply);
-		else
-			crowd -= holders.get(supply.id) || 0;
-	let left = frontOutput({ "supplies": finite }, Math.max(0, crowd), profile) * seconds;
-	const supplies = [];
-	for (const supply of front.supplies)
-	{
-		if (left > 0 && isFinite(supply.amount))
-		{
-			const eaten = Math.min(left, supply.amount);
-			left -= eaten;
-			if (supply.amount - eaten > 0)
-				supplies.push(Object.assign({}, supply, { "amount": supply.amount - eaten }));
-			continue;
-		}
-		supplies.push(supply);
-	}
-	return { "key": front.key, "supplies": supplies, "crowd": front.crowd };
-}
-
-function withSupply(fronts, key, supply, profile)
-{
-	let found = false;
-	const result = fronts.map(front => {
-		if (front.key !== key)
-			return front;
-		found = true;
-		return { "key": front.key, "crowd": front.crowd, "supplies": ranked(front.supplies.concat([supply]), profile) };
-	});
-	return found ? result : result.concat([{ "key": key, "crowd": 0, "supplies": [supply] }]);
 }
 
 function safety(world, position)
@@ -167,13 +49,44 @@ function safety(world, position)
 	return ratio * ratio;
 }
 
-function nearestHaul(anchors, code, position)
+function outerRadius(shape)
+{
+	return Math.sqrt(shape.width * shape.width + shape.depth * shape.depth) / 2;
+}
+
+function idealOutput(profile, code)
+{
+	let best = 0;
+	for (const kind in profile.rates)
+		if (kind.split(".")[0] === code)
+			best = Math.max(best, singleOutput(profile, { kind, "haul": 0, "half": 0, "diminishing": 0 }));
+	return best;
+}
+
+function nearestHaul(anchors, position)
 {
 	let best = Infinity;
 	for (const anchor of anchors)
-		if (anchor.types.includes(code))
-			best = Math.min(best, edgeDistance(anchor, position));
+		best = Math.min(best, edgeDistance(anchor, position));
 	return best;
+}
+
+function withAnchor(fronts, anchor, key, extra, profile)
+{
+	const fresh = new Map();
+	const others = fronts.map(front => ({ "key": front.key, "anchor": front.anchor, "crowd": front.crowd, "supplies": front.supplies.filter(supply => {
+		const haul = edgeDistance(anchor, supply.position);
+		if (haul >= supply.haul)
+			return true;
+		fresh.set(supply.id, Object.assign({}, supply, { haul }));
+		return false;
+	}) }));
+	const known = new Set(fronts.flatMap(front => front.supplies.map(supply => supply.id)));
+	for (const supply of extra)
+		if (!known.has(supply.id) && !fresh.has(supply.id))
+			fresh.set(supply.id, Object.assign({}, supply, { "haul": edgeDistance(anchor, supply.position) }));
+	const front = { key, "anchor": anchor.id, "crowd": 0, "supplies": ranked([...fresh.values()], profile) };
+	return { "fronts": others.concat([front]), front };
 }
 
 export class SitePlanner
@@ -211,15 +124,24 @@ export class SitePlanner
 		return this.catalog.dropsiteTypes(name).includes(code) && !this.catalog.isFarm(name);
 	}
 
-	coming(world, code)
-	{
-		return world.pendingConstructions.some(pending => this.serves(code, pending.template)) ||
-			world.foundations.some(foundation => this.serves(code, foundation.template));
-	}
-
 	template(world, code)
 	{
 		return this.catalog.cheapest(world.offered, name => this.catalog.isPlaceableOnLand(name) && this.serves(code, name));
+	}
+
+	planned(world, code)
+	{
+		const anchors = [];
+		world.pendingConstructions.forEach((pending, index) => {
+			if (this.serves(code, pending.template))
+				anchors.push({ "id": NEW_ANCHOR - 1 - index, "position": [pending.x, pending.z], "shape": this.catalog.footprint(pending.template),
+					"angle": pending.angle || 0 });
+		});
+		for (const foundation of world.foundations)
+			if (this.serves(code, foundation.template))
+				anchors.push({ "id": foundation.id, "position": foundation.position, "shape": this.catalog.footprint(foundation.template),
+					"angle": foundation.angle });
+		return anchors;
 	}
 
 	request(world, plan, assessments, survey)
@@ -233,19 +155,17 @@ export class SitePlanner
 		const farming = code === FOOD;
 		const wanted = Math.round(assessments.gatherShares[code] * labour - (farming ? world.foodHelpers : 0));
 		const template = this.template(world, code);
-		const clear = !!template && !this.coming(world, code);
-		const open = clear && this.noSite.due(world.time, RETRY_MS, code);
-		const farmTemplate = farming ? farmOf(world, this.catalog) : null;
-		const shortfall = farmTemplate ? this.shortfall(world, assessments, farmTemplate) : null;
-		const farm = shortfall && this.noSite.due(world.time, RETRY_MS, FARMS) ? farmTemplate : null;
-		if (wanted < 1 || !open && !farm)
-			return null;
+		const planned = template ? this.planned(world, code) : [];
+		const open = !!template && !planned.length && this.noSite.due(world.time, RETRY_MS, code);
 		const profile = profileFor(world, code, farming);
-		if (!profile)
+		const farmTemplate = farming ? farmOf(world, this.catalog) : null;
+		const shortfall = farmTemplate && profile ? this.shortfall(world, assessments, farmTemplate, profile) : null;
+		const farm = shortfall && this.noSite.due(world.time, RETRY_MS, FARMS) ? farmTemplate : null;
+		if (wanted < 1 || !open && !farm || !profile)
 			return null;
 		const serial = { "id": 0 };
 		const anchors = farming ? farmAnchors(world, this.catalog) : [];
-		const fronts = this.fronts(world, code, profile, survey, ahead, anchors, serial);
+		const fronts = this.fronts(world, code, profile, survey, ahead, anchors, planned, serial);
 		const context = { world, code, profile, wanted, fronts, serial, shortfall, "before": allocate(fronts, wanted, profile),
 			"placement": new Placement(world, this.player), "prices": resourcePrices(world) };
 		const options = [];
@@ -253,15 +173,21 @@ export class SitePlanner
 		{
 			const sited = this.dropsiteOption(context, template);
 			if (!sited.found)
+			{
 				this.noSite.record(world.time, code);
+				this.telemetry.line("BUILD", world.time, { "noSite": template, "code": code });
+			}
 			else if (sited.option)
 				options.push(sited.option);
 		}
 		if (farm)
 		{
-			const sited = this.farmOptions(context, farm, clear ? template : null, anchors);
+			const sited = this.farmOptions(context, farm, planned.length ? null : template, anchors);
 			if (!sited.found)
+			{
 				this.noSite.record(world.time, FARMS);
+				this.telemetry.line("BUILD", world.time, { "noSite": farm, "code": code });
+			}
 			options.push(...sited.options);
 		}
 		let best = null;
@@ -271,13 +197,20 @@ export class SitePlanner
 		return best && this.ask(world, plan, context, best);
 	}
 
-	shortfall(world, assessments, farm)
+	shortfall(world, assessments, farm, profile)
 	{
 		const desired = assessments.gatherShares[FOOD] * (world.labour + world.queuedPopulation);
 		let places = world.foodHelpers + this.farms(world) * (this.catalog.maxGatherers(farm) || 1);
+		const anchors = world.anchors.filter(anchor => anchor.types.includes(FOOD));
 		for (const site of world.sites[FOOD])
-			if (isFinite(site.amount) && !site.prey)
-				places += Math.min(site.capacity, site.amount / WILD_FOOD_PER_GATHERER);
+		{
+			const supply = Object.assign({ "half": 0, "diminishing": 0 }, site, { "haul": nearestHaul(anchors, site.position) });
+			if (!isFinite(supply.amount) || supply.prey)
+				continue;
+			const output = singleOutput(profile, supply);
+			if (output > 0 && output >= world.fieldRate)
+				places += Math.min(supply.capacity, supply.amount / (output * TECH_HORIZON_S));
+		}
 		return desired > places ? { "places": desired - places, "share": (desired - places) / Math.max(1, desired) } : null;
 	}
 
@@ -290,14 +223,16 @@ export class SitePlanner
 		return total + plannedFarms(world, this.catalog).length;
 	}
 
-	fronts(world, code, profile, survey, ahead, anchors, serial)
+	fronts(world, code, profile, survey, ahead, anchors, planned, serial)
 	{
 		let fronts = [...survey.fronts.values()].filter(front => front.code === code)
-			.map(front => depleted({ "key": front.key, "crowd": front.crowd, "supplies": ranked(front.supplies, profile) }, profile, ahead,
-				survey.holders));
+			.map(front => depleted({ "key": front.key, "anchor": front.anchor, "crowd": front.crowd, "supplies": ranked(front.supplies, profile) }, profile,
+				ahead, survey.holders));
 		const far = (survey.beyond[code] || []).filter(site => !site.prey && isFinite(site.amount));
 		if (far.length)
-			fronts.push({ "key": "beyond", "crowd": 0, "supplies": ranked(far, profile) });
+			fronts.push({ "key": "beyond", "anchor": null, "crowd": 0, "supplies": ranked(far, profile) });
+		for (const anchor of planned)
+			fronts = withAnchor(fronts, anchor, "planned:" + anchor.id, this.around(world, code, anchor, profile), profile).fronts;
 		if (!anchors.length)
 			return fronts;
 		for (const planned of plannedFarms(world, this.catalog))
@@ -310,33 +245,66 @@ export class SitePlanner
 		return fronts;
 	}
 
+	around(world, code, anchor, profile)
+	{
+		return world.suppliesAround(code, anchor.position, outerRadius(anchor.shape) + NEAR_REACH)
+			.filter(supply => isFinite(supply.amount) && profile.rates[supply.kind] > 0);
+	}
+
 	dropsiteOption(context, template)
 	{
-		const { world, code, profile, fronts, wanted, placement, before } = context;
-		const known = new Set(fronts.flatMap(front => front.supplies.map(supply => supply.id)));
+		const { world, code, profile, fronts, placement } = context;
+		const reach = +(this.catalog.template(template).get(TERRITORY_PATH) || 0);
+		let found = false;
 		let best = null;
+		const consider = candidate => {
+			if (!candidate)
+				return;
+			found = true;
+			const option = this.priced(context, candidate.option, candidate.templates, "dropsite", "investment");
+			if (option && (!best || option.payback > best.payback))
+				best = option;
+		};
 		let tried = 0;
-		for (const cell of this.cells(world, code, profile))
+		for (const cell of this.cells(world, code, profile, fronts))
 		{
 			const centre = this.inside(world, cell);
 			if (!centre)
 				continue;
 			if (++tried > CANDIDATES_TRIED)
 				break;
-			const site = this.search(world, placement, code, template, centre);
-			if (!site)
-				continue;
-			const option = this.option(world, code, profile, fronts, known, wanted, template, site);
-			if (!option)
-				continue;
-			option.safety = safety(world, [site.x, site.z]);
-			option.value = (option.total - before.output) * option.safety;
-			if (!best || option.value > best.value)
-				best = option;
+			const sites = this.search(world, placement, code, template, centre, cell);
+			for (const site of sites)
+				consider(this.valued(context, template, site, site, 1));
+			if (sites.length && centre !== cell && reach > 0)
+				consider(this.chain(context, template, sites[0], cell, reach));
 		}
-		if (!best)
-			return { "found": false };
-		return { "found": true, "option": this.priced(context, best, [template], "dropsite", "investment") };
+		return { found, "option": best };
+	}
+
+	valued(context, template, site, target, links)
+	{
+		const { world, code, profile, fronts, wanted, before } = context;
+		const option = this.option(world, code, profile, fronts, wanted, template, target);
+		if (!option)
+			return null;
+		option.site = site;
+		option.links = links;
+		option.delay = (links - 1) * this.catalog.buildTime(template);
+		option.safety = safety(world, [target.x, target.z]);
+		option.value = (option.total - before.output) * option.safety;
+		return { option, "templates": Array(links).fill(template) };
+	}
+
+	chain(context, template, first, cell, reach)
+	{
+		const from = [first.x, first.z];
+		const length = Math.sqrt(squareDistance(from, cell));
+		const span = length - PLAN_CELL;
+		if (!(span > 0))
+			return null;
+		const target = { "x": from[0] + (cell[0] - from[0]) * span / length, "z": from[1] + (cell[1] - from[1]) * span / length, "angle": first.angle };
+		return this.valued(context, template, first, target, Math.ceil(span / reach) + 1);
 	}
 
 	farmOptions(context, farm, farmstead, anchors)
@@ -403,7 +371,8 @@ export class SitePlanner
 			if (!supplies.length)
 				continue;
 			found = true;
-			const after = allocate(fronts.concat([{ "key": "new", "crowd": 0, "supplies": ranked(supplies, profile) }]), wanted, profile);
+			const after = allocate(fronts.concat([{ "key": NEW_FRONT, "anchor": NEW_ANCHOR, "crowd": 0, "supplies": ranked(supplies, profile) }]), wanted,
+				profile);
 			const option = { site, "fields": supplies.length, "total": after.output, "output": after.totals[fronts.length], "stock": Infinity,
 				"moved": after.counts[fronts.length], "safety": safety(world, [site.x, site.z]) };
 			option.value = (option.total - before.output) * option.safety;
@@ -423,7 +392,7 @@ export class SitePlanner
 		for (const name of templates)
 			cost += pricedSum(world, prices, this.catalog.cost(name)) +
 				prices[code] * perGatherer * this.catalog.buildTime(name) * Math.pow(crewSize(world, this.catalog, name), 1 - FOUNDATION_TIME_MODIFIER);
-		const life = Math.min(TECH_HORIZON_S, option.stock / option.output);
+		const life = Math.min(TECH_HORIZON_S, option.stock / option.output) * Math.exp(-(option.delay || 0) / TECH_HORIZON_S);
 		return Object.assign(option, { "template": templates[0], "purpose": purpose, "worth": worth,
 			"payback": prices[code] * option.value * life / Math.max(1, cost) });
 	}
@@ -454,41 +423,45 @@ export class SitePlanner
 			"payback": round(option.payback) };
 		if (option.purpose === "farm")
 			return Object.assign({ "farm": option.template, "anchor": option.anchor }, where, { "safety": round(option.safety) });
-		return Object.assign({ "dropsite": option.template, "code": context.code }, option.purpose === "farmstead" ? { "fields": option.fields } : {}, where,
+		return Object.assign({ "dropsite": option.template, "code": context.code }, option.purpose === "farmstead" ? { "fields": option.fields } : {},
+			option.links > 1 ? { "links": option.links } : {}, where,
 			{ "stock": isFinite(option.stock) ? Math.round(option.stock) : "field", "moved": option.moved, "safety": round(option.safety) });
 	}
 
-	cells(world, code, profile)
+	cells(world, code, profile, fronts)
 	{
+		const ideal = idealOutput(profile, code);
 		const anchors = world.anchors.filter(anchor => anchor.types.includes(code));
-		const ideal = loadOutput(profile.rates[this.mainKind(code, profile)] || 0, profile.capacity, profile.speed, 0, 0, 0);
-		const grid = new Map();
-		const seen = new Set();
+		const candidates = new Map();
+		for (const front of fronts)
+			for (const supply of front.supplies)
+				candidates.set(supply.id, supply);
 		for (const centre of world.centres)
 		{
 			const anchor = world.anchors.find(candidate => candidate.id === centre.id);
 			const territory = anchor ? +(this.catalog.template(anchor.template).get(TERRITORY_PATH) || 0) : 0;
-			for (const supply of world.suppliesAround(code, centre.position, territory + COVERAGE_REACH))
-			{
-				if (seen.has(supply.id) || !isFinite(supply.amount) || !(profile.rates[supply.kind] > 0))
-					continue;
-				seen.add(supply.id);
-				const haul = nearestHaul(anchors, code, supply.position);
-				const output = loadOutput(profile.rates[supply.kind], profile.capacity, profile.speed, haul, reachOf(profile.range, supply.half), 0);
-				const potential = supply.amount * Math.max(0, 1 - output / Math.max(1e-6, ideal));
-				if (!(potential > 0))
-					continue;
-				const i = Math.floor(supply.position[0] / PLAN_CELL);
-				const j = Math.floor(supply.position[1] / PLAN_CELL);
-				const key = i + "," + j;
-				if (!grid.has(key))
-					grid.set(key, { i, j, "potential": 0, "amount": 0, "x": 0, "z": 0 });
-				const cell = grid.get(key);
-				cell.potential += potential;
-				cell.amount += supply.amount;
-				cell.x += supply.amount * supply.position[0];
-				cell.z += supply.amount * supply.position[1];
-			}
+			for (const supply of world.suppliesAround(code, centre.position, territory + NEAR_REACH))
+				if (!candidates.has(supply.id))
+					candidates.set(supply.id, Object.assign({}, supply, { "haul": nearestHaul(anchors, supply.position) }));
+		}
+		const grid = new Map();
+		for (const supply of candidates.values())
+		{
+			if (!isFinite(supply.amount) || !(profile.rates[supply.kind] > 0))
+				continue;
+			const potential = supply.amount * Math.max(0, 1 - singleOutput(profile, supply) / Math.max(1e-6, ideal));
+			if (!(potential > 0))
+				continue;
+			const i = Math.floor(supply.position[0] / PLAN_CELL);
+			const j = Math.floor(supply.position[1] / PLAN_CELL);
+			const key = i + "," + j;
+			if (!grid.has(key))
+				grid.set(key, { i, j, "potential": 0, "amount": 0, "x": 0, "z": 0 });
+			const cell = grid.get(key);
+			cell.potential += potential;
+			cell.amount += supply.amount;
+			cell.x += supply.amount * supply.position[0];
+			cell.z += supply.amount * supply.position[1];
 		}
 		const scored = [...grid.values()].map(cell => {
 			let around = 0;
@@ -518,7 +491,7 @@ export class SitePlanner
 			return centre;
 		const home = world.home.position;
 		const length = Math.sqrt(squareDistance(home, centre));
-		for (let back = SEARCH_STEP; back <= COVERAGE_REACH && back < length; back += SEARCH_STEP)
+		for (let back = SEARCH_STEP; back < length; back += SEARCH_STEP)
 		{
 			const point = [centre[0] + (home[0] - centre[0]) * back / length, centre[1] + (home[1] - centre[1]) * back / length];
 			if (owned(point))
@@ -527,20 +500,11 @@ export class SitePlanner
 		return null;
 	}
 
-	mainKind(code, profile)
-	{
-		let best = null;
-		for (const kind in profile.rates)
-			if (kind.split(".")[0] === code && (!best || profile.rates[kind] > profile.rates[best]))
-				best = kind;
-		return best;
-	}
-
-	search(world, placement, code, template, centre)
+	search(world, placement, code, template, centre, target)
 	{
 		const footprint = this.catalog.footprint(template);
 		const half = Math.max(footprint.width, footprint.depth) / 2;
-		const outer = Math.sqrt(footprint.width * footprint.width + footprint.depth * footprint.depth) / 2;
+		const outer = outerRadius(footprint);
 		const nearby = world.codes.flatMap(other => world.suppliesAround(other, centre, outer + SEARCH_RINGS * SEARCH_STEP + SUPPLY_LANE + PLAN_CELL));
 		const zones = nearby.filter(supply => supply.code !== code)
 			.map(supply => ({ "position": supply.position, "radius": supply.half + SUPPLY_LANE }));
@@ -549,6 +513,7 @@ export class SitePlanner
 			const size = this.catalog.footprint(pending.template);
 			return { "x": pending.x, "z": pending.z, "halfWidth": size.width / 2, "halfDepth": size.depth / 2 };
 		});
+		const points = [];
 		for (let ring = 0; ring <= SEARCH_RINGS; ++ring)
 		{
 			const radius = half + SUPPLY_CLEARANCE + ring * SEARCH_STEP;
@@ -557,49 +522,39 @@ export class SitePlanner
 			{
 				const angle = 2 * Math.PI * k / steps;
 				const point = placement.point(centre[0], centre[1], radius * Math.cos(angle), radius * Math.sin(angle));
-				if (territoryAt(world.grids.territory, point[0], point[1]).owner !== this.player)
-					continue;
-				const anchor = { "position": point, "shape": footprint, "angle": placement.angle };
-				if (own.some(supply => squareDistance(point, supply.position) <= (outer + supply.half + SUPPLY_CLEARANCE) *
-					(outer + supply.half + SUPPLY_CLEARANCE) && edgeDistance(anchor, supply.position) < supply.half + SUPPLY_CLEARANCE))
-					continue;
-				if (!placement.fits(point, footprint, BUILDING_MARGIN, reserved, zones))
-					continue;
-				return { "x": point[0], "z": point[1], "angle": placement.angle };
+				points.push({ point, "order": points.length, "distance": squareDistance(point, target) });
 			}
 		}
-		return null;
+		points.sort((a, b) => a.distance - b.distance || a.order - b.order);
+		const sites = [];
+		for (const { point } of points)
+		{
+			if (sites.length >= SITE_CHOICES)
+				break;
+			if (sites.some(site => squareDistance([site.x, site.z], point) < 4 * half * half))
+				continue;
+			if (territoryAt(world.grids.territory, point[0], point[1]).owner !== this.player)
+				continue;
+			const anchor = { "position": point, "shape": footprint, "angle": placement.angle };
+			if (own.some(supply => squareDistance(point, supply.position) <= (outer + supply.half + SUPPLY_CLEARANCE) *
+				(outer + supply.half + SUPPLY_CLEARANCE) && edgeDistance(anchor, supply.position) < supply.half + SUPPLY_CLEARANCE))
+				continue;
+			if (!placement.fits(point, footprint, BUILDING_MARGIN, reserved, zones))
+				continue;
+			sites.push({ "x": point[0], "z": point[1], "angle": placement.angle });
+		}
+		return sites;
 	}
 
-	option(world, code, profile, fronts, known, wanted, template, site)
+	option(world, code, profile, fronts, wanted, template, site)
 	{
-		const anchor = { "position": [site.x, site.z], "shape": this.catalog.footprint(template), "angle": site.angle };
-		const outer = Math.sqrt(anchor.shape.width * anchor.shape.width + anchor.shape.depth * anchor.shape.depth) / 2;
-		const covered = new Map();
-		for (const supply of world.suppliesAround(code, anchor.position, outer + COVERAGE_REACH))
-		{
-			const haul = edgeDistance(anchor, supply.position);
-			if (haul <= COVERAGE_REACH && profile.rates[supply.kind] > 0)
-				covered.set(supply.id, Object.assign({}, supply, { "haul": haul }));
-		}
-		if (!covered.size)
+		const anchor = { "id": NEW_ANCHOR, "position": [site.x, site.z], "shape": this.catalog.footprint(template), "angle": site.angle };
+		const extended = withAnchor(fronts, anchor, NEW_FRONT, this.around(world, code, anchor, profile), profile);
+		if (!extended.front.supplies.length)
 			return null;
-		const moved = new Set();
-		const others = fronts.map(front => ({ "key": front.key, "crowd": front.crowd, "supplies": front.supplies.filter(supply => {
-			const closer = covered.get(supply.id);
-			if (!closer || closer.haul >= supply.haul)
-				return true;
-			moved.add(supply.id);
-			covered.set(supply.id, Object.assign({}, closer, { "amount": supply.amount }));
-			return false;
-		}) }));
-		const fresh = { "key": "new", "crowd": 0, "supplies": ranked([...covered.values()]
-			.filter(supply => moved.has(supply.id) || !known.has(supply.id)), profile) };
-		if (!fresh.supplies.length)
-			return null;
-		const after = allocate(others.concat([fresh]), wanted, profile);
-		const index = others.length;
-		const stock = fresh.supplies.reduce((sum, supply) => sum + (isFinite(supply.amount) ? supply.amount : 0), 0);
+		const after = allocate(extended.fronts, wanted, profile);
+		const index = extended.fronts.length - 1;
+		const stock = extended.front.supplies.reduce((sum, supply) => sum + (isFinite(supply.amount) ? supply.amount : 0), 0);
 		return { site, "total": after.output, "output": after.totals[index], stock, "moved": after.counts[index] };
 	}
 }

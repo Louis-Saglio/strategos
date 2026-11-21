@@ -1,6 +1,7 @@
 import { GRANTED } from "simulation/ai/strategos/allocator.js";
 import { distanceBetween } from "simulation/ai/strategos/geometry.js";
 import { diminished, loadOutput, reachOf } from "simulation/ai/strategos/gathering.js";
+import { bestRate, marketSupplies, profileFor } from "simulation/ai/strategos/economy-market.js";
 import { edgeDistance } from "simulation/ai/strategos/world-supplies.js";
 
 export const WORK_HORIZON_S = 90;
@@ -44,29 +45,23 @@ export class WorkSites
 		this.moved = data && data.moved || new Map();
 	}
 
-	survey(world)
+	survey(world, assessments)
 	{
-		const nearest = new Map();
-		for (const entry of world.coverage)
-			for (const supply of entry.supplies)
-			{
-				const known = nearest.get(supply.id);
-				if (!known || supply.distance < known.supply.distance || supply.distance === known.supply.distance && entry.anchor < known.entry.anchor)
-					nearest.set(supply.id, { entry, supply });
-			}
 		const fronts = new Map();
 		const frontOf = new Map();
-		for (const { entry, supply } of nearest.values())
+		for (const code of world.codes)
 		{
-			const key = entry.anchor + ":" + entry.code;
-			if (!fronts.has(key))
-				fronts.set(key, { "key": key, "anchor": entry.anchor, "code": entry.code, "supplies": [], "crowd": 0 });
-			const front = fronts.get(key);
-			front.supplies.push(Object.assign({ "haul": supply.distance }, supply));
-			frontOf.set(supply.id, front);
+			const profile = profileFor(world, code, false);
+			const wanted = Math.max(1, Math.round((assessments.gatherShares[code] || 0) * world.labour));
+			for (const supply of marketSupplies(world, code, wanted, profile ? bestRate(profile, code) : 0))
+			{
+				const key = supply.anchor + ":" + code;
+				if (!fronts.has(key))
+					fronts.set(key, { "key": key, "anchor": supply.anchor, "code": code, "supplies": [], "crowd": 0 });
+				fronts.get(key).supplies.push(supply);
+				frontOf.set(supply.id, fronts.get(key));
+			}
 		}
-		for (const front of fronts.values())
-			front.supplies.sort((a, b) => a.haul - b.haul || a.id - b.id);
 		const holders = new Map();
 		for (const worker of world.workers)
 		{

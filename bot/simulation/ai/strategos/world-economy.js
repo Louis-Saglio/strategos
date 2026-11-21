@@ -298,6 +298,7 @@ export function economySection(gameState, catalog, resourceIndex, anchors, batte
 			"labour": staff.workers.length + fishers,
 			"gatherers": Object.freeze(busy.gatherers),
 			"foodHelpers": busy.helpers,
+			"fieldRate": civilianRate,
 			"yieldRates": yieldRates || Object.freeze({}),
 			"hauls": Object.freeze(busy.hauls),
 			"sites": Object.freeze(sites),
